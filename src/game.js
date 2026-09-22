@@ -32,6 +32,7 @@ function settings(input) {
   const value = { startingStack: 1000, smallBlind: 5, bigBlind: 10, blindMinutes: 0, ...input };
   check(integer(value.startingStack, 1, MAX_SETTING), 'Starting stack must be a positive whole number.');
   check(integer(value.smallBlind, 1, MAX_SETTING) && integer(value.bigBlind, 1, MAX_SETTING) && value.smallBlind <= value.bigBlind, 'Blinds must be positive whole numbers; small blind cannot exceed big blind.');
+  check(value.bigBlind % value.smallBlind === 0, 'Big blind must be a multiple of the small blind.');
   check(integer(value.blindMinutes, 0, 1440), 'Blind timer must be 0–1440 whole minutes.');
   return value;
 }
@@ -243,6 +244,7 @@ export function act(state, id, intent) {
       check(legal.canRaise, 'Betting has not reopened, or there is nobody left to raise.');
       const target = type === 'all-in' ? legal.maxRaiseTo : intent.amount;
       check(integer(target) && target > s.currentBet && target <= legal.maxRaiseTo, 'Invalid raise-to amount.');
+      check(type === 'all-in' || target % s.settings.smallBlind === 0, `Bids must be multiples of ${s.settings.smallBlind}.`);
       const increase = target - s.currentBet;
       check(increase >= s.minRaise || target === legal.maxRaiseTo, `Minimum raise is to ${legal.minRaiseTo}.`);
       if (increase >= s.minRaise) s.minRaise = increase;

@@ -32,7 +32,10 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     return { ...state, roomCode: room.code, hostId: room.hostId, playerId: id, revision: room.revision,
       canUndo: room.game.history.length > 0, serverTime: now(),
       players: state.players.map(p => ({ ...p, connected: room.connections.has(p.id) })),
-      pots: state.street === 'showdown' || state.street === 'complete' ? state.pots : game.calculatePots(state),
+      // Side pots are finalized once, when the hand reaches showdown. Do not
+      // expose recalculated layers after every street; that makes one hand look
+      // like it is creating new pots each round.
+      pots: state.street === 'showdown' || state.street === 'complete' ? state.pots : [],
       legal: game.legalActions(room.game, id) };
   }
   function broadcast(room) {
