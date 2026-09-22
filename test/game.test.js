@@ -38,11 +38,11 @@ test('minimum raises, invalid actions, immutability and out-of-turn checks', () 
   const original = startHand(table());
   assert.throws(() => act(original, '1', { type: 'fold' }), /turn/);
   assert.throws(() => play(original, 'check'), /call/);
-  assert.throws(() => play(original, 'raise', 19), /Minimum/);
+  assert.throws(() => play(original, 'raise', 15), /Minimum/);
   for (const amount of [NaN, Infinity, 20.5, '20', 1001]) assert.throws(() => play(original, 'raise', amount));
   let s = play(original, 'raise', 30);
   assert.equal(s.minRaise, 20); assert.equal(legalActions(s, '1').minRaiseTo, 50);
-  assert.throws(() => play(s, 'raise', 49), /Minimum/);
+  assert.throws(() => play(s, 'raise', 45), /Minimum/);
   s = play(s, 'raise', 50); assert.equal(s.currentBet, 50);
   assert.equal(original.currentBet, 10); assert.equal(original.players[0].stack, 1000);
 });
@@ -124,6 +124,14 @@ test('ten-seat cap and invalid settings are rejected', () => {
   assert.throws(() => addPlayer(s, '11', 'Full'), /10 players/);
   assert.throws(() => createTable({ smallBlind: 20, bigBlind: 10 }));
   assert.throws(() => createTable({ startingStack: -1 }));
+  assert.throws(() => createTable({ smallBlind: 3, bigBlind: 10 }), /multiple/);
+});
+
+test('raise-to amounts must be multiples of the small blind', () => {
+  let s = startHand(table([100, 100, 100], { smallBlind: 5, bigBlind: 10 }));
+  assert.throws(() => play(s, 'raise', 23), /multiples/);
+  s = play(s, 'raise', 25);
+  assert.equal(s.currentBet, 25);
 });
 test('chip conservation across 100 deterministic varied hands', () => {
   let seed = 81;
