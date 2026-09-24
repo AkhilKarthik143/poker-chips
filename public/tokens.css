@@ -1,0 +1,25 @@
+:root {
+  --bg-page: #0A1410;
+  --bg-panel: #0F1D17;
+  --bg-table: #14261E;
+  --bg-seat-empty: #16241D;
+  --border-seat-empty: #3A5245;
+  --bg-seat-occupied: #1C3327;
+  --border-your-seat: #D4AF6A;
+  --bg-action-bar: #0D1A14;
+  --border-action-bar-top: rgba(212, 175, 106, 0.4);
+  --text-primary: #F4F1E8;
+  --text-secondary: #8FA396;
+  --text-disabled: #5A6E62;
+  --accent: #D4AF6A;
+  --accent-hover: #E8C888;
+  --status-ready: #5FBF8F;
+  --status-active: #F2B94D;
+  --status-folded: #6B5B73;
+  --status-allin: #E0664B;
+  --status-away: #7A7A7A;
+  --card-face-bg: #FBF8F1;
+  --card-face-red: #C4453A;
+  --card-face-black: #1A1A1A;
+  --card-back-bg: #14261E;
+}

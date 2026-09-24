@@ -1,4 +1,4 @@
-/* global io, document, navigator, localStorage, setTimeout, clearTimeout, setInterval, ResizeObserver */
+/* global io, document, navigator, localStorage, setTimeout, clearTimeout, setInterval, ResizeObserver, matchMedia */
 const $ = selector => document.querySelector(selector);
 const socket = io({ autoConnect: false });
 const STORAGE_KEY = 'tablemate-seat-v1';
@@ -16,6 +16,8 @@ let seatListView = false;
 let seatMessage = '';
 let savedOrderKey = '';
 let dragSeat = null;
+const railMedia = matchMedia('(min-width:1200px)');
+railMedia.addEventListener('change', () => render());
 const ellipseObserver = new ResizeObserver(() => positionSeats());
 const number = value => Number(value).toLocaleString();
 const snapToBlind = (value, blind) => Math.ceil(value / blind) * blind;
@@ -160,6 +162,7 @@ function inviteDialog() {
 }
 function openControls(target) {
   const panel = document.getElementById(state.hostId === state.playerId ? 'host-menu' : 'your-seat');
+  $('#table-rail').open = true;
   panel.open = true;
   const control = document.getElementById(target) || panel.querySelector('summary');
   control.focus();
@@ -200,15 +203,16 @@ function seatOval(order, editing) {
   return `<div class="seat-oval ${editing ? 'reorder-oval' : 'live-oval'}" aria-label="${editing ? 'Arrange seats' : 'Clockwise seat order'}"><div class="table-felt" aria-hidden="true"></div>${order.map((id, index) => {
     const orderIndex = index;
     const p = state.players.find(player => player.id === id);
-    const status = playing && p.folded ? '× Folded' : playing && p.inHand && p.stack === 0 ? '◆ All-in' : p.sittingOut ? 'Ⅱ Away' : !p.connected ? '○ Offline' : p.id === state.turn ? '▶ To act' : playing ? '● In hand' : '✓ Ready';
-    return `<article class="oval-seat slot-${index} ${!editing && p.id === state.turn ? 'acting' : ''} ${p.id === state.playerId ? 'my-seat' : ''} ${playing && p.folded ? 'folded-seat' : ''}" ${editing ? `data-drag-seat="${orderIndex}"` : ''}><div class="oval-name"><small>${orderIndex + 1}</small><strong title="${escape(p.name)}">${escape(p.name)}</strong></div><span class="seat-owner">${p.id === state.playerId ? `You • Seat ${orderIndex + 1}` : `Seat ${orderIndex + 1}`}</span><div class="seat-roles">${Object.entries(roles).filter(([, id]) => id === p.id).map(([role]) => `<span class="role-${role}" title="${role === 'D' ? 'Dealer' : role === 'SB' ? 'Small blind' : 'Big blind'}">${role}</span>`).join('')}</div><strong class="oval-stack">${number(p.stack)}</strong><small>Bet ${number(p.streetBet)}</small><span class="oval-status ${!playing && p.connected && !p.sittingOut ? 'ready-pill' : ''}">${status}</span></article>`;
+    const status = playing && p.folded ? '× Folded' : playing && p.inHand && p.stack === 0 ? '⚡ All-in' : p.sittingOut ? '⏸ Away' : !p.connected ? '⏸ Offline' : p.id === state.turn ? '▶ To act' : playing ? '● In hand' : '✓ Ready';
+    const statusKind = playing && p.folded ? 'folded' : playing && p.inHand && p.stack === 0 ? 'allin' : p.sittingOut || !p.connected ? 'away' : p.id === state.turn ? 'active' : 'ready';
+    return `<article class="oval-seat slot-${index} ${!editing && p.id === state.turn ? 'acting' : ''} ${p.id === state.playerId ? 'my-seat' : ''} ${playing && p.folded ? 'folded-seat' : ''}" ${editing ? `data-drag-seat="${orderIndex}"` : ''}><div class="oval-name"><small>${orderIndex + 1}</small><strong title="${escape(p.name)}">${escape(p.name)}</strong></div><span class="seat-owner">${p.id === state.playerId ? `You • Seat ${orderIndex + 1}` : `Seat ${orderIndex + 1}`}</span><div class="seat-roles">${Object.entries(roles).filter(([, id]) => id === p.id).map(([role]) => `<span class="role-${role}" title="${role === 'D' ? 'Dealer' : role === 'SB' ? 'Small blind' : 'Big blind'}">${role}</span>`).join('')}</div><strong class="oval-stack">${number(p.stack)}</strong><small>Bet ${number(p.streetBet)}</small><span class="oval-status status-${statusKind} ${!playing && p.connected && !p.sittingOut ? 'ready-pill' : ''}">${status}</span></article>`;
   }).join('')}</div>`;
 }
 function positionSeats() {
   document.querySelectorAll('.seat-oval').forEach(oval => {
     const width = oval.clientWidth;
     const occupied = oval.querySelectorAll('.oval-seat').length;
-    const cardWidth = Math.min(140, Math.floor((width - 24) / 4.5));
+    const cardWidth = Math.min(140, Math.floor((width - 24) / (occupied <= 4 ? 2 : occupied <= 6 ? 3 : 4.5)));
     const height = occupied <= 2 ? 380 : occupied <= 4 ? 440 : occupied === 9 ? 580 : 540;
     const rx = (width - cardWidth - 12) / 2;
     const ry = (height - 112) / 2;
@@ -242,7 +246,7 @@ function render() {
   $('#lobby').hidden = true; $('#site-footer').hidden = true; $('#table').hidden = false;
   $('#table').innerHTML = `
     ${!ready ? '<div class="reconnect-banner" role="status">Reconnecting… Your seat and chips are saved. Actions will return when the table is in sync.</div>' : ''}
-    <header class="table-heading"><h1>Table <strong>${escape(state.roomCode)}</strong></h1><span>${state.players.length}/10 players</span><span>Blinds <strong>${number(state.settings.smallBlind)}/${number(state.settings.bigBlind)}</strong></span><button id="copy-code">Copy code</button><button id="table-settings">${host ? 'Settings' : 'Your seat'}</button></header>
+    <header class="table-heading"><h1><button id="copy-code" title="Copy table code"><span class="header-table-label">Table </span><strong>${escape(state.roomCode)}</strong></button></h1><span>${state.players.length}/10<span class="player-count-label"> players</span></span><span>Blinds <strong>${number(state.settings.smallBlind)}/${number(state.settings.bigBlind)}</strong></span><button id="header-invite">Invite</button><button id="table-settings" aria-label="Table settings" title="Table settings">⚙</button></header>
     <div class="table-layout"><section class="play-area" aria-label="Poker table">
       <div class="table-stage"><div class="pot-board ${playing ? 'live-pot' : 'waiting-pot'}"><div class="streets" aria-label="Betting street">${['preflop', 'flop', 'turn', 'river', 'showdown'].map(street => `<span class="${state.street === street ? 'current' : ''}" ${state.street === street ? 'aria-current="step"' : ''}>${state.street === street ? '• ' : ''}${street.toUpperCase()}</span>`).join('')}</div>
         ${playing ? `<p class="pot-label">Hand ${state.handNumber} · Total pot</p><div class="pot-number">${number(total)}</div><span class="pot-unit">CHIPS</span>` : `<p class="pot-label">${state.street === 'complete' ? 'Hand complete' : 'Your table is open'}</p><h2>${state.players.length < 2 ? 'Waiting for players' : host ? 'Ready to deal' : 'Waiting for host to start'}</h2><p>${state.players.filter(p => p.stack > 0 && !p.sittingOut).length} players ready</p>`}
@@ -251,15 +255,15 @@ function render() {
       ${seatOval(state.seatOrder, false)}</div><div class="table-meta"><span>Action moves clockwise</span><span id="blind-clock"></span></div>
       ${state.lastResult && state.street === 'complete' ? `<section class="result"><h2>That’s a hand.</h2>${state.lastResult.awards.map(a => `<p>${escape(state.players.find(p => p.id === a.id)?.name || 'Departed player')} <strong>+${number(a.amount)}</strong> · ${escape(a.label)}</p>`).join('')}</section>` : ''}
       ${state.street === 'showdown' ? `<section class="showdown"><h2>Who takes the pot?</h2><p class="helper">${host ? 'Select every tied winner for each pot. Chips settle after all pots are assigned; odd chips go left of the dealer.' : 'The host is selecting winners from the physical cards.'}</p>${state.pots.map((pot, index) => `<form class="winner-form" data-pot="${pot.id}"><h3>${index ? `Side pot ${index}` : 'Main pot'} · ${number(pot.amount)} chips</h3>${pot.winners ? `<p class="helper">Selected: ${pot.winners.map(id => escape(state.players.find(p => p.id === id).name)).join(' + ')}</p>` : pot.eligible.map(id => `<label for="winner-${pot.id}-${id}"><input id="winner-${pot.id}-${id}" type="checkbox" name="winner" value="${escape(id)}" ${!host ? 'disabled' : ''}>${escape(state.players.find(p => p.id === id).name)}</label>`).join('')}${host && !pot.winners ? '<button class="primary" type="submit">Confirm winner(s)</button>' : ''}</form>`).join('')}</section>` : ''}
-    </section><aside class="sidebar">
-      <details class="panel" id="players-panel" open><summary>Players <span>${state.players.length}/10</span></summary><ul class="players-list">${state.seatOrder.map(id => { const p = state.players.find(p => p.id === id); return `<li><strong>${escape(p.name)}${p.id === state.playerId ? ' · You' : ''}</strong><span>${p.sittingOut ? 'Ⅱ Away' : p.connected ? '✓ Connected' : '○ Offline'}</span></li>`; }).join('')}</ul></details>
-      <details class="panel" id="hand-log"><summary>Hand log <span>Hand ${state.handNumber}</span></summary><ol class="log-list">${handLog()}</ol></details>
+    </section><details class="rail-drawer" id="table-rail" ${railMedia.matches ? 'open' : ''}><summary>Players, hand log & controls</summary><aside class="sidebar">
+      <details class="panel" id="players-panel" open><summary>Players <span>${state.players.length}/10</span></summary><ul class="players-list">${state.seatOrder.map(id => { const p = state.players.find(p => p.id === id); return `<li><strong>${escape(p.name)}${p.id === state.playerId ? ' · You' : ''}</strong><span>${p.sittingOut ? '⏸ Away' : p.connected ? '✓ Connected' : '⏸ Offline'}</span></li>`; }).join('')}</ul></details>
+      <details class="panel" id="hand-log" ${railMedia.matches ? 'open' : ''}><summary>Hand log <span>Hand ${state.handNumber}</span></summary><ol class="log-list">${handLog()}</ol></details>
       ${host ? hostPanel(playing, actor) : ''}
       <details class="panel" id="your-seat"><summary>Your seat</summary><div class="panel-content"><p class="helper">${playing ? 'Sit out applies from the next hand. Leave and rebuy between hands.' : 'Ask your host for a rebuy or add-on.'}</p><button id="sit-out">${me.sittingOut ? 'Play next hand' : 'Sit out next hand'}</button><button id="leave" class="quiet danger" ${playing ? 'disabled' : ''}>Leave table</button></div></details>
-    </aside></div>
+    </aside></details></div>
     <section class="dock" aria-label="Your betting controls"><div class="dock-inner"><div class="dock-summary"><div class="turn-label ${state.legal.active ? '' : 'waiting'}" role="status">${!ready ? 'RECONNECTING' : state.legal.active ? 'YOUR TURN' : state.street === 'showdown' ? 'SHOWDOWN' : actor ? `${escape(actor.name).toUpperCase()} TO ACT` : host ? 'HOST · TABLE CONTROLS' : 'WAITING FOR HOST'}</div><div class="balance"><span>Your stack</span><strong>${number(me.stack)}</strong></div><div class="balance"><span>To call</span><strong>${number(state.legal.toCall)}</strong></div></div>
       ${!playing ? `<div class="lobby-actions"><button id="invite-players">Invite players</button><button id="change-seat">Change seat</button><button id="set-buy-in">${host ? 'Set buy-in' : 'View buy-in'}</button>${host ? `<button id="start-hand" class="primary" ${state.players.filter(p => p.stack > 0 && !p.sittingOut).length < 2 ? 'disabled' : ''}>${state.handNumber ? 'Start next hand' : 'Start game'} →</button>` : '<span class="helper">Your host starts the hand.</span>'}</div>` : ''}
-      ${state.turn ? `<div class="actions"><button data-action="fold" class="quiet" ${!state.legal.active ? 'disabled' : ''}>Fold</button><button data-action="${state.legal.canCheck ? 'check' : 'call'}" class="primary" ${!state.legal.active ? 'disabled' : ''}>${state.legal.canCheck ? 'Check' : `Call ${number(state.legal.toCall)}`}</button><button id="toggle-raise" aria-expanded="${raiseOpen}" ${!state.legal.canRaise ? 'disabled' : ''}>${state.currentBet ? 'Raise' : 'Bet'}</button><button data-action="all-in" class="all-in" ${!state.legal.canAllIn ? 'disabled' : ''}>All-in</button></div>` : ''}
+      ${state.turn ? `<div class="actions"><button data-action="fold" class="quiet" ${!state.legal.active ? 'disabled' : ''}>Fold</button><button data-action="${state.legal.canCheck ? 'check' : 'call'}" class="neutral" ${!state.legal.active ? 'disabled' : ''}>${state.legal.canCheck ? 'Check' : `Call ${number(state.legal.toCall)}`}</button><button id="toggle-raise" class="primary" aria-expanded="${raiseOpen}" ${!state.legal.canRaise ? 'disabled' : ''}>${state.currentBet ? 'Raise' : 'Bet'}</button><button data-action="all-in" class="all-in" ${!state.legal.canAllIn ? 'disabled' : ''}>All-in</button></div>` : ''}
       ${raiseOpen && state.legal.canRaise ? (() => { const min = Math.min(state.legal.minRaiseTo, state.legal.maxRaiseTo); const max = state.legal.maxRaiseTo; return `<form id="raise-form" class="raise-panel"><div><label for="raise-amount">${state.currentBet ? 'Raise' : 'Bet'} to · multiples of ${number(state.settings.smallBlind)}</label><div class="raise-controls"><input id="raise-range" type="range" aria-label="Raise amount slider (logarithmic)" min="0" max="100" value="${sliderPosition(min, min, max)}" step="1" data-min="${min}" data-max="${max}" data-blind="${state.settings.smallBlind}"><input id="raise-amount" aria-label="Raise to amount" type="number" min="${min}" max="${max}" value="${min}" step="${state.settings.smallBlind}" required></div></div><button class="primary raise-submit" type="submit">Confirm</button><div class="quick-bets"><button type="button" data-quick="min">Min</button><button type="button" data-quick="half">½ pot</button><button type="button" data-quick="pot">Pot</button><button type="button" data-quick="three-quarter">¾ pot</button><button type="button" data-quick="all">All-in</button></div></form>`; })() : ''}
     </div></section>`;
   for (const id of detailsOpen) { const el = document.getElementById(id); if (el) el.open = true; }
@@ -286,6 +290,7 @@ function wireTable(me, pot) {
     catch { toast(`Your table code is ${state.roomCode}.`); }
   });
   $('#table-settings').addEventListener('click', () => openControls('host-stack'));
+  $('#header-invite').addEventListener('click', inviteDialog);
   $('#invite-players')?.addEventListener('click', inviteDialog);
   $('#set-buy-in')?.addEventListener('click', inviteDialog);
   $('#change-seat')?.addEventListener('click', () => { openControls('seat-view'); if (state.hostId !== state.playerId) toast('Ask the host to change the seat order between hands.'); });
