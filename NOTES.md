@@ -59,3 +59,15 @@ Dials: variance 4 (editorial lobby, stable table grid), motion 2 (state feedback
 - Compact status header replaces gameplay marketing. Fixed safe-area dock provides host Start game, invite/buy-in confirmation, and seat controls; mobile log collapses. Status words/icons, dashed folded/open borders, and You label distinguish states without color.
 - Buy-in remains host controlled. Open slots invite friends; unseated guests review read-only buy-in and confirm joining. Server rejects stale buy-in confirmation. Hand-log timestamps are server-stamped on broadcast, grouped by hand.
 - Browser checks passed 2/4/6/9/10 players at 360/768/1600px: no seat overlap or horizontal clipping, drag/save, next-hand start and mid-hand rejection. 32 unit/integration tests pass.
+
+- Follow-up: removed all empty placeholders from live and host reorder ovals. The actual seated-player count now divides the ellipse angle (2*pi*(index-ownIndex)/playerCount); two players sit opposite each other. Folded/away players retain their real seats. Invite players remains in the dock.
+
+## Felt-and-gold UI release (2026-09-24)
+
+- Used the exact supplied tokens in public/tokens.css, imported before style.css. No token values were adjusted. Removed legacy literal colors from public CSS/HTML; all component colors now reference tokens. Borders and token-derived shadows distinguish adjacent dark layers.
+- Kept physical-card play: this repository has no virtual card renderer, deck state, or 52-card test suite. Card tokens are reserved for future use; no simulated community cards or hidden cards were invented.
+- Preserved occupied-only seating: no empty slots are rendered. Empty-seat tokens/styles remain available but do not create seats.
+- Seat geometry: x=W/2+rx*cos(angle), y=H/2+ry*sin(angle), angle=pi/2+2*pi*(index-ownIndex)/occupiedCount. rx=(W-cardWidth-12)/2; ry=(H-112)/2. H is 380 for 1–2, 440 for 3–4, 580 for 9, otherwise 540. Card width=min(140,floor((W-24)/divisor)), divisor=2 for up to 4 players, 3 for 5–6, 4.5 otherwise. Cards are 88px tall.
+- Compact copy-code header, Invite/settings, gold primary actions, neutral Check/Call, fixed 89–100px dock, raise panel above dock. Mobile rail is collapsible; desktop rail is open. Status labels retain icons and distinct borders, active ring respects reduced motion.
+- Contrast (WCAG relative luminance), primary text against each layer: bg-page 16.6:1, bg-panel 15.39:1, bg-table 14.03:1, bg-seat-empty 14.26:1, bg-seat-occupied 11.98:1, bg-action-bar 15.83:1. All exceed 4.5:1. Critical status text remains primary; status colors are borders and indicators.
+- Validation: lint and all 32 tests pass, including chip conservation, betting, dealer/blinds, socket authorization, and reorder. Browser checks cover 2/4/6/9/10 players at 360/768/1600px, drag/save, next hand, and server rejection mid-hand. Additional 360/768/1200/1600px checks cover fixed dock bounds, raise overlay, horizontal overflow, grayscale status labels and /healthz. No 52-card suite exists to run.
