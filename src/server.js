@@ -39,6 +39,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
       legal: game.legalActions(room.game, id) };
   }
   function broadcast(room) {
+    room.game.log.forEach(item => { if (item.timestamp === undefined) item.timestamp = now(); });
     for (const [id, socketId] of room.connections) io.sockets.sockets.get(socketId)?.emit('state', view(room, id));
   }
   function bind(socket, room, id) {
@@ -111,10 +112,18 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
       rooms.set(code, room); bind(socket, room, id); broadcast(room);
       return { token, playerId: id, roomCode: code, state: view(room, id) };
     });
+    on('table-preview', payload => {
+      const room = rooms.get(String(payload.code || '').trim().toUpperCase());
+      requireValue(room, 'Room not found. Check the four-letter code.');
+      requireValue(!game.isPlaying(room.game), 'Join between hands.');
+      requireValue(room.game.players.length < 10, 'This table has 10 players.');
+      return { players: room.game.players.length, ...room.game.settings };
+    });
     on('join', payload => {
       requireValue(!socket.data.identity, 'Leave your current table first.');
       const room = rooms.get(String(payload.code || '').trim().toUpperCase());
       requireValue(room, 'Room not found. Check the four-letter code.');
+      requireValue(payload.expectedBuyIn === undefined || payload.expectedBuyIn === room.game.settings.startingStack, 'Buy-in changed. Review the table and confirm again.');
       const id = randomUUID();
       room.game = game.addPlayer(room.game, id, payload.name);
       const token = randomBytes(32).toString('hex');
