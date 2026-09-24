@@ -11,7 +11,15 @@ let raiseOpen = false;
 let lastTurn = null;
 let toastTimer;
 let serverOffset = 0;
+let seatDraft = null;
+let seatListView = false;
+let seatMessage = '';
+let savedOrderKey = '';
+let dragSeat = null;
 const number = value => Number(value).toLocaleString();
+const snapToBlind = (value, blind) => Math.ceil(value / blind) * blind;
+const sliderPosition = (amount, min, max) => max <= min ? 0 : Math.round((Math.log(amount / min) / Math.log(max / min)) * 100);
+const sliderAmount = (position, min, max, blind) => snapToBlind(min * Math.pow(max / min, position / 100), blind);
 const escape = value => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 try { identity = JSON.parse(localStorage.getItem(STORAGE_KEY)); } catch { identity = null; }
 function saveIdentity(value) {
@@ -55,6 +63,8 @@ function receive(value) {
   // Socket.IO keeps packet order; revision also guards delayed acknowledgement state.
   if (state && value.roomCode === state.roomCode && value.revision < state.revision) return;
   state = value; serverOffset = value.serverTime - Date.now();
+  if (savedOrderKey !== JSON.stringify(state.seatOrder)) { seatDraft = [...state.seatOrder]; savedOrderKey = JSON.stringify(state.seatOrder); }
+  if (!seatDraft || seatDraft.some(id => !state.seatOrder.includes(id)) || seatDraft.length !== state.seatOrder.length) seatDraft = [...state.seatOrder];
   if (state.turn === state.playerId && lastTurn !== state.turn && ready && typeof navigator.vibrate === 'function') navigator.vibrate([90, 50, 90]);
   if (lastTurn !== state.turn) raiseOpen = false;
   lastTurn = state.turn;
@@ -129,6 +139,26 @@ const instructions = {
   complete: 'Chips settled. Collect the cards and get ready for the next hand.'
 };
 function option(p) { return `<option value="${escape(p.id)}">${escape(p.name)} · ${number(p.stack)}</option>`; }
+function nextAssignments(order, changed) {
+  const eligible = order.filter(id => { const p = state.players.find(p => p.id === id); return p.stack > 0 && !p.sittingOut; });
+  if (eligible.length < 2) return {};
+  const after = changed ? -1 : state.dealerSeat;
+  const ordered = [...eligible].sort((a, b) => {
+    const seat = id => changed ? order.indexOf(id) : state.players.find(p => p.id === id).seat;
+    return ((seat(a) - after + 9) % 10) - ((seat(b) - after + 9) % 10);
+  });
+  return { D: ordered[0], SB: ordered[eligible.length === 2 ? 0 : 1], BB: ordered[eligible.length === 2 ? 1 : 2] };
+}
+function seatOval(order, editing) {
+  const playing = !['lobby', 'complete'].includes(state.street);
+  const roles = editing ? nextAssignments(order, JSON.stringify(order) !== JSON.stringify(state.seatOrder)) : { D: state.players.find(p => p.seat === state.dealerSeat)?.id, SB: state.smallBlindId, BB: state.bigBlindId };
+  return `<div class="seat-oval ${editing ? 'reorder-oval' : 'live-oval'}" aria-label="${editing ? 'Arrange seats' : 'Clockwise seat order'}"><div class="table-felt"><span>↻</span><small>CLOCKWISE</small>${editing ? '<small>NEXT HAND</small>' : ''}</div>${Array.from({ length: 10 }, (_, index) => {
+    const p = state.players.find(player => player.id === order[index]);
+    if (!p) return `<article class="oval-seat slot-${index} open-seat"><small>${index + 1}</small><span>Open seat</span></article>`;
+    const status = playing && p.folded ? 'Folded' : playing && p.inHand && p.stack === 0 ? 'All-in' : p.sittingOut ? 'Sitting out' : !p.connected ? 'Disconnected' : p.id === state.turn ? 'To act' : 'Ready';
+    return `<article class="oval-seat slot-${index} ${!editing && p.id === state.turn ? 'acting' : ''}" ${editing ? `data-drag-seat="${index}"` : ''}><div class="oval-name"><small>${index + 1}</small><strong>${escape(p.name)}</strong></div><div class="seat-roles">${Object.entries(roles).filter(([, id]) => id === p.id).map(([role]) => `<span class="role-${role}" title="${role === 'D' ? 'Dealer' : role === 'SB' ? 'Small blind' : 'Big blind'}">${role}</span>`).join('')}</div><strong class="oval-stack">${number(p.stack)}</strong><small>Bet ${number(p.streetBet)}</small><span class="oval-status">${status}</span></article>`;
+  }).join('')}</div>`;
+}
 function render() {
   if (!state) return;
   const me = state.players.find(p => p.id === state.playerId);
@@ -150,12 +180,7 @@ function render() {
         <p class="street-instruction" aria-live="polite">${instructions[state.street]}</p>
         ${state.street === 'showdown' && state.pots.length > 1 ? `<div class="pot-summary">${state.pots.map((p, i) => `<span>${i ? `Side pot ${i}` : 'Main pot'} · ${number(p.amount)}</span>`).join('')}</div>` : ''}</div>
       <div class="table-meta"><span>${state.players.length}/10 seated · Blinds ${number(state.settings.smallBlind)}/${number(state.settings.bigBlind)}</span><span id="blind-clock"></span></div>
-      <div class="seat-grid">${state.players.map(p => {
-        const current = p.id === state.turn;
-        const blind = p.id === state.smallBlindId ? 'Small blind' : p.id === state.bigBlindId ? 'Big blind' : null;
-        const description = !p.connected ? 'Disconnected · seat saved' : current ? 'TO ACT' : p.inHand && p.folded && playing ? 'Folded' : p.inHand && p.stack === 0 && playing ? 'All-in' : p.sittingOut ? (playing && p.inHand ? 'Sitting out next hand' : 'Sitting out') : !p.stack ? 'Needs a rebuy' : p.inHand && playing ? 'In the hand' : 'Ready to play';
-        return `<article class="seat ${current ? 'current' : ''} ${p.folded && playing ? 'folded' : ''}"><div class="seat-name"><strong>${escape(p.name)}</strong>${p.id === me.id ? '<span class="you">YOU</span>' : ''}${p.seat === state.dealerSeat ? '<span class="dealer" title="Dealer button">D</span>' : ''}</div>${blind ? `<span class="blind-badge">${blind}</span>` : ''}<div class="seat-stack">${number(p.stack)}</div><div class="seat-state">${description}${p.id === state.hostId ? ' · Host' : ''}</div>${p.streetBet ? `<div class="bet-tag">In front: ${number(p.streetBet)}</div>` : ''}</article>`;
-      }).join('')}${state.players.length < 2 ? '<div class="empty-seats">A good game starts with good company.<br>Invite at least one more player with your table code.</div>' : ''}</div>
+      ${seatOval(state.seatOrder, false)}
       ${state.lastResult && state.street === 'complete' ? `<section class="result"><h2>That’s a hand.</h2>${state.lastResult.awards.map(a => `<p>${escape(state.players.find(p => p.id === a.id)?.name || 'Departed player')} <strong>+${number(a.amount)}</strong> · ${escape(a.label)}</p>`).join('')}</section>` : ''}
       ${!playing ? `<div class="start-panel"><p>${host ? 'Deal the physical hole cards, then start betting. The button and blinds move automatically.' : 'Get your cards ready. Your host will start the next hand.'}</p>${host ? `<button id="start-hand" class="primary" ${state.players.filter(p => p.stack > 0 && !p.sittingOut).length < 2 ? 'disabled' : ''}>${state.handNumber ? 'Start next hand' : 'Start first hand'} <span aria-hidden="true">→</span></button>` : ''}</div>` : ''}
       ${state.street === 'showdown' ? `<section class="showdown"><h2>Who takes the pot?</h2><p class="helper">${host ? 'Select every tied winner for each pot. Chips settle after all pots are assigned; odd chips go left of the dealer.' : 'The host is selecting winners from the physical cards.'}</p>${state.pots.map((pot, index) => `<form class="winner-form" data-pot="${pot.id}"><h3>${index ? `Side pot ${index}` : 'Main pot'} · ${number(pot.amount)} chips</h3>${pot.winners ? `<p class="helper">Selected: ${pot.winners.map(id => escape(state.players.find(p => p.id === id).name)).join(' + ')}</p>` : pot.eligible.map(id => `<label for="winner-${pot.id}-${id}"><input id="winner-${pot.id}-${id}" type="checkbox" name="winner" value="${escape(id)}" ${!host ? 'disabled' : ''}>${escape(state.players.find(p => p.id === id).name)}</label>`).join('')}${host && !pot.winners ? '<button class="primary" type="submit">Confirm winner(s)</button>' : ''}</form>`).join('')}</section>` : ''}
@@ -166,14 +191,19 @@ function render() {
     </aside></div>
     <section class="dock" aria-label="Your betting controls"><div class="dock-inner"><div class="dock-summary"><div class="turn-label ${state.legal.active ? '' : 'waiting'}" role="status">${!ready ? 'RECONNECTING' : state.legal.active ? 'YOUR TURN' : state.street === 'showdown' ? 'SHOWDOWN' : actor ? `${escape(actor.name).toUpperCase()} TO ACT` : 'MAKE YOURSELF AT HOME'}</div><div class="balance"><span>Your stack</span><strong>${number(me.stack)}</strong></div><div class="balance"><span>To call</span><strong>${number(state.legal.toCall)}</strong></div></div>
       ${state.turn ? `<div class="actions"><button data-action="fold" class="quiet" ${!state.legal.active ? 'disabled' : ''}>Fold</button><button data-action="${state.legal.canCheck ? 'check' : 'call'}" class="primary" ${!state.legal.active ? 'disabled' : ''}>${state.legal.canCheck ? 'Check' : `Call ${number(state.legal.toCall)}`}</button><button id="toggle-raise" aria-expanded="${raiseOpen}" ${!state.legal.canRaise ? 'disabled' : ''}>${state.currentBet ? 'Raise' : 'Bet'}</button><button data-action="all-in" class="all-in" ${!state.legal.canAllIn ? 'disabled' : ''}>All-in</button></div>` : ''}
-      ${raiseOpen && state.legal.canRaise ? `<form id="raise-form" class="raise-panel"><div><label for="raise-amount">${state.currentBet ? 'Raise' : 'Bet'} to · multiples of ${number(state.settings.smallBlind)}</label><div class="raise-controls"><input id="raise-range" type="range" aria-label="Raise amount slider" min="${Math.min(state.legal.minRaiseTo, state.legal.maxRaiseTo)}" max="${state.legal.maxRaiseTo}" value="${Math.min(state.legal.minRaiseTo, state.legal.maxRaiseTo)}" step="${state.settings.smallBlind}"><input id="raise-amount" aria-label="Raise to amount" type="number" min="${Math.min(state.legal.minRaiseTo, state.legal.maxRaiseTo)}" max="${state.legal.maxRaiseTo}" value="${Math.min(state.legal.minRaiseTo, state.legal.maxRaiseTo)}" step="${state.settings.smallBlind}" required></div></div><button class="primary raise-submit" type="submit">Confirm</button><div class="quick-bets"><button type="button" data-quick="min">Min</button><button type="button" data-quick="half">½ pot</button><button type="button" data-quick="pot">Pot</button><button type="button" data-quick="three-quarter">¾ pot</button><button type="button" data-quick="all">All-in</button></div></form>` : ''}
+      ${raiseOpen && state.legal.canRaise ? (() => { const min = Math.min(state.legal.minRaiseTo, state.legal.maxRaiseTo); const max = state.legal.maxRaiseTo; return `<form id="raise-form" class="raise-panel"><div><label for="raise-amount">${state.currentBet ? 'Raise' : 'Bet'} to · multiples of ${number(state.settings.smallBlind)}</label><div class="raise-controls"><input id="raise-range" type="range" aria-label="Raise amount slider (logarithmic)" min="0" max="100" value="${sliderPosition(min, min, max)}" step="1" data-min="${min}" data-max="${max}" data-blind="${state.settings.smallBlind}"><input id="raise-amount" aria-label="Raise to amount" type="number" min="${min}" max="${max}" value="${min}" step="${state.settings.smallBlind}" required></div></div><button class="primary raise-submit" type="submit">Confirm</button><div class="quick-bets"><button type="button" data-quick="min">Min</button><button type="button" data-quick="half">½ pot</button><button type="button" data-quick="pot">Pot</button><button type="button" data-quick="three-quarter">¾ pot</button><button type="button" data-quick="all">All-in</button></div></form>`; })() : ''}
     </div></section>`;
   for (const id of detailsOpen) { const el = document.getElementById(id); if (el) el.open = true; }
   for (const id of choices) { const el = document.getElementById(id); if (el) el.checked = true; }
   wireTable(me, total); updateClock(); setButtons();
 }
 function hostPanel(playing, actor) {
-  return `<details class="panel" id="host-menu"><summary>Host controls</summary><div class="panel-content"><button id="undo" ${!state.canUndo ? 'disabled' : ''}>Undo last action</button>${actor && !actor.connected ? '<button id="host-fold" class="danger">Fold disconnected player</button>' : ''}<p class="helper">${playing ? 'Settings, rebuys and removals unlock between hands.' : 'Changes to the starting stack apply to new seats. Before the first hand, they apply to everyone.'}</p>
+  const changed = JSON.stringify(seatDraft) !== JSON.stringify(state.seatOrder);
+  const reorderDisabled = playing || seatDraft.length < 2 || !changed;
+  const preview = nextAssignments(seatDraft, changed);
+  const reorderRows = seatDraft.map((id, index) => `<li><span>${index + 1}. ${escape(state.players.find(p => p.id === id).name)}</span><button type="button" aria-label="Move seat ${index + 1} up" data-seat-move="up" data-seat-index="${index}" ${index === 0 ? 'disabled' : ''}>↑</button><button type="button" aria-label="Move seat ${index + 1} down" data-seat-move="down" data-seat-index="${index}" ${index === seatDraft.length - 1 ? 'disabled' : ''}>↓</button></li>`).join('');
+  return `<details class="panel" id="host-menu"><summary>Host controls</summary><div class="panel-content"><button id="undo" ${!state.canUndo ? 'disabled' : ''}>Undo last action</button>${actor && !actor.connected ? '<button id="host-fold" class="danger">Fold disconnected player</button>' : ''}<p class="helper">${playing ? 'Settings and seat order are available between hands.' : 'Changes to the starting stack apply to new seats. Before the first hand, they apply to everyone.'}</p>
+    <section class="seat-order"><h3>Seat order</h3>${playing ? '<p class="helper">Available between hands.</p>' : `<p class="helper">Drag a seat onto another to move it clockwise. Saving restarts the button at the first eligible seat.</p><button id="seat-view" aria-pressed="${seatListView}">${seatListView ? 'Table view' : 'List view'}</button>${seatListView ? `<ol>${reorderRows}</ol>` : seatOval(seatDraft, true)}<p class="helper" id="next-seats">Next hand: ${['D', 'SB', 'BB'].map(role => `${role}: ${escape(state.players.find(p => p.id === preview[role])?.name || '—')}`).join(' · ')}</p><button id="save-seat-order" class="primary" ${reorderDisabled ? 'disabled' : ''}>Save order</button>`}<p class="helper" id="seat-message" role="status">${escape(seatMessage)}</p></section>
     <form id="settings-form"><div class="form-grid"><div><label for="host-stack">Starting stack</label><input id="host-stack" type="number" min="1" max="1000000000" value="${state.settings.startingStack}" ${playing ? 'disabled' : ''} required></div><div><label for="host-timer">Timer (minutes)</label><input id="host-timer" type="number" min="0" max="1440" value="${state.settings.blindMinutes}" ${playing ? 'disabled' : ''} required></div><div><label for="host-sb">Small blind</label><input id="host-sb" type="number" min="1" value="${state.settings.smallBlind}" ${playing ? 'disabled' : ''} required></div><div><label for="host-bb">Big blind</label><input id="host-bb" type="number" min="1" value="${state.settings.bigBlind}" ${playing ? 'disabled' : ''} required></div></div><button type="submit" ${playing ? 'disabled' : ''}>Save table settings</button></form>
     <form id="rebuy-form"><label for="rebuy-player">Rebuy / add-on</label><select id="rebuy-player" ${playing ? 'disabled' : ''}>${state.players.map(option).join('')}</select><label for="rebuy-amount">Chips to add</label><input id="rebuy-amount" type="number" min="1" max="1000000000" value="${state.settings.startingStack}" ${playing ? 'disabled' : ''} required><button type="submit" ${playing ? 'disabled' : ''}>Add chips</button></form>
     ${state.players.length > 1 ? `<form id="kick-form"><label for="kick-player">Remove a player</label><select id="kick-player" ${playing ? 'disabled' : ''}>${state.players.filter(p => p.id !== state.playerId).map(option).join('')}</select><button class="danger quiet" type="submit" ${playing ? 'disabled' : ''}>Remove selected player</button></form>` : ''}</div></details>`;
@@ -186,19 +216,49 @@ function wireTable(me, pot) {
   $('#start-hand')?.addEventListener('click', () => run('start-hand'));
   $('#undo')?.addEventListener('click', () => run('undo'));
   $('#host-fold')?.addEventListener('click', () => run('host-fold'));
+  document.querySelectorAll('[data-seat-move]').forEach(button => button.addEventListener('click', () => {
+    const index = Number(button.dataset.seatIndex); const swap = button.dataset.seatMove === 'up' ? index - 1 : index + 1;
+    [seatDraft[index], seatDraft[swap]] = [seatDraft[swap], seatDraft[index]]; render();
+  }));
+  $('#seat-view')?.addEventListener('click', () => { seatListView = !seatListView; render(); });
+  $('#save-seat-order')?.addEventListener('click', async () => {
+    if (busy || !ready) return;
+    busy = true; setButtons();
+    try { const result = await request('host:reorderSeats', { order: [...seatDraft] }); seatMessage = 'Seat order saved.'; receive(result.state); }
+    catch (error) { seatMessage = error.message; }
+    finally { busy = false; render(); }
+  });
+  const oval = document.querySelector('.reorder-oval');
+  oval?.addEventListener('pointerdown', event => {
+    const seat = event.target.closest('[data-drag-seat]');
+    if (!seat || busy || !ready) return;
+    dragSeat = { from: Number(seat.dataset.dragSeat), to: Number(seat.dataset.dragSeat), pointer: event.pointerId };
+    seat.classList.add('drag-source'); oval.setPointerCapture(event.pointerId); event.preventDefault();
+  });
+  oval?.addEventListener('pointermove', event => {
+    if (!dragSeat) return;
+    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest('[data-drag-seat]');
+    oval.querySelectorAll('.drop-target').forEach(el => el.classList.remove('drop-target'));
+    if (target && oval.contains(target)) { dragSeat.to = Number(target.dataset.dragSeat); target.classList.add('drop-target'); target.setAttribute('data-drop-name', state.players.find(p => p.id === seatDraft[dragSeat.from]).name); }
+  });
+  oval?.addEventListener('pointerup', () => {
+    if (!dragSeat) return;
+    const [id] = seatDraft.splice(dragSeat.from, 1); seatDraft.splice(dragSeat.to, 0, id); dragSeat = null; render();
+  });
+  oval?.addEventListener('pointercancel', () => { dragSeat = null; render(); });
   $('#sit-out').addEventListener('click', () => run('sit-out', { value: !me.sittingOut }));
   $('#leave').addEventListener('click', () => run('leave'));
   document.querySelectorAll('[data-action]').forEach(el => el.addEventListener('click', () => run('action', { type: el.dataset.action })));
   $('#toggle-raise')?.addEventListener('click', () => { raiseOpen = !raiseOpen; render(); });
-  $('#raise-amount')?.addEventListener('input', e => { $('#raise-range').value = e.target.value; });
-  $('#raise-range')?.addEventListener('input', e => { $('#raise-amount').value = e.target.value; });
+  $('#raise-amount')?.addEventListener('input', e => { const range = $('#raise-range'); const amount = Math.min(Number(range.dataset.max), Math.max(Number(range.dataset.min), snapToBlind(Number(e.target.value), Number(range.dataset.blind)))); e.target.value = amount; range.value = sliderPosition(amount, Number(range.dataset.min), Number(range.dataset.max)); });
+  $('#raise-range')?.addEventListener('input', e => { const range = e.target; $('#raise-amount').value = sliderAmount(Number(range.value), Number(range.dataset.min), Number(range.dataset.max), Number(range.dataset.blind)); });
   document.querySelectorAll('[data-quick]').forEach(el => el.addEventListener('click', () => {
     const min = state.legal.minRaiseTo; const max = state.legal.maxRaiseTo;
     const sb = state.settings.smallBlind;
-    const snap = value => Math.ceil(value / sb) * sb;
+    const snap = value => snapToBlind(value, sb);
     const amounts = { min, half: snap(state.currentBet + (pot + state.legal.fullToCall) / 2), pot: snap(state.currentBet + pot + state.legal.fullToCall), 'three-quarter': snap(state.currentBet + (pot + state.legal.fullToCall) * .75), all: max };
     const amount = Math.min(max, Math.max(min, amounts[el.dataset.quick]));
-    $('#raise-amount').value = amount; $('#raise-range').value = amount;
+    $('#raise-amount').value = amount; $('#raise-range').value = sliderPosition(amount, min, max);
   }));
   $('#raise-form')?.addEventListener('submit', event => { event.preventDefault(); run('action', { type: 'raise', amount: Number($('#raise-amount').value) }); });
   $('#settings-form')?.addEventListener('submit', event => {
