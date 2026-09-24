@@ -83,3 +83,9 @@ Every request includes a payload object and receives `{ok:true, ...}` or `{ok:fa
 | `undo` | — | Host |
 
 The server limits each socket to 40 requests/second, payloads to 16 KiB and total live rooms to 1,000. Room codes invite players; seat tokens control an existing seat. This is a casual home-game tool, not a real-money gambling platform.
+
+
+## Visual seating
+
+Play at https://poker-chips-o7n9.onrender.com/ (deployment details in DEPLOY.md). Free-tier cold starts can be slow.
+Seats appear clockwise around an oval, with D/SB/BB markers and a highlighted current actor. Open positions remain visible. Between hands, hosts can drag occupied seats onto another occupied slot or select List view for numbered arrow controls, preview next-hand blinds, then Save order. Saving a changed arrangement resets the next button to the first eligible seat; subsequent hands rotate normally. Everyone receives the saved order immediately.

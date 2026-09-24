@@ -38,3 +38,24 @@ Dials: variance 4 (editorial lobby, stable table grid), motion 2 (state feedback
 - Follow-up: added explicit Small blind / Big blind badges to player seats, using the existing brass styling. They remain visible across streets and all-ins, independently of the current bet amount. Dealer marker remains visible for heads-up dealer/small-blind combinations.
 
 - Publishing follow-up: GitHub repository created at https://github.com/AkhilKarthik143/poker-chips. Existing local token rejects pushes with HTTP 403; publishing the same tracked source through the signed-in GitHub browser session instead. Render is signed in and already sees the repository.
+- Seat reorder follow-up: seating now keeps an explicit ordered `seatOrder` array. The host can reorder only between hands; the reorder assigns the requested order to physical seat indexes and resets the dealer button to seat 0 for the next hand. This deterministic reset was chosen over preserving the previous button seat, and is covered by game/server tests.
+
+
+## Seat visualization follow-up
+
+- Extension of the existing forest/brass system: native type, 12px cards, static directional marker, no external assets. Both game and host control share `seatOval` and the saved clockwise `seatOrder`.
+- At 360px use a tall oval: top/bottom seats and four seats on each side. Ten physical slots (including visible open seats) remain stable across table sizes. Vertical scrolling preserves legibility without overlapping seats.
+- Pointer dragging inserts an occupied seat at the target occupied slot. A ghost named for the dragged player marks the target while moving; numbered list arrows remain the keyboard/touch fallback. Both use the existing revision-protected host socket event.
+- Preserve the prior documented dealer reset on saving a changed arrangement. An unchanged draft previews ordinary rotation from the current dealer; changed drafts preview reset, skipping sitting-out/busted players and applying heads-up rules.
+- Fixed join-after-removal seat-order alignment. Server-side rules remain authoritative. Drafts reset on saved-order broadcasts, and save failures appear inline.
+- Browser acceptance: Chrome at 360px and 1280px, 2/4/6/9/10 players; both oval layouts checked for overlap/clipping, drag/save and next hand exercised, direct socket mid-hand rejection confirmed. Screenshots/harness are in ignored work/. Full suite: 31 passing tests including chip conservation and heads-up reorder/rotation.
+- Reused GitHub AkhilKarthik143/poker-chips and Render poker-chips (srv-daoo6p8473hc73d5nkeg). Live https://poker-chips-o7n9.onrender.com/healthz returned HTTP 200. Git push still returns 403, gh is absent, and the new UI is not live. Exact authentication/push/existing-service deployment steps are in DEPLOY.md. render.yaml remains npm ci / npm start / healthz / Node 20; no runtime change required.
+
+
+## Compact ellipse redesign
+- Coordinates are x = W/2 + radiusX*cos(angle), y = H/2 + radiusY*sin(angle). Ten physical slots include open seats. Occupied players are spread in saved order across slots floor(i*10/playerCount). Angle = pi/2 + 2*pi*(slot-ownSlot)/10, placing the current player at bottom-center with clockwise successors.
+- Card width = min(140, floor((W-24)/4.5)); radiusX = (W-cardWidth-12)/2; radiusY = (H-112)/2. H = 380 for 1–2, 440 for 3–4, 540 for 5–10 occupied players. ResizeObserver remeasures each shared live/reorder oval. Cards are absolute, 100px tall; open slots are 44px tall. Felt uses the same center and radii. Decorative arrow removed.
+- Contrast layers: page #10141b, rail #1d2633, felt #24523f, cards #344357, critical text #f8fafc, action accent #f3cc78. Desktop page max 1536px with 304px rail and game track capped at 1160px (actual 1160px at sufficiently wide viewport).
+- Compact status header replaces gameplay marketing. Fixed safe-area dock provides host Start game, invite/buy-in confirmation, and seat controls; mobile log collapses. Status words/icons, dashed folded/open borders, and You label distinguish states without color.
+- Buy-in remains host controlled. Open slots invite friends; unseated guests review read-only buy-in and confirm joining. Server rejects stale buy-in confirmation. Hand-log timestamps are server-stamped on broadcast, grouped by hand.
+- Browser checks passed 2/4/6/9/10 players at 360/768/1600px: no seat overlap or horizontal clipping, drag/save, next-hand start and mid-hand rejection. 32 unit/integration tests pass.
