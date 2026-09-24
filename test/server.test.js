@@ -103,6 +103,22 @@ test('server rejects out of turn, non-host settings, duplicate/stale intents and
   const bad = await new Promise(resolve => a.emit('action', null, resolve)); assert.equal(bad.ok, false);
 });
 
+test('host can reorder seats between hands and broadcasts the new order', async t => {
+  const { client, server } = await setup(t);
+  const a = await client(); const b = await client(); const c = await client();
+  const created = await ok(a, 'create', { name: 'A' });
+  await ok(b, 'join', { code: created.roomCode, name: 'B' }); await ok(c, 'join', { code: created.roomCode, name: 'C' });
+  await barrier(server, [a, b, c]);
+  const order = [c.state.playerId, a.state.playerId, b.state.playerId];
+  await ok(a, 'host:reorderSeats', { order }); await barrier(server, [a, b, c]);
+  assert.deepEqual(a.state.seatOrder, order); assert.deepEqual(b.state.seatOrder, order); assert.deepEqual(c.state.seatOrder, order);
+  assert.equal((await emit(b, 'host:reorderSeats', { order: order.slice().reverse() })).ok, false);
+  assert.match((await emit(a, 'host:reorderSeats', { order: [order[0], order[0], order[1]] })).error, /Invalid player list/);
+  await ok(a, 'start-hand');
+  const midHand = await emit(a, 'host:reorderSeats', { order });
+  assert.equal(midHand.ok, false); assert.match(midHand.error, /mid-hand/);
+});
+
 test('six-hour idle cleanup removes rooms and tokens', async t => {
   let time = 0;
   const { client, server } = await setup(t, { now: () => time });

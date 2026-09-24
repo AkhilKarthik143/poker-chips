@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createTable, addPlayer, configure, startHand, act, calculatePots, pickWinners, legalActions, undo,
+import { createTable, addPlayer, configure, startHand, act, calculatePots, pickWinners, legalActions, undo, reorderSeats,
   rebuy, setSitOut, removePlayer, assertConservation } from '../src/game.js';
 function table(stacks = [1000, 1000, 1000], options = {}) {
   let s = createTable(options);
@@ -133,6 +133,16 @@ test('raise-to amounts must be multiples of the small blind', () => {
   s = play(s, 'raise', 25);
   assert.equal(s.currentBet, 25);
 });
+
+test('seat reorder changes the next hand order and rejects mid-hand changes', () => {
+  let s = table([100, 100, 100]);
+  const ids = s.players.map(p => p.id);
+  s = reorderSeats(s, [ids[2], ids[0], ids[1]]);
+  assert.deepEqual(s.seatOrder, [ids[2], ids[0], ids[1]]);
+  s = startHand(s);
+  assert.equal(s.dealerSeat, 0); assert.equal(s.smallBlindId, ids[0]); assert.equal(s.bigBlindId, ids[1]);
+  assert.throws(() => reorderSeats(s, ids), /mid-hand/);
+});
 test('chip conservation across 100 deterministic varied hands', () => {
   let seed = 81;
   const random = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 2 ** 32; };
@@ -177,4 +187,22 @@ test('a player who checked can raise a short opening all-in', () => {
   s = play(s, 'check'); s = play(s, 'all-in'); s = play(s, 'call');
   assert.equal(s.turn, '1'); assert.equal(legalActions(s, '1').canRaise, true);
   s = play(s, 'raise', 15); assert.equal(s.currentBet, 15);
+});
+
+
+test('reorder validates all player lists atomically and heads-up uses new order', () => {
+  const original = table([100, 100]);
+  for (const order of [['0'], ['0', '0'], ['0', 'foreign'], null]) {
+    assert.throws(() => reorderSeats(original, order), /Invalid player list/);
+    assert.deepEqual(original.seatOrder, ['0', '1']);
+  }
+  let s = startHand(reorderSeats(original, ['1', '0']));
+  assert.equal(s.smallBlindId, '1'); assert.equal(s.bigBlindId, '0'); assert.equal(s.turn, '1');
+  s = award(checkDown(s)); s = startHand(s);
+  assert.equal(s.smallBlindId, '0'); assert.equal(s.bigBlindId, '1'); assert.equal(s.turn, '0');
+});
+
+test('joining a vacated seat keeps explicit order aligned with physical seats', () => {
+  let s = removePlayer(table(), '1'); s = addPlayer(s, 'new', 'New');
+  assert.deepEqual(s.seatOrder, ['0', 'new', '2']);
 });
