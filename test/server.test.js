@@ -156,3 +156,22 @@ test('a dropped connection keeps its chips; host fold and undo preserve disconne
   assert.equal(restored.state.players.find(p => p.id === guest.playerId).stack, 995);
   await ok(restored, 'action', { type: 'call' });
 });
+
+test('join preview is read-only, hides identities, and rejects a changed buy-in', async t => {
+  const { client, server } = await setup(t, { now: () => 123456 });
+  const a = await client(); const b = await client();
+  const created = await ok(a, 'create', { name: 'Host' });
+  const preview = await ok(b, 'table-preview', { code: created.roomCode });
+  assert.equal(preview.startingStack, 1000); assert.equal(preview.players, 1);
+  assert.equal(preview.playerId, undefined); assert.equal(preview.token, undefined);
+  assert.equal(server.rooms.get(created.roomCode).game.players.length, 1);
+  await ok(a, 'host-settings', { settings: { startingStack: 500 } });
+  const denied = await emit(b, 'join', { code: created.roomCode, name: 'Guest', expectedBuyIn: 1000 });
+  assert.equal(denied.ok, false); assert.match(denied.error, /Buy-in changed/);
+  assert.equal(server.rooms.get(created.roomCode).game.players.length, 1);
+  await ok(b, 'join', { code: created.roomCode, name: 'Guest', expectedBuyIn: 500 });
+  await barrier(server, [a, b]);
+  assert.equal(a.state.log.at(-1).timestamp, 123456);
+  await ok(a, 'start-hand');
+  assert.match((await emit(b, 'table-preview', { code: created.roomCode })).error, /between hands/);
+});
