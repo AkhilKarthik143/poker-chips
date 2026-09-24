@@ -145,6 +145,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     mutate('action', (room, id, payload) => game.act(room.game, id, { type: payload.type, amount: payload.amount }));
     mutate('showdown-pick', (room, _id, payload) => game.pickWinners(room.game, payload.potId, payload.winnerIds), true);
     mutate('host-settings', (room, _id, payload) => game.configure(room.game, payload.settings), true);
+    mutate('host:reorderSeats', (room, _id, payload) => game.reorderSeats(room.game, payload.order), true);
     mutate('undo', room => game.undo(room.game), true);
     mutate('sit-out', (room, id, payload) => game.setSitOut(room.game, id, payload.value));
     mutate('rebuy', (room, _id, payload) => game.rebuy(room.game, payload.playerId, payload.amount), true);

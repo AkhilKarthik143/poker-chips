@@ -37,7 +37,7 @@ function settings(input) {
   return value;
 }
 export function createTable(input = {}) {
-  return { settings: settings(input), players: [], dealerSeat: -1, smallBlindId: null, bigBlindId: null,
+  return { settings: settings(input), players: [], seatOrder: [], dealerSeat: -1, smallBlindId: null, bigBlindId: null,
     street: 'lobby', handNumber: 0, turn: null, currentBet: 0, minRaise: 0, pots: [],
     totalChips: 0, log: [], history: [], blindDeadline: null, lastResult: null };
 }
@@ -57,6 +57,7 @@ export function addPlayer(state, id, name) {
     s.players.push({ id, name: name.trim(), seat, stack: s.settings.startingStack, sittingOut: false,
       inHand: false, folded: false, streetBet: 0, contributed: 0, actedAt: null });
     s.totalChips += s.settings.startingStack;
+    s.seatOrder = [...s.players].sort((a, b) => a.seat - b.seat).map(p => p.id);
     log(s, `${name.trim()} joined the table.`);
   });
 }
@@ -99,7 +100,19 @@ export function removePlayer(state, id) {
     const p = player(s, id);
     s.totalChips -= p.stack;
     s.players = s.players.filter(p => p.id !== id);
+    s.seatOrder = s.seatOrder.filter(playerId => playerId !== id);
     log(s, `${p.name} left with ${p.stack} chips.`);
+  });
+}
+export function reorderSeats(state, newOrder) {
+  check(!isPlaying(state), "Can't reorder seats mid-hand");
+  check(Array.isArray(newOrder) && newOrder.length === state.players.length && new Set(newOrder).size === newOrder.length && newOrder.every(id => state.players.some(p => p.id === id)), 'Invalid player list.');
+  return edit(state, s => {
+    s.seatOrder = [...newOrder];
+    s.seatOrder.forEach((id, seat) => { player(s, id).seat = seat; });
+    // Reordering between hands resets the button to the first physical seat.
+    s.dealerSeat = -1;
+    log(s, 'Host reordered the seats.');
   });
 }
 function pay(state, p, amount) {
