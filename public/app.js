@@ -1,4 +1,4 @@
-/* global io, document, navigator, localStorage, setTimeout, clearTimeout, setInterval */
+/* global io, document, navigator, localStorage, setTimeout, clearTimeout, setInterval, ResizeObserver */
 const $ = selector => document.querySelector(selector);
 const socket = io({ autoConnect: false });
 const STORAGE_KEY = 'tablemate-seat-v1';
@@ -16,6 +16,7 @@ let seatListView = false;
 let seatMessage = '';
 let savedOrderKey = '';
 let dragSeat = null;
+const ellipseObserver = new ResizeObserver(() => positionSeats());
 const number = value => Number(value).toLocaleString();
 const snapToBlind = (value, blind) => Math.ceil(value / blind) * blind;
 const sliderPosition = (amount, min, max) => max <= min ? 0 : Math.round((Math.log(amount / min) / Math.log(max / min)) * 100);
@@ -73,6 +74,7 @@ function receive(value) {
 function reset(message) {
   state = null; lastTurn = null; raiseOpen = false; saveIdentity(null);
   status(socket.connected ? 'Connected' : 'Reconnecting', socket.connected);
+  document.body.classList.remove('in-game');
   $('#table').hidden = true; $('#table').replaceChildren(); $('#lobby').hidden = false; $('#site-footer').hidden = false;
   if (message) toast(message);
 }
@@ -121,13 +123,56 @@ $('#entry-form').addEventListener('submit', async event => {
   try {
     const data = { name: $('#name').value.trim() };
     if (mode === 'create') data.settings = { startingStack: Number($('#starting-stack').value), smallBlind: Number($('#small-blind').value), bigBlind: Number($('#big-blind').value), blindMinutes: Number($('#blind-minutes').value) };
-    else data.code = $('#room-code').value.trim().toUpperCase();
+    else { data.code = $('#room-code').value.trim().toUpperCase(); await previewJoin(data); return; }
     const result = await request(mode, data);
     saveIdentity({ code: result.roomCode, playerId: result.playerId, token: result.token });
     receive(result.state); status('At the table', true);
   } catch (error) { toast(error.message); }
   finally { busy = false; if (state) render(); setButtons(); }
 });
+
+function showDialog(title, content, onConfirm, confirmLabel = 'Confirm') {
+  const dialog = $('#seat-dialog');
+  dialog.innerHTML = `<form id="dialog-form"><h2 id="dialog-title">${escape(title)}</h2>${content}<p id="dialog-error" role="alert"></p><div class="dialog-actions"><button type="button" id="dialog-close">Cancel</button><button type="submit" class="primary">${confirmLabel}</button></div></form>`;
+  $('#dialog-close').onclick = () => dialog.close();
+  $('#dialog-form').onsubmit = async event => {
+    event.preventDefault(); const button = event.submitter; button.disabled = true;
+    try { await onConfirm(); dialog.close(); } catch (error) { $('#dialog-error').textContent = error.message; }
+    finally { button.disabled = false; }
+  };
+  if (!dialog.open) dialog.showModal();
+}
+async function previewJoin(data) {
+  const info = await request('table-preview', { code: data.code });
+  showDialog(`Join table ${data.code}`, `<p>${info.players}/10 players · Blinds ${number(info.smallBlind)}/${number(info.bigBlind)}</p><label for="join-buy-in">Buy-in · virtual chips</label><input id="join-buy-in" value="${info.startingStack}" readonly><p class="helper">The host sets the buy-in for every new player. Confirm to take the next open seat.</p>`, async () => {
+    const result = await request('join', { ...data, expectedBuyIn: info.startingStack });
+    saveIdentity({ code: result.roomCode, playerId: result.playerId, token: result.token }); receive(result.state); status('At the table', true);
+  }, 'Confirm & join');
+}
+function inviteDialog() {
+  const host = state.hostId === state.playerId;
+  showDialog(`Invite to table ${state.roomCode}`, `<p>Share this table code with a friend: <strong>${escape(state.roomCode)}</strong></p><label for="invite-buy-in">Buy-in · virtual chips</label><input id="invite-buy-in" type="number" min="1" max="1000000000" value="${state.settings.startingStack}" ${host ? '' : 'readonly'}><p class="helper">${host ? 'Before the first hand, changing the buy-in updates every seated player. Later, it applies to new players only.' : 'The host sets the buy-in. Friends enter the code using Join a table.'}</p>`, async () => {
+    if (host && Number($('#invite-buy-in').value) !== state.settings.startingStack) {
+      const result = await request('host-settings', { settings: { startingStack: Number($('#invite-buy-in').value) } }); receive(result.state);
+    }
+    try { await navigator.clipboard.writeText(state.roomCode); toast('Table code copied.'); } catch { toast(`Table code: ${state.roomCode}`); }
+  }, host ? 'Confirm & copy code' : 'Copy code');
+}
+function openControls(target) {
+  const panel = document.getElementById(state.hostId === state.playerId ? 'host-menu' : 'your-seat');
+  panel.open = true;
+  const control = document.getElementById(target) || panel.querySelector('summary');
+  control.focus();
+
+}
+function handLog() {
+  let previous = null;
+  return state.log.slice().reverse().map(item => {
+    const group = item.hand !== previous ? `<li class="log-group">${item.hand ? `Hand ${item.hand}` : 'Lobby'}</li>` : ''; previous = item.hand;
+    const time = item.timestamp ? new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Earlier';
+    return `${group}<li><small>${escape(time)} · ${escape(item.street.toUpperCase())}</small>${escape(item.text)}</li>`;
+  }).join('');
+}
 
 const instructions = {
   lobby: 'Share the table code. When everyone is seated, deal your physical cards and start the hand.',
@@ -152,12 +197,37 @@ function nextAssignments(order, changed) {
 function seatOval(order, editing) {
   const playing = !['lobby', 'complete'].includes(state.street);
   const roles = editing ? nextAssignments(order, JSON.stringify(order) !== JSON.stringify(state.seatOrder)) : { D: state.players.find(p => p.seat === state.dealerSeat)?.id, SB: state.smallBlindId, BB: state.bigBlindId };
-  return `<div class="seat-oval ${editing ? 'reorder-oval' : 'live-oval'}" aria-label="${editing ? 'Arrange seats' : 'Clockwise seat order'}"><div class="table-felt"><span>↻</span><small>CLOCKWISE</small>${editing ? '<small>NEXT HAND</small>' : ''}</div>${Array.from({ length: 10 }, (_, index) => {
-    const p = state.players.find(player => player.id === order[index]);
-    if (!p) return `<article class="oval-seat slot-${index} open-seat"><small>${index + 1}</small><span>Open seat</span></article>`;
-    const status = playing && p.folded ? 'Folded' : playing && p.inHand && p.stack === 0 ? 'All-in' : p.sittingOut ? 'Sitting out' : !p.connected ? 'Disconnected' : p.id === state.turn ? 'To act' : 'Ready';
-    return `<article class="oval-seat slot-${index} ${!editing && p.id === state.turn ? 'acting' : ''}" ${editing ? `data-drag-seat="${index}"` : ''}><div class="oval-name"><small>${index + 1}</small><strong>${escape(p.name)}</strong></div><div class="seat-roles">${Object.entries(roles).filter(([, id]) => id === p.id).map(([role]) => `<span class="role-${role}" title="${role === 'D' ? 'Dealer' : role === 'SB' ? 'Small blind' : 'Big blind'}">${role}</span>`).join('')}</div><strong class="oval-stack">${number(p.stack)}</strong><small>Bet ${number(p.streetBet)}</small><span class="oval-status">${status}</span></article>`;
+  return `<div class="seat-oval ${editing ? 'reorder-oval' : 'live-oval'}" aria-label="${editing ? 'Arrange seats' : 'Clockwise seat order'}"><div class="table-felt" aria-hidden="true"></div>${Array.from({ length: 10 }, (_, index) => {
+    const orderIndex = order.findIndex((_id, i) => Math.floor(i * 10 / order.length) === index);
+    const p = state.players.find(player => player.id === order[orderIndex]);
+    if (!p) return `<button type="button" class="oval-seat slot-${index} open-seat" data-open-seat ${playing || editing ? 'disabled' : ''}><strong>+ Open seat</strong><small>${index + 1}</small></button>`;
+    const status = playing && p.folded ? '× Folded' : playing && p.inHand && p.stack === 0 ? '◆ All-in' : p.sittingOut ? 'Ⅱ Away' : !p.connected ? '○ Offline' : p.id === state.turn ? '▶ To act' : playing ? '● In hand' : '✓ Ready';
+    return `<article class="oval-seat slot-${index} ${!editing && p.id === state.turn ? 'acting' : ''} ${p.id === state.playerId ? 'my-seat' : ''} ${playing && p.folded ? 'folded-seat' : ''}" ${editing ? `data-drag-seat="${orderIndex}"` : ''}><div class="oval-name"><small>${orderIndex + 1}</small><strong title="${escape(p.name)}">${escape(p.name)}</strong></div><span class="seat-owner">${p.id === state.playerId ? `You • Seat ${orderIndex + 1}` : `Seat ${orderIndex + 1}`}</span><div class="seat-roles">${Object.entries(roles).filter(([, id]) => id === p.id).map(([role]) => `<span class="role-${role}" title="${role === 'D' ? 'Dealer' : role === 'SB' ? 'Small blind' : 'Big blind'}">${role}</span>`).join('')}</div><strong class="oval-stack">${number(p.stack)}</strong><small>Bet ${number(p.streetBet)}</small><span class="oval-status ${!playing && p.connected && !p.sittingOut ? 'ready-pill' : ''}">${status}</span></article>`;
   }).join('')}</div>`;
+}
+function positionSeats() {
+  document.querySelectorAll('.seat-oval').forEach(oval => {
+    const width = oval.clientWidth;
+    const occupied = oval.querySelectorAll('.oval-seat:not(.open-seat)').length;
+    const cardWidth = Math.min(140, Math.floor((width - 24) / 4.5));
+    const height = occupied <= 2 ? 380 : occupied <= 4 ? 440 : 540;
+    const rx = (width - cardWidth - 12) / 2;
+    const ry = (height - 112) / 2;
+    oval.style.height = `${height}px`;
+    const mine = oval.querySelector('.my-seat');
+    const ownSlot = mine ? Number([...mine.classList].find(c => c.startsWith('slot-')).slice(5)) : 0;
+    oval.querySelectorAll('.oval-seat').forEach(seat => {
+      const slot = Number([...seat.classList].find(c => c.startsWith('slot-')).slice(5));
+      const angle = Math.PI / 2 + 2 * Math.PI * (slot - ownSlot) / 10;
+      seat.style.left = `${width / 2 + rx * Math.cos(angle)}px`;
+      seat.style.top = `${height / 2 + ry * Math.sin(angle)}px`;
+      seat.style.width = `${cardWidth}px`;
+      const stack = seat.querySelector('.oval-stack');
+      if (stack) stack.style.fontSize = `${Math.min(22, (cardWidth - 14) / (stack.textContent.length * .65))}px`;
+    });
+    const felt = oval.querySelector('.table-felt');
+    felt.style.width = `${2 * rx}px`; felt.style.height = `${2 * ry}px`;
+  });
 }
 function render() {
   if (!state) return;
@@ -169,33 +239,36 @@ function render() {
   const total = state.players.reduce((sum, p) => sum + p.contributed, 0);
   const detailsOpen = new Set([...document.querySelectorAll('#table details[open]')].map(el => el.id));
   const choices = [...document.querySelectorAll('.winner-form input:checked')].map(el => el.id);
+  document.body.classList.add('in-game');
   $('#lobby').hidden = true; $('#site-footer').hidden = true; $('#table').hidden = false;
   $('#table').innerHTML = `
     ${!ready ? '<div class="reconnect-banner" role="status">Reconnecting… Your seat and chips are saved. Actions will return when the table is in sync.</div>' : ''}
-    <div class="table-heading"><div><p class="eyebrow">PHYSICAL CARDS. VIRTUAL CHIPS.</p><h1>${state.street === 'lobby' ? 'Good company, good game.' : `Hand ${String(state.handNumber).padStart(2, '0')}`}</h1></div>
-      <button class="room-button quiet" id="copy-code" aria-label="Copy table code ${escape(state.roomCode)}"><span>TABLE CODE<br>Tap to copy</span><strong>${escape(state.roomCode)}</strong></button></div>
+    <header class="table-heading"><h1>Table <strong>${escape(state.roomCode)}</strong></h1><span>${state.players.length}/10 players</span><span>Blinds <strong>${number(state.settings.smallBlind)}/${number(state.settings.bigBlind)}</strong></span><button id="copy-code">Copy code</button><button id="table-settings">${host ? 'Settings' : 'Your seat'}</button></header>
     <div class="table-layout"><section class="play-area" aria-label="Poker table">
-      <div class="pot-board"><div class="streets" aria-label="Betting street">${['preflop', 'flop', 'turn', 'river', 'showdown'].map(street => `<span class="${state.street === street ? 'current' : ''}" ${state.street === street ? 'aria-current="step"' : ''}>${street.toUpperCase()}</span>`).join('')}</div>
-        <p class="pot-label">${state.street === 'complete' ? 'Last hand’s pot' : 'In the middle'}</p><div class="pot-number">${number(state.street === 'complete' ? state.lastResult.total : total)}</div>
+      <div class="table-stage"><div class="pot-board ${playing ? 'live-pot' : 'waiting-pot'}"><div class="streets" aria-label="Betting street">${['preflop', 'flop', 'turn', 'river', 'showdown'].map(street => `<span class="${state.street === street ? 'current' : ''}" ${state.street === street ? 'aria-current="step"' : ''}>${state.street === street ? '• ' : ''}${street.toUpperCase()}</span>`).join('')}</div>
+        ${playing ? `<p class="pot-label">Hand ${state.handNumber} · Total pot</p><div class="pot-number">${number(total)}</div><span class="pot-unit">CHIPS</span>` : `<p class="pot-label">${state.street === 'complete' ? 'Hand complete' : 'Your table is open'}</p><h2>${state.players.length < 2 ? 'Waiting for players' : host ? 'Ready to deal' : 'Waiting for host to start'}</h2><p>${state.players.filter(p => p.stack > 0 && !p.sittingOut).length} players ready</p>`}
         <p class="street-instruction" aria-live="polite">${instructions[state.street]}</p>
         ${state.street === 'showdown' && state.pots.length > 1 ? `<div class="pot-summary">${state.pots.map((p, i) => `<span>${i ? `Side pot ${i}` : 'Main pot'} · ${number(p.amount)}</span>`).join('')}</div>` : ''}</div>
-      <div class="table-meta"><span>${state.players.length}/10 seated · Blinds ${number(state.settings.smallBlind)}/${number(state.settings.bigBlind)}</span><span id="blind-clock"></span></div>
-      ${seatOval(state.seatOrder, false)}
+      ${seatOval(state.seatOrder, false)}</div><div class="table-meta"><span>Action moves clockwise</span><span id="blind-clock"></span></div>
       ${state.lastResult && state.street === 'complete' ? `<section class="result"><h2>That’s a hand.</h2>${state.lastResult.awards.map(a => `<p>${escape(state.players.find(p => p.id === a.id)?.name || 'Departed player')} <strong>+${number(a.amount)}</strong> · ${escape(a.label)}</p>`).join('')}</section>` : ''}
-      ${!playing ? `<div class="start-panel"><p>${host ? 'Deal the physical hole cards, then start betting. The button and blinds move automatically.' : 'Get your cards ready. Your host will start the next hand.'}</p>${host ? `<button id="start-hand" class="primary" ${state.players.filter(p => p.stack > 0 && !p.sittingOut).length < 2 ? 'disabled' : ''}>${state.handNumber ? 'Start next hand' : 'Start first hand'} <span aria-hidden="true">→</span></button>` : ''}</div>` : ''}
       ${state.street === 'showdown' ? `<section class="showdown"><h2>Who takes the pot?</h2><p class="helper">${host ? 'Select every tied winner for each pot. Chips settle after all pots are assigned; odd chips go left of the dealer.' : 'The host is selecting winners from the physical cards.'}</p>${state.pots.map((pot, index) => `<form class="winner-form" data-pot="${pot.id}"><h3>${index ? `Side pot ${index}` : 'Main pot'} · ${number(pot.amount)} chips</h3>${pot.winners ? `<p class="helper">Selected: ${pot.winners.map(id => escape(state.players.find(p => p.id === id).name)).join(' + ')}</p>` : pot.eligible.map(id => `<label for="winner-${pot.id}-${id}"><input id="winner-${pot.id}-${id}" type="checkbox" name="winner" value="${escape(id)}" ${!host ? 'disabled' : ''}>${escape(state.players.find(p => p.id === id).name)}</label>`).join('')}${host && !pot.winners ? '<button class="primary" type="submit">Confirm winner(s)</button>' : ''}</form>`).join('')}</section>` : ''}
     </section><aside class="sidebar">
-      <section class="panel"><h2 class="panel-title">From the table <span class="eyebrow"> / HAND LOG</span></h2><ol class="log-list">${state.log.slice().reverse().map(item => `<li><small>${item.hand ? `HAND ${String(item.hand).padStart(2, '0')}` : 'LOBBY'} · ${escape(item.street).toUpperCase()} · POT ${number(item.pot)}</small>${escape(item.text)}</li>`).join('')}</ol></section>
+      <details class="panel" id="players-panel" open><summary>Players <span>${state.players.length}/10</span></summary><ul class="players-list">${state.seatOrder.map(id => { const p = state.players.find(p => p.id === id); return `<li><strong>${escape(p.name)}${p.id === state.playerId ? ' · You' : ''}</strong><span>${p.sittingOut ? 'Ⅱ Away' : p.connected ? '✓ Connected' : '○ Offline'}</span></li>`; }).join('')}</ul></details>
+      <details class="panel" id="hand-log"><summary>Hand log <span>Hand ${state.handNumber}</span></summary><ol class="log-list">${handLog()}</ol></details>
       ${host ? hostPanel(playing, actor) : ''}
       <details class="panel" id="your-seat"><summary>Your seat</summary><div class="panel-content"><p class="helper">${playing ? 'Sit out applies from the next hand. Leave and rebuy between hands.' : 'Ask your host for a rebuy or add-on.'}</p><button id="sit-out">${me.sittingOut ? 'Play next hand' : 'Sit out next hand'}</button><button id="leave" class="quiet danger" ${playing ? 'disabled' : ''}>Leave table</button></div></details>
     </aside></div>
-    <section class="dock" aria-label="Your betting controls"><div class="dock-inner"><div class="dock-summary"><div class="turn-label ${state.legal.active ? '' : 'waiting'}" role="status">${!ready ? 'RECONNECTING' : state.legal.active ? 'YOUR TURN' : state.street === 'showdown' ? 'SHOWDOWN' : actor ? `${escape(actor.name).toUpperCase()} TO ACT` : 'MAKE YOURSELF AT HOME'}</div><div class="balance"><span>Your stack</span><strong>${number(me.stack)}</strong></div><div class="balance"><span>To call</span><strong>${number(state.legal.toCall)}</strong></div></div>
+    <section class="dock" aria-label="Your betting controls"><div class="dock-inner"><div class="dock-summary"><div class="turn-label ${state.legal.active ? '' : 'waiting'}" role="status">${!ready ? 'RECONNECTING' : state.legal.active ? 'YOUR TURN' : state.street === 'showdown' ? 'SHOWDOWN' : actor ? `${escape(actor.name).toUpperCase()} TO ACT` : host ? 'HOST · TABLE CONTROLS' : 'WAITING FOR HOST'}</div><div class="balance"><span>Your stack</span><strong>${number(me.stack)}</strong></div><div class="balance"><span>To call</span><strong>${number(state.legal.toCall)}</strong></div></div>
+      ${!playing ? `<div class="lobby-actions"><button id="invite-players">Invite players</button><button id="change-seat">Change seat</button><button id="set-buy-in">${host ? 'Set buy-in' : 'View buy-in'}</button>${host ? `<button id="start-hand" class="primary" ${state.players.filter(p => p.stack > 0 && !p.sittingOut).length < 2 ? 'disabled' : ''}>${state.handNumber ? 'Start next hand' : 'Start game'} →</button>` : '<span class="helper">Your host starts the hand.</span>'}</div>` : ''}
       ${state.turn ? `<div class="actions"><button data-action="fold" class="quiet" ${!state.legal.active ? 'disabled' : ''}>Fold</button><button data-action="${state.legal.canCheck ? 'check' : 'call'}" class="primary" ${!state.legal.active ? 'disabled' : ''}>${state.legal.canCheck ? 'Check' : `Call ${number(state.legal.toCall)}`}</button><button id="toggle-raise" aria-expanded="${raiseOpen}" ${!state.legal.canRaise ? 'disabled' : ''}>${state.currentBet ? 'Raise' : 'Bet'}</button><button data-action="all-in" class="all-in" ${!state.legal.canAllIn ? 'disabled' : ''}>All-in</button></div>` : ''}
       ${raiseOpen && state.legal.canRaise ? (() => { const min = Math.min(state.legal.minRaiseTo, state.legal.maxRaiseTo); const max = state.legal.maxRaiseTo; return `<form id="raise-form" class="raise-panel"><div><label for="raise-amount">${state.currentBet ? 'Raise' : 'Bet'} to · multiples of ${number(state.settings.smallBlind)}</label><div class="raise-controls"><input id="raise-range" type="range" aria-label="Raise amount slider (logarithmic)" min="0" max="100" value="${sliderPosition(min, min, max)}" step="1" data-min="${min}" data-max="${max}" data-blind="${state.settings.smallBlind}"><input id="raise-amount" aria-label="Raise to amount" type="number" min="${min}" max="${max}" value="${min}" step="${state.settings.smallBlind}" required></div></div><button class="primary raise-submit" type="submit">Confirm</button><div class="quick-bets"><button type="button" data-quick="min">Min</button><button type="button" data-quick="half">½ pot</button><button type="button" data-quick="pot">Pot</button><button type="button" data-quick="three-quarter">¾ pot</button><button type="button" data-quick="all">All-in</button></div></form>`; })() : ''}
     </div></section>`;
   for (const id of detailsOpen) { const el = document.getElementById(id); if (el) el.open = true; }
   for (const id of choices) { const el = document.getElementById(id); if (el) el.checked = true; }
   wireTable(me, total); updateClock(); setButtons();
+  ellipseObserver.disconnect();
+  document.querySelectorAll('.seat-oval').forEach(el => ellipseObserver.observe(el));
+  positionSeats();
 }
 function hostPanel(playing, actor) {
   const changed = JSON.stringify(seatDraft) !== JSON.stringify(state.seatOrder);
@@ -213,6 +286,11 @@ function wireTable(me, pot) {
     try { await navigator.clipboard.writeText(state.roomCode); toast(`Table code ${state.roomCode} copied.`); }
     catch { toast(`Your table code is ${state.roomCode}.`); }
   });
+  $('#table-settings').addEventListener('click', () => openControls('host-stack'));
+  $('#invite-players')?.addEventListener('click', inviteDialog);
+  $('#set-buy-in')?.addEventListener('click', inviteDialog);
+  $('#change-seat')?.addEventListener('click', () => { openControls('seat-view'); if (state.hostId !== state.playerId) toast('Ask the host to change the seat order between hands.'); });
+  document.querySelectorAll('[data-open-seat]').forEach(button => button.addEventListener('click', inviteDialog));
   $('#start-hand')?.addEventListener('click', () => run('start-hand'));
   $('#undo')?.addEventListener('click', () => run('undo'));
   $('#host-fold')?.addEventListener('click', () => run('host-fold'));
