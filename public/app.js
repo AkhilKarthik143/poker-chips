@@ -197,10 +197,9 @@ function nextAssignments(order, changed) {
 function seatOval(order, editing) {
   const playing = !['lobby', 'complete'].includes(state.street);
   const roles = editing ? nextAssignments(order, JSON.stringify(order) !== JSON.stringify(state.seatOrder)) : { D: state.players.find(p => p.seat === state.dealerSeat)?.id, SB: state.smallBlindId, BB: state.bigBlindId };
-  return `<div class="seat-oval ${editing ? 'reorder-oval' : 'live-oval'}" aria-label="${editing ? 'Arrange seats' : 'Clockwise seat order'}"><div class="table-felt" aria-hidden="true"></div>${Array.from({ length: 10 }, (_, index) => {
-    const orderIndex = order.findIndex((_id, i) => Math.floor(i * 10 / order.length) === index);
-    const p = state.players.find(player => player.id === order[orderIndex]);
-    if (!p) return `<button type="button" class="oval-seat slot-${index} open-seat" data-open-seat ${playing || editing ? 'disabled' : ''}><strong>+ Open seat</strong><small>${index + 1}</small></button>`;
+  return `<div class="seat-oval ${editing ? 'reorder-oval' : 'live-oval'}" aria-label="${editing ? 'Arrange seats' : 'Clockwise seat order'}"><div class="table-felt" aria-hidden="true"></div>${order.map((id, index) => {
+    const orderIndex = index;
+    const p = state.players.find(player => player.id === id);
     const status = playing && p.folded ? '× Folded' : playing && p.inHand && p.stack === 0 ? '◆ All-in' : p.sittingOut ? 'Ⅱ Away' : !p.connected ? '○ Offline' : p.id === state.turn ? '▶ To act' : playing ? '● In hand' : '✓ Ready';
     return `<article class="oval-seat slot-${index} ${!editing && p.id === state.turn ? 'acting' : ''} ${p.id === state.playerId ? 'my-seat' : ''} ${playing && p.folded ? 'folded-seat' : ''}" ${editing ? `data-drag-seat="${orderIndex}"` : ''}><div class="oval-name"><small>${orderIndex + 1}</small><strong title="${escape(p.name)}">${escape(p.name)}</strong></div><span class="seat-owner">${p.id === state.playerId ? `You • Seat ${orderIndex + 1}` : `Seat ${orderIndex + 1}`}</span><div class="seat-roles">${Object.entries(roles).filter(([, id]) => id === p.id).map(([role]) => `<span class="role-${role}" title="${role === 'D' ? 'Dealer' : role === 'SB' ? 'Small blind' : 'Big blind'}">${role}</span>`).join('')}</div><strong class="oval-stack">${number(p.stack)}</strong><small>Bet ${number(p.streetBet)}</small><span class="oval-status ${!playing && p.connected && !p.sittingOut ? 'ready-pill' : ''}">${status}</span></article>`;
   }).join('')}</div>`;
@@ -208,9 +207,9 @@ function seatOval(order, editing) {
 function positionSeats() {
   document.querySelectorAll('.seat-oval').forEach(oval => {
     const width = oval.clientWidth;
-    const occupied = oval.querySelectorAll('.oval-seat:not(.open-seat)').length;
+    const occupied = oval.querySelectorAll('.oval-seat').length;
     const cardWidth = Math.min(140, Math.floor((width - 24) / 4.5));
-    const height = occupied <= 2 ? 380 : occupied <= 4 ? 440 : 540;
+    const height = occupied <= 2 ? 380 : occupied <= 4 ? 440 : occupied === 9 ? 580 : 540;
     const rx = (width - cardWidth - 12) / 2;
     const ry = (height - 112) / 2;
     oval.style.height = `${height}px`;
@@ -218,7 +217,7 @@ function positionSeats() {
     const ownSlot = mine ? Number([...mine.classList].find(c => c.startsWith('slot-')).slice(5)) : 0;
     oval.querySelectorAll('.oval-seat').forEach(seat => {
       const slot = Number([...seat.classList].find(c => c.startsWith('slot-')).slice(5));
-      const angle = Math.PI / 2 + 2 * Math.PI * (slot - ownSlot) / 10;
+      const angle = Math.PI / 2 + 2 * Math.PI * (slot - ownSlot) / occupied;
       seat.style.left = `${width / 2 + rx * Math.cos(angle)}px`;
       seat.style.top = `${height / 2 + ry * Math.sin(angle)}px`;
       seat.style.width = `${cardWidth}px`;
