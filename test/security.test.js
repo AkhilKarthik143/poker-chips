@@ -99,3 +99,10 @@ test('development accepts same-origin LAN clients while rejecting foreign origin
   await client({extraHeaders:{Host:'192.168.1.50:3000',Origin:'http://192.168.1.50:3000'}});
   await assert.rejects(client({extraHeaders:{Host:'192.168.1.50:3000',Origin:'http://attacker.example'}}));
 });
+
+test('same-origin polling bootstrap works without an Origin header', async t => {
+  const origin='https://poker-chips-o7n9.onrender.com';const {url}=await setup(t,{allowedOrigins:[origin]});
+  const response=await fetch(url+'/socket.io/?EIO=4&transport=polling',{headers:{'Sec-Fetch-Site':'same-origin',Referer:origin+'/'}});
+  assert.equal(response.status,200);assert.match(await response.text(),/^0/);
+  assert.equal((await fetch(url+'/socket.io/?EIO=4&transport=polling',{headers:{'Sec-Fetch-Site':'cross-site',Referer:'https://attacker.example/'}})).status,403);
+});
