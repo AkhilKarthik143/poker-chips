@@ -7,9 +7,10 @@ const address = await service.listen();
 const sockets = [];
 let latest;
 async function send(socket, event, payload = {}) {
-  const reply = await new Promise((resolve, reject) => socket.timeout(3000).emit(event, { revision: latest?.revision, ...payload }, (error, value) => error ? reject(error) : resolve(value)));
+  const reply = await new Promise((resolve, reject) => socket.timeout(3000).emit(event, { ...(!['create', 'join'].includes(event) ? { revision: latest?.revision, token: socket.token } : {}), ...payload }, (error, value) => error ? reject(error) : resolve(value)));
   assert.equal(reply.ok, true, reply.error);
   if (reply.state) latest = reply.state;
+  if (reply.token) socket.token = reply.token;
   return reply;
 }
 try {
