@@ -18,7 +18,13 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     : !origin || origin === `http://${requestHost}` || origin === `https://${requestHost}`;
   const io = new Server(httpServer, { maxHttpBufferSize: 16_384,
     cors: { origin: (origin, cb) => cb(null, allowedOrigins ? allowedOrigins.includes(origin) : true) },
-    allowRequest: (req, cb) => cb(null, originAllowed(req.headers.origin, req.headers.host)) });
+    allowRequest: (req, cb) => {
+      let origin = req.headers.origin;
+      if (!origin && req.headers['sec-fetch-site'] === 'same-origin') {
+        try { origin = new URL(req.headers.referer).origin; } catch { /* Invalid/missing referrer remains denied in production. */ }
+      }
+      cb(null, originAllowed(origin, req.headers.host));
+    } });
   const attempts = new Map();
   function entryLimit(socket, event) {
     const forwarded = socket.handshake.headers['x-forwarded-for'];
