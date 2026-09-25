@@ -1,8 +1,9 @@
+import { RequestError, validName, normalizedName } from './validation.js';
 /** Pure, immutable Hold'em chip accounting. IDs and time are supplied by callers. */
 export const STREETS = ['preflop', 'flop', 'turn', 'river'];
 const MAX_CHIPS = 1_000_000_000_000;
 const MAX_SETTING = 1_000_000_000;
-const check = (condition, message) => { if (!condition) throw new Error(message); };
+const check = (condition, message) => { if (!condition) throw new RequestError(message); };
 const integer = (n, min = 1, max = MAX_CHIPS) => Number.isSafeInteger(n) && n >= min && n <= max;
 export const isPlaying = state => STREETS.includes(state.street) || state.street === 'showdown';
 const player = (state, id) => {
@@ -51,7 +52,9 @@ export function addPlayer(state, id, name) {
   check(state.players.length < 10, 'This table has 10 players.');
   check(state.totalChips + state.settings.startingStack <= MAX_CHIPS, 'Table chip limit reached.');
   check(typeof id === 'string' && id.length > 0 && !state.players.some(p => p.id === id), 'Invalid or duplicate player.');
-  check(typeof name === 'string' && name.trim().length > 0 && name.trim().length <= 24, 'Name must be 1–24 characters.');
+  check(validName(name), 'Name must be 1–20 characters without control characters or angle brackets.');
+  name = normalizedName(name);
+  check(!state.players.some(p => normalizedName(p.name).toLowerCase() === name.toLowerCase()), 'Name already taken in this room');
   return edit(state, s => {
     const seat = Array.from({ length: 10 }, (_, i) => i).find(i => !s.players.some(p => p.seat === i));
     s.players.push({ id, name: name.trim(), seat, stack: s.settings.startingStack, sittingOut: false,
@@ -265,7 +268,7 @@ export function act(state, id, intent) {
       s.currentBet = target;
       p.actedAt = target;
       log(s, `${p.name} ${type === 'all-in' || p.stack === 0 ? 'goes all-in' : 'raises'} to ${target}.`);
-    } else throw new Error('Unknown action.');
+    } else throw new RequestError('Unknown action.');
     progress(s, p.seat);
   }, true);
 }

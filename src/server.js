@@ -5,22 +5,39 @@ import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { Server } from 'socket.io';
 import * as game from './game.js';
+import { RequestError, requireValue, validatePayload, entryEvents } from './validation.js';
 
 const SIX_HOURS = 6 * 60 * 60 * 1000;
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
-const requireValue = (condition, message) => { if (!condition) throw new Error(message); };
 const safeTokenEqual = (a, b) => typeof a === 'string' && typeof b === 'string' && a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
 
-export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupIntervalMs = 60_000 } = {}) {
+export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupIntervalMs = 60_000, allowedOrigins = process.env.NODE_ENV === 'production' ? [process.env.RENDER_EXTERNAL_URL || 'https://poker-chips-o7n9.onrender.com'] : null, trustProxy = process.env.RENDER === 'true', logError = error => process.stderr.write(`${error.stack}\n`) } = {}) {
   const app = express();
   const httpServer = createHttpServer(app);
-  const io = new Server(httpServer, { maxHttpBufferSize: 16_384 });
+  const originAllowed = (origin, requestHost) => allowedOrigins ? allowedOrigins.includes(origin)
+    : !origin || origin === `http://${requestHost}` || origin === `https://${requestHost}`;
+  const io = new Server(httpServer, { maxHttpBufferSize: 16_384,
+    cors: { origin: (origin, cb) => cb(null, allowedOrigins ? allowedOrigins.includes(origin) : true) },
+    allowRequest: (req, cb) => cb(null, originAllowed(req.headers.origin, req.headers.host)) });
+  const attempts = new Map();
+  function entryLimit(socket, event) {
+    const forwarded = socket.handshake.headers['x-forwarded-for'];
+    // Render is the single trusted edge; use its appended hop, never client-prepended entries.
+    const ip = trustProxy && typeof forwarded === 'string' ? forwarded.split(',').at(-1).trim() : socket.handshake.address;
+    const key = `${ip}:${event === 'create' ? 'create' : 'join'}`;
+    let bucket = attempts.get(key);
+    if (!bucket || now() - bucket.start >= 60_000) {
+      requireValue(attempts.has(key) || attempts.size < 10_000, 'Too many requests. Try again in a moment.');
+      bucket = { start: now(), count: 0 }; attempts.set(key, bucket);
+    }
+    requireValue(++bucket.count <= (event === 'create' ? 12 : 30), 'Too many requests. Try again in a moment.');
+  }
   const rooms = new Map();
   app.disable('x-powered-by');
   app.use((_req, res, next) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'same-origin');
-    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self' ws: wss:; img-src 'self' data:; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
     next();
   });
   app.get('/healthz', (_req, res) => res.status(200).json({ ok: true }));
@@ -56,10 +73,11 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     socket.data.identity = { code: room.code, id };
     room.lastActive = now();
   }
-  function member(socket) {
+  function member(socket, payload) {
     const identity = socket.data.identity;
     const room = rooms.get(identity?.code);
     requireValue(room && room.connections.get(identity.id) === socket.id, 'Rejoin the room to continue.');
+    requireValue(safeTokenEqual(room.tokens.get(identity.id), payload.token), 'Seat token is invalid. Rejoin the room to continue.');
     return { room, id: identity.id };
   }
   function host(room, id) { requireValue(room.hostId === id, 'Only the host can do that.'); }
@@ -73,6 +91,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     room.tokens.delete(id);
   }
   function sweep() {
+    for (const [key, bucket] of attempts) if (now() - bucket.start >= 60_000) attempts.delete(key);
     for (const [code, room] of rooms) {
       if (now() - room.lastActive >= idleMs) {
         for (const id of [...room.connections.keys()]) detach(room, id, 'Room expired after six hours of inactivity.');
@@ -92,11 +111,15 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
         try {
           if (now() - windowStart >= 1000) { windowStart = now(); requests = 0; }
           requireValue(++requests <= 40, 'Too many requests. Try again in a moment.');
-          requireValue(payload && typeof payload === 'object' && !Array.isArray(payload), 'Invalid request.');
+          if (entryEvents.has(event)) entryLimit(socket, event);
+          validatePayload(event, payload);
           const response = fn(payload);
           ack({ ok: true, ...response });
         } catch (error) {
-          ack({ ok: false, error: error.message });
+          const message = error instanceof RequestError ? error.message : 'Something went wrong. Please try again.';
+          if (!(error instanceof RequestError)) logError(error);
+          socket.emit('request-error', { event, error: message });
+          ack({ ok: false, error: message });
         }
       });
     }
@@ -106,23 +129,23 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
       const id = randomUUID();
       const state = game.addPlayer(game.createTable(payload.settings), id, payload.name);
       let code;
-      do { code = Array.from({ length: 4 }, () => ALPHABET[randomInt(ALPHABET.length)]).join(''); } while (rooms.has(code));
+      do { code = Array.from({ length: 8 }, () => ALPHABET[randomInt(ALPHABET.length)]).join(''); } while (rooms.has(code));
       const token = randomBytes(32).toString('hex');
       const room = { code, hostId: id, game: state, tokens: new Map([[id, token]]), connections: new Map(), lastActive: now(), revision: 0 };
       rooms.set(code, room); bind(socket, room, id); broadcast(room);
       return { token, playerId: id, roomCode: code, state: view(room, id) };
     });
     on('table-preview', payload => {
-      const room = rooms.get(String(payload.code || '').trim().toUpperCase());
-      requireValue(room, 'Room not found. Check the four-letter code.');
+      const room = rooms.get(payload.code.toUpperCase());
+      requireValue(room, 'Room not found. Check the eight-letter code.');
       requireValue(!game.isPlaying(room.game), 'Join between hands.');
       requireValue(room.game.players.length < 10, 'This table has 10 players.');
       return { players: room.game.players.length, ...room.game.settings };
     });
     on('join', payload => {
       requireValue(!socket.data.identity, 'Leave your current table first.');
-      const room = rooms.get(String(payload.code || '').trim().toUpperCase());
-      requireValue(room, 'Room not found. Check the four-letter code.');
+      const room = rooms.get(payload.code.toUpperCase());
+      requireValue(room, 'Room not found. Check the eight-letter code.');
       requireValue(payload.expectedBuyIn === undefined || payload.expectedBuyIn === room.game.settings.startingStack, 'Buy-in changed. Review the table and confirm again.');
       const id = randomUUID();
       room.game = game.addPlayer(room.game, id, payload.name);
@@ -133,7 +156,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     });
     on('rejoin', payload => {
       requireValue(!socket.data.identity, 'Already seated on this connection.');
-      const room = rooms.get(String(payload.code || '').toUpperCase());
+      const room = rooms.get(payload.code.toUpperCase());
       requireValue(room, 'Room no longer exists. Create a new table.');
       requireValue(safeTokenEqual(room.tokens.get(payload.playerId), payload.token), 'Seat token is invalid.');
       bind(socket, room, payload.playerId); broadcast(room);
@@ -141,7 +164,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     });
     function mutate(event, fn, hostOnly = false) {
       on(event, payload => {
-        const { room, id } = member(socket);
+        const { room, id } = member(socket, payload);
         if (hostOnly) host(room, id);
         requireValue(payload.revision === room.revision, 'Table changed. Please try again.');
         const nextState = fn(room, id, payload);
@@ -163,7 +186,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
       return game.act(room.game, room.game.turn, { type: 'fold' });
     }, true);
     on('leave', payload => {
-      const { room, id } = member(socket);
+      const { room, id } = member(socket, payload);
       requireValue(payload.revision === room.revision, 'Table changed. Please try again.');
       room.game = game.removePlayer(room.game, id);
       detach(room, id, 'You left the table.'); room.revision++; room.lastActive = now();
