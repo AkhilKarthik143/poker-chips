@@ -60,3 +60,6 @@ curl --fail --show-error https://poker-chips-o7n9.onrender.com/app.js | grep 'fu
 ```
 
 Health must return `{"ok":true}`. The second check verifies the ellipse-layout release. Free instances sleep after inactivity; first load may be slow and in-memory rooms disappear on restart.
+
+### Security release
+Production origin is RENDER_EXTERNAL_URL, falling back to https://poker-chips-o7n9.onrender.com. Add a custom domain to the allowedOrigins server configuration before using it. Render supplies the trusted edge; only its last forwarded IP hop is used when RENDER=true. HTTPS and same-origin Socket.IO select WSS automatically. Eight-letter room codes and explicit per-action tokens require the updated public/app.js and public/index.html alongside src/validation.js, game.js and server.js. Rooms are in memory and restart on deployment; reconnecting to an expired room returns to entry.

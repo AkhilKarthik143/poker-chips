@@ -5,7 +5,7 @@ Physical cards. Virtual chips. A mobile-first chip bank and authoritative bettin
 ## Play with a real deck
 
 1. The host creates a table, chooses a starting stack and blinds, and optionally enables a blind timer.
-2. Friends open the **same service URL** on their phones, tap **Join a table**, and enter the four-letter code and their names. For local testing, phones must use your computer’s LAN address on the same Wi-Fi; `localhost` on a phone is the phone itself.
+2. Friends open the **same service URL** on their phones, tap **Join a table**, and enter the eight-letter code and their names. For local testing, phones must use your computer’s LAN address on the same Wi-Fi; `localhost` on a phone is the phone itself.
 3. Deal physical hole cards. The host taps **Start first hand**. The server moves the dealer button, posts blinds and identifies the current player. With two players the dealer posts the small blind and acts first preflop.
 4. Use Fold, Check, Call, Raise or All-in. A raise amount is the **total bet for that street**, including chips already in front of you. Quick buttons offer minimum, half-pot, pot and all-in. Half-pot/pot raises use the pot after calling.
 5. When the street changes, reveal the appropriate physical community cards. If everyone remaining is all-in, betting skips to showdown: physically complete the board before choosing winners.
@@ -64,7 +64,7 @@ Reference: [Render Blueprint specification](https://render.com/docs/blueprint-sp
 
 ## Socket contract
 
-Every request includes a payload object and receives `{ok:true, ...}` or `{ok:false, error}` through its acknowledgement. Seated clients receive personalized `state` events. **Every mutating table request requires `revision` equal to the latest state revision**; the server rejects duplicate or stale intents. Authorization comes from the socket’s bound seat, never a supplied actor ID.
+Every request includes a payload object and receives `{ok:true, ...}` or `{ok:false, error}` through its acknowledgement. Seated clients receive personalized `state` events. **Every mutating table request requires its private `token` and `revision` equal to the latest state revision**; the server rejects duplicate or stale intents. Authorization comes from the socket’s bound seat, never a supplied actor ID.
 
 | Event | Payload (in addition to revision where required) | Access |
 | --- | --- | --- |
@@ -88,4 +88,9 @@ The server limits each socket to 40 requests/second, payloads to 16 KiB and tota
 ## Visual seating
 
 Play at https://poker-chips-o7n9.onrender.com/ (deployment details in DEPLOY.md). Free-tier cold starts can be slow.
-Seats appear clockwise around an oval, with D/SB/BB markers and a highlighted current actor. Open positions remain visible. Between hands, hosts can drag occupied seats onto another occupied slot or select List view for numbered arrow controls, preview next-hand blinds, then Save order. Saving a changed arrangement resets the next button to the first eligible seat; subsequent hands rotate normally. Everyone receives the saved order immediately.
+Seats appear clockwise around an oval, with D/SB/BB markers and a highlighted current actor. Only occupied seats are shown. Between hands, hosts can drag occupied seats onto another occupied slot or select List view for numbered arrow controls, preview next-hand blinds, then Save order. Saving a changed arrangement resets the next button to the first eligible seat; subsequent hands rotate normally. Everyone receives the saved order immediately.
+
+### Security and names
+Names are trimmed, Unicode-normalized, limited to 20 characters, and unique within a room without regard to case. Control characters and angle brackets are rejected; displayed names are HTML-escaped by the client. Disconnected seats retain their name and chips until leave/kick, allowing the original token to reconnect safely.
+
+Room codes contain eight random letters. Each mutation needs both the socket-bound seat token and current revision. Strict schemas reject unexpected fields and unsafe numbers. Production accepts only the configured Render origin. Entry attempts share per-IP limits across connections (12 creates or 30 join/preview/rejoin attempts per minute); seated requests are capped at 40 per second per connection. No virtual cards exist or are transmitted.
