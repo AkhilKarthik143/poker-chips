@@ -19,12 +19,13 @@ async function setup(t, options) {
   return { server, url, client };
 }
 function emit(socket, event, data = {}) {
-  return new Promise((resolve, reject) => socket.timeout(2000).emit(event, { revision: socket.state?.revision, ...data }, (error, reply) => error ? reject(error) : resolve(reply)));
+  return new Promise((resolve, reject) => socket.timeout(2000).emit(event, { ...(!['create', 'join', 'rejoin', 'table-preview'].includes(event) ? { revision: socket.state?.revision, token: socket.token } : {}), ...data }, (error, reply) => error ? reject(error) : resolve(reply)));
 }
 async function ok(socket, event, data) {
   const reply = await emit(socket, event, data);
   assert.equal(reply.ok, true, reply.error);
   if (reply.state) socket.state = reply.state;
+  if (reply.token || data?.token) socket.token = reply.token || data.token;
   return reply;
 }
 async function sync(sockets) { // wait for current broadcast delivery; no arbitrary sleep
