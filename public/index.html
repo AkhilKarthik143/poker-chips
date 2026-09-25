@@ -21,7 +21,7 @@
       <h1>Keep the cards.<br><em>Lose the chips.</em></h1>
       <p class="intro-copy">A real table. Your favorite people.<br>We’ll take care of the chips.</p>
       <div class="how-it-works">
-        <div><span>01</span><p><strong>Pull up a chair</strong><br>Create a table. Share its four-letter code.</p></div>
+        <div><span>01</span><p><strong>Pull up a chair</strong><br>Create a table. Share its eight-letter code.</p></div>
         <div><span>02</span><p><strong>Deal the real cards</strong><br>Play Hold’em with the deck in your hands.</p></div>
         <div><span>03</span><p><strong>Let the chips follow</strong><br>Bet on your phone. Settle pots together.</p></div>
       </div>
@@ -36,10 +36,10 @@
       </div>
       <form id="entry-form">
         <label for="name">Your name</label>
-        <input id="name" name="name" placeholder="What should we call you?" maxlength="24" autocomplete="nickname" required>
+        <input id="name" name="name" placeholder="What should we call you?" maxlength="20" autocomplete="nickname" required>
         <div id="join-fields" hidden>
           <label for="room-code">Table code</label>
-          <input id="room-code" name="code" placeholder="ABCD" maxlength="4" pattern="[A-Za-z]{4}" autocomplete="off" autocapitalize="characters" spellcheck="false">
+          <input id="room-code" name="code" placeholder="ABCDEFGH" maxlength="8" pattern="[A-HJ-NP-Za-hj-np-z]{8}" autocomplete="off" autocapitalize="characters" spellcheck="false">
         </div>
         <div id="create-fields">
           <div class="form-grid">

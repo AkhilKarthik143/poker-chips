@@ -40,7 +40,7 @@ function status(text, connected = false) {
 }
 async function request(event, data = {}) {
   if (!socket.connected) throw new Error('Connection lost. Your seat is saved; waiting to reconnect.');
-  return new Promise((resolve, reject) => socket.timeout(8000).emit(event, { revision: state?.revision, ...data }, (error, result) => {
+  return new Promise((resolve, reject) => socket.timeout(8000).emit(event, { ...(!['create', 'join', 'rejoin', 'table-preview'].includes(event) ? { revision: state?.revision, token: identity?.token } : {}), ...data }, (error, result) => {
     if (error) reject(Object.assign(new Error('No response yet. Reconnecting to check the latest table.'), { transient: true }));
     else if (!result.ok) reject(new Error(result.error));
     else resolve(result);
