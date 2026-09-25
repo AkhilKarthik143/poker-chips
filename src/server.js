@@ -186,6 +186,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     mutate('host:reorderSeats', (room, _id, payload) => game.reorderSeats(room.game, payload.order), true);
     mutate('undo', room => game.undo(room.game), true);
     mutate('sit-out', (room, id, payload) => game.setSitOut(room.game, id, payload.value));
+    mutate('donate', (room, id, payload) => game.donate(room.game, id, payload.recipientId, payload.amount));
     mutate('rebuy', (room, _id, payload) => game.rebuy(room.game, payload.playerId, payload.amount), true);
     mutate('host-fold', room => {
       requireValue(room.game.turn && !room.connections.has(room.game.turn), 'Only the disconnected current player can be folded by the host.');

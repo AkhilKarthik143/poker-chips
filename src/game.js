@@ -89,6 +89,19 @@ export function rebuy(state, id, amount) {
     log(s, `${p.name} added ${amount} chips.`);
   });
 }
+/** Transfers are administrative: no new chips and no undo across the transfer. */
+export function donate(state, senderId, recipientId, amount) {
+  check(!isPlaying(state), 'Donate chips between hands.');
+  check(senderId !== recipientId, 'Choose another player.');
+  const sender = player(state, senderId);
+  player(state, recipientId);
+  check(integer(amount, 1) && amount <= sender.stack, 'Enter a positive whole number no greater than your stack.');
+  return edit(state, s => {
+    const from = player(s, senderId); const to = player(s, recipientId);
+    from.stack -= amount; to.stack += amount;
+    log(s, `${from.name} donated ${amount} chips to ${to.name}.`);
+  });
+}
 export function setSitOut(state, id, value) {
   check(typeof value === 'boolean', 'Sit-out must be true or false.');
   return edit(state, s => {

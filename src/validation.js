@@ -25,6 +25,7 @@ const schemas = {
   'host:reorderSeats': [{...auth,order:ids},{}],
   undo: [auth,{}],
   'sit-out': [{...auth,value:value=>typeof value==='boolean'},{}],
+  donate: [{...auth,recipientId:uuid,amount:integer(1e12,1)},{}],
   rebuy: [{...auth,playerId:uuid,amount:integer(1e9,1)},{}],
   'host-fold': [auth,{}],
   leave: [auth,{}],
