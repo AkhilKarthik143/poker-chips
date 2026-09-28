@@ -38,7 +38,7 @@ test('unique normalized names, validation, separate rooms, reserved disconnect a
 test('each event rejects malformed shape and unexpected keys atomically', async t => {
   let time = 0; const { client, server } = await setup(t, { now: () => time }); const s = await client();
   const h = await ok(s, 'create', { name: 'Host' }); const before = structuredClone(server.rooms.get(h.roomCode).game);
-  const events = ['create','join','rejoin','table-preview','start-hand','action','showdown-pick','host-settings','host:reorderSeats','undo','sit-out','rebuy','host-fold','leave','kick'];
+  const events = ['create','join','rejoin','table-preview','start-hand','action','showdown-pick','host-settings','host:reorderSeats','undo','sit-out','rebuy','host-fold','leave','kick','donate'];
   for (const event of events) for (const value of [null, [], 'bad', 2, {}, { unexpected: true }]) { time += 1001; assert.equal((await raw(s,event,value)).ok,false,`${event}/${JSON.stringify(value)}`); }
   for (const settings of [[], 'oops', {extra:true}, {startingStack:'100'}, {smallBlind:-1}, {bigBlind:1e20}]) {time+=1001;assert.equal((await send(s,'host-settings',{settings})).ok,false);}
   for (const amount of [-1,1e20,'100',null,Infinity,NaN]) {time+=1001;assert.equal((await send(s,'rebuy',{playerId:h.playerId,amount})).ok,false);}
