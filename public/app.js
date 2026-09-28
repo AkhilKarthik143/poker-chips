@@ -160,6 +160,16 @@ function inviteDialog() {
     try { await navigator.clipboard.writeText(state.roomCode); toast('Table code copied.'); } catch { toast(`Table code: ${state.roomCode}`); }
   }, host ? 'Confirm & copy code' : 'Copy code');
 }
+function donationDialog() {
+  const me = state.players.find(p => p.id === state.playerId);
+  const recipients = state.players.filter(p => p.id !== me.id);
+  if (!['lobby', 'complete'].includes(state.street)) return toast('Donate chips between hands.');
+  if (!recipients.length || me.stack < 1) return toast('You need chips and another player to donate.');
+  showDialog('Donate virtual chips', `<p>Transfer chips from your stack to another player. Your stack: <strong>${number(me.stack)}</strong>.</p><label for="donation-player">Recipient</label><select id="donation-player">${recipients.map(option).join('')}</select><label for="donation-amount">Chips to donate</label><input id="donation-amount" type="number" min="1" max="${me.stack}" step="1" value="${Math.min(state.settings.smallBlind, me.stack)}" required><p class="helper">Available between hands. This transfer cannot be undone.</p>`, async () => {
+    const result = await request('donate', { recipientId: $('#donation-player').value, amount: Number($('#donation-amount').value) });
+    receive(result.state); toast('Chips donated.');
+  }, 'Confirm donation');
+}
 function openControls(target) {
   const panel = document.getElementById(state.hostId === state.playerId ? 'host-menu' : 'your-seat');
   $('#table-rail').open = true;
@@ -256,7 +266,7 @@ function render() {
       ${state.lastResult && state.street === 'complete' ? `<section class="result"><h2>That’s a hand.</h2>${state.lastResult.awards.map(a => `<p>${escape(state.players.find(p => p.id === a.id)?.name || 'Departed player')} <strong>+${number(a.amount)}</strong> · ${escape(a.label)}</p>`).join('')}</section>` : ''}
       ${state.street === 'showdown' ? `<section class="showdown"><h2>Who takes the pot?</h2><p class="helper">${host ? 'Select every tied winner for each pot. Chips settle after all pots are assigned; odd chips go left of the dealer.' : 'The host is selecting winners from the physical cards.'}</p>${state.pots.map((pot, index) => `<form class="winner-form" data-pot="${pot.id}"><h3>${index ? `Side pot ${index}` : 'Main pot'} · ${number(pot.amount)} chips</h3>${pot.winners ? `<p class="helper">Selected: ${pot.winners.map(id => escape(state.players.find(p => p.id === id).name)).join(' + ')}</p>` : pot.eligible.map(id => `<label for="winner-${pot.id}-${id}"><input id="winner-${pot.id}-${id}" type="checkbox" name="winner" value="${escape(id)}" ${!host ? 'disabled' : ''}>${escape(state.players.find(p => p.id === id).name)}</label>`).join('')}${host && !pot.winners ? '<button class="primary" type="submit">Confirm winner(s)</button>' : ''}</form>`).join('')}</section>` : ''}
     </section><details class="rail-drawer" id="table-rail" ${railMedia.matches ? 'open' : ''}><summary>Players, hand log & controls</summary><aside class="sidebar">
-      <details class="panel" id="players-panel" open><summary>Players <span>${state.players.length}/10</span></summary><ul class="players-list">${state.seatOrder.map(id => { const p = state.players.find(p => p.id === id); return `<li><strong>${escape(p.name)}${p.id === state.playerId ? ' · You' : ''}</strong><span>${p.sittingOut ? '⏸ Away' : p.connected ? '✓ Connected' : '⏸ Offline'}</span></li>`; }).join('')}</ul></details>
+      <details class="panel" id="players-panel" open><summary>Players <span>${state.players.length}/10</span></summary><ul class="players-list">${state.seatOrder.map(id => { const p = state.players.find(p => p.id === id); return `<li><strong>${escape(p.name)}${p.id === state.playerId ? ' · You' : ''}</strong><span>${p.sittingOut ? '⏸ Away' : p.connected ? '✓ Connected' : '⏸ Offline'}</span></li>`; }).join('')}</ul><div class="panel-content"><button id="donate-chips" ${playing || me.stack < 1 || state.players.length < 2 ? 'disabled' : ''}>Donate chips</button><p class="helper">${playing ? 'Available between hands.' : 'Give chips from your stack to another player.'}</p></div></details>
       <details class="panel" id="hand-log" ${railMedia.matches ? 'open' : ''}><summary>Hand log <span>Hand ${state.handNumber}</span></summary><ol class="log-list">${handLog()}</ol></details>
       ${host ? hostPanel(playing, actor) : ''}
       <details class="panel" id="your-seat"><summary>Your seat</summary><div class="panel-content"><p class="helper">${playing ? 'Sit out applies from the next hand. Leave and rebuy between hands.' : 'Ask your host for a rebuy or add-on.'}</p><button id="sit-out">${me.sittingOut ? 'Play next hand' : 'Sit out next hand'}</button><button id="leave" class="quiet danger" ${playing ? 'disabled' : ''}>Leave table</button></div></details>
@@ -290,6 +300,7 @@ function wireTable(me, pot) {
     catch { toast(`Your table code is ${state.roomCode}.`); }
   });
   $('#table-settings').addEventListener('click', () => openControls('host-stack'));
+  $('#donate-chips').addEventListener('click', donationDialog);
   $('#header-invite').addEventListener('click', inviteDialog);
   $('#invite-players')?.addEventListener('click', inviteDialog);
   $('#set-buy-in')?.addEventListener('click', inviteDialog);
@@ -332,7 +343,15 @@ function wireTable(me, pot) {
   $('#leave').addEventListener('click', () => run('leave'));
   document.querySelectorAll('[data-action]').forEach(el => el.addEventListener('click', () => run('action', { type: el.dataset.action })));
   $('#toggle-raise')?.addEventListener('click', () => { raiseOpen = !raiseOpen; render(); });
-  $('#raise-amount')?.addEventListener('input', e => { const range = $('#raise-range'); const amount = Math.min(Number(range.dataset.max), Math.max(Number(range.dataset.min), snapToBlind(Number(e.target.value), Number(range.dataset.blind)))); e.target.value = amount; range.value = sliderPosition(amount, Number(range.dataset.min), Number(range.dataset.max)); });
+  $('#raise-amount')?.addEventListener('input', e => {
+    const range = $('#raise-range');
+    const amount = Number(e.target.value);
+    // Keep the user's draft intact, including an empty field while replacing it.
+    // Native form constraints and the server validate the completed amount.
+    if (e.target.value !== '' && Number.isFinite(amount) && amount > 0) {
+      range.value = sliderPosition(Math.min(Number(range.dataset.max), Math.max(Number(range.dataset.min), amount)), Number(range.dataset.min), Number(range.dataset.max));
+    }
+  });
   $('#raise-range')?.addEventListener('input', e => { const range = e.target; $('#raise-amount').value = sliderAmount(Number(range.value), Number(range.dataset.min), Number(range.dataset.max), Number(range.dataset.blind)); });
   document.querySelectorAll('[data-quick]').forEach(el => el.addEventListener('click', () => {
     const min = state.legal.minRaiseTo; const max = state.legal.maxRaiseTo;
