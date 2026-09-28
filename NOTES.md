@@ -88,3 +88,12 @@ Failing tests were added before fixes. The initial six new groups failed as expe
 - Validation: lint plus all 40 tests pass, including new fuzz/schema/name/token/origin/rate-limit tests and existing full chip-conservation, seat-order and betting regressions. Four-player simulation conserves 550 chips through two all-ins, all streets and payouts. Responsive browser check passes after eight-letter codes and token changes.
 
 - Live verification caught same-origin polling GETs without an Origin header being denied. A failing polling regression test reproduced it. Handshakes now accept a configured-origin Referer only with browser Sec-Fetch-Site: same-origin when Origin is absent; foreign and unverified origins remain rejected. Final suite: 41 passing tests.
+
+## Virtual chip donations
+- Any seated player can donate only their own existing chips to another seated player between hands (including completed hands). Disconnected/sitting-out recipients retain their seat and can receive chips.
+- Positive whole-number chips, up to sender stack; transfers are not bids and need not be small-blind multiples. No chip creation, self-transfer, foreign recipient, mid-hand transfer, or client-supplied sender identity.
+- Uses existing token, revision, strict schema and rate-limit enforcement. Duplicate submissions cannot transfer twice. Transfers clear undo history so undo cannot restore chips already donated. Everyone gets updated stacks and the hand log records sender, recipient and amount.
+- Players panel opens a donation dialog with recipient, amount and explicit confirmation; disabled mid-hand, with no chips, or when alone.
+- Tests were written before implementation and failed for the missing operation; then pass for conservation, immutability, invalid input, timing, non-host authorization, broadcast and stale replay.
+
+- Bid typing fix: reproduced a cleared numeric field immediately becoming the minimum raise. Input now preserves the typed draft and only updates the slider preview. Native min/max/step constraints and server validation enforce valid completed bids at submission. Mobile browser regression clears the field, types 125 sequentially and submits it successfully.
