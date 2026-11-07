@@ -335,4 +335,34 @@ dialog.app-sheet :focus-visible { scroll-margin:20px; }
   .copy-fallback { width:calc(100% - 32px); margin:8px 16px; }
 }
 
+@layer base {
+  :root { color-scheme:light; }
+}
+
+@layer design {
+  button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible, a:focus-visible,
+  .seat-sort-list [data-seat-row]:focus-visible { outline-color:var(--dp-color-accent); }
+  .theme-picker-section { margin:18px 0 10px; padding-top:14px; border-top:2px solid var(--dp-color-rule-muted); }
+  .theme-picker-section h3 { margin:0 0 8px; color:var(--dp-color-ink); font-size:14px; }
+  .theme-picker { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:7px; }
+  .theme-choice { display:flex; align-items:center; justify-content:flex-start; gap:7px; min-width:0; min-height:48px; padding:6px 8px; font-size:12px; line-height:1.2; text-align:left; }
+  .theme-choice[aria-checked="true"] { background:var(--dp-color-selection); border-color:var(--dp-color-accent); box-shadow:2px 2px 0 var(--dp-color-accent); }
+  .theme-swatch { width:18px; height:18px; flex:none; border:2px solid var(--dp-color-outline); border-radius:50%; background:var(--dp-color-ground); }
+  .theme-choice[data-theme-choice="felt"] .theme-swatch { background:var(--theme-swatch-felt); }
+  .theme-choice[data-theme-choice="midnight"] .theme-swatch { background:var(--theme-swatch-midnight); }
+  .theme-choice[data-theme-choice="burgundy"] .theme-swatch { background:var(--theme-swatch-burgundy); }
+  .theme-choice[data-theme-choice="graphite"] .theme-swatch { background:var(--theme-swatch-graphite); }
+  .theme-choice[data-theme-choice="daylight"] .theme-swatch { background:var(--theme-swatch-daylight); }
+  .theme-choice[data-theme-choice="system"] .theme-swatch { background:linear-gradient(135deg,var(--theme-swatch-felt) 0 50%,var(--theme-swatch-midnight) 50% 100%); }
+  .theme-picker-section .helper { font-size:12px; }
+  .how-it-works>div:nth-child(1)>span { color:var(--dp-color-accent-warm-ink); }
+  .how-it-works>div:nth-child(2)>span,.tiny-chip { color:var(--dp-color-accent-secondary-ink); }
+  .how-it-works>div:nth-child(3)>span,.small-note { color:var(--dp-color-accent-fresh-ink); }
+  .seat-preview,.toast,.reconnect-banner,.sound-unlock { color:var(--dp-color-accent-warm-ink); }
+  .role-SB,.rebuy-count { color:var(--dp-color-accent-secondary-ink); }
+  .role-BB { color:var(--dp-color-accent-fresh-ink); }
+  .settlement-net.positive b { color:var(--net-up); }
+  .settlement-net.negative b { color:var(--net-down); }
+}
+
 }

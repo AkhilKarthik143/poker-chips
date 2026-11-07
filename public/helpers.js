@@ -1,4 +1,5 @@
 /* global globalThis */
+(() => {
 const objectValue = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 
 function moveItem(order, from, to) {
@@ -61,3 +62,4 @@ function resolveTheme(theme, prefersDark = false) {
 }
 
 globalThis.Tablemate = Object.freeze({ moveItem, reconcileOrder, dedupeAlert, alertTransition, loadPrefs, savePrefs, resolveTheme });
+})();

@@ -1,4 +1,5 @@
 /* global window, document, navigator, setInterval, clearInterval */
+(() => {
 const alertDefaults = { sound: true, vibration: true, keepScreenOn: true };
 const alertStorageKey = 'tablemate-alerts-v1';
 const vibrationSupported = typeof navigator.vibrate === 'function';
@@ -117,3 +118,4 @@ window.addEventListener('focus', stopTitleFlash);
 
 window.Alerts = Object.freeze({ unlock, yourTurn, win, warn, setPreference, preferences: () => ({ ...alertPreferences }),
   vibrationSupported, wakeLockSupported: Boolean(navigator.wakeLock), setTableActive, stopTitleFlash, reset, tick, test: yourTurn });
+})();

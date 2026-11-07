@@ -1,8 +1,13 @@
 /* global window, document, navigator, localStorage, setTimeout, clearTimeout, setInterval, ResizeObserver, matchMedia, crypto, requestAnimationFrame, cancelAnimationFrame, CSS, Event */
+(() => {
 const { moveItem, reconcileOrder } = window.Tablemate;
 const $ = selector => document.querySelector(selector);
 const socket = window.io({ autoConnect: false });
 const STORAGE_KEY = 'tablemate-seat-v1';
+const THEME_STORAGE_KEY = 'tablemate-theme-v1';
+const THEME_CHOICES = ['felt', 'midnight', 'burgundy', 'graphite', 'daylight', 'system'];
+const THEME_COLORS = { felt: '#fffdf5', midnight: '#0b1424', burgundy: '#201018', graphite: '#17191d', daylight: '#f4f7fb' };
+let themePreference = document.documentElement.dataset.themePreference || 'felt';
 let state = null;
 let identity = null;
 let mode = 'create';
@@ -36,6 +41,41 @@ function saveIdentity(value) {
 function toast(message) {
   $('#toast').textContent = message; $('#toast').hidden = false;
   clearTimeout(toastTimer); toastTimer = setTimeout(() => { $('#toast').hidden = true; }, 5500);
+}
+function themePickerMarkup(scope) {
+  const labels = { felt: 'Felt', midnight: 'Midnight', burgundy: 'Burgundy', graphite: 'Graphite', daylight: 'Daylight', system: 'Match system' };
+  return `<section class="theme-picker-section" aria-label="Appearance"><h3>Color theme</h3><div class="theme-picker" role="radiogroup" aria-label="Color theme">${THEME_CHOICES.map(choice => `<button type="button" id="theme-${scope}-${choice}" class="theme-choice" role="radio" aria-checked="${themePreference === choice}" tabindex="${themePreference === choice ? '0' : '-1'}" data-theme-choice="${choice}"><span class="theme-swatch" aria-hidden="true"></span><span>${labels[choice]}</span></button>`).join('')}</div></section>`;
+}
+function applyThemePreference(choice) {
+  if (!THEME_CHOICES.includes(choice)) return;
+  themePreference = choice;
+  const root = document.documentElement;
+  const resolved = window.Tablemate.resolveTheme(choice, matchMedia('(prefers-color-scheme: dark)').matches);
+  root.dataset.themePreference = choice;
+  root.dataset.theme = resolved;
+  const meta = $('meta[name="theme-color"]');
+  if (meta) meta.content = THEME_COLORS[resolved];
+  if (!window.Tablemate.savePrefs(localStorage, THEME_STORAGE_KEY, { theme: choice })) toast('Theme changed for this tab but could not be saved.');
+  document.querySelectorAll('.theme-choice').forEach(button => {
+    const selected = button.dataset.themeChoice === choice;
+    button.setAttribute('aria-checked', String(selected));
+    button.tabIndex = selected ? 0 : -1;
+  });
+}
+function wireThemePicker(root) {
+  const buttons = [...root.querySelectorAll('.theme-choice')];
+  buttons.forEach(button => {
+    button.addEventListener('click', () => applyThemePreference(button.dataset.themeChoice));
+    button.addEventListener('keydown', event => {
+      const current = THEME_CHOICES.indexOf(button.dataset.themeChoice);
+      const next = { ArrowRight: current + 1, ArrowDown: current + 1, ArrowLeft: current - 1, ArrowUp: current - 1, Home: 0, End: THEME_CHOICES.length - 1 }[event.key];
+      if (next === undefined) return;
+      event.preventDefault();
+      const index = (next + THEME_CHOICES.length) % THEME_CHOICES.length;
+      applyThemePreference(THEME_CHOICES[index]);
+      root.querySelector(`[data-theme-choice="${THEME_CHOICES[index]}"]`)?.focus();
+    });
+  });
 }
 function status(text, connected = false) {
   $('#connection').textContent = text;
@@ -304,7 +344,7 @@ function openTonight() {
   const rows = summary.rows.map(row => {
     const sign = row.net > 0 ? '+' : row.net < 0 ? '−' : '';
     const icon = row.net > 0 ? '↑' : row.net < 0 ? '↓' : '→';
-    return `<article class="settlement-row" role="row"><strong role="cell">${escape(row.name)}</strong><span role="cell"><small>Buy-in total</small>${number(row.buyIn)} chips${row.buyInMoney ? `<small>${escape(row.buyInMoney)}</small>` : ''}</span><span role="cell"><small>Stack / cash-out</small>${number(row.cashOut)} chips${row.cashOutMoney ? `<small>${escape(row.cashOutMoney)}</small>` : ''}</span><span role="cell" class="settlement-net"><small>Net</small><b aria-label="${row.net > 0 ? 'Up' : row.net < 0 ? 'Down' : 'Even'}">${icon} ${sign}${number(Math.abs(row.net))} chips</b>${row.netMoney ? `<small>${escape(row.netMoney)}</small>` : ''}</span><span role="cell"><small>Hands won / played</small>${row.handsWon} / ${row.handsPlayed}</span></article>`;
+    return `<article class="settlement-row" role="row"><strong role="cell">${escape(row.name)}</strong><span role="cell"><small>Buy-in total</small>${number(row.buyIn)} chips${row.buyInMoney ? `<small>${escape(row.buyInMoney)}</small>` : ''}</span><span role="cell"><small>Stack / cash-out</small>${number(row.cashOut)} chips${row.cashOutMoney ? `<small>${escape(row.cashOutMoney)}</small>` : ''}</span><span role="cell" class="settlement-net ${row.net > 0 ? 'positive' : row.net < 0 ? 'negative' : 'even'}"><small>Net</small><b aria-label="${row.net > 0 ? 'Up' : row.net < 0 ? 'Down' : 'Even'}">${icon} ${sign}${number(Math.abs(row.net))} chips</b>${row.netMoney ? `<small>${escape(row.netMoney)}</small>` : ''}</span><span role="cell"><small>Hands won / played</small>${row.handsWon} / ${row.handsPlayed}</span></article>`;
   }).join('');
   const transfers = summary.transfers.map(item => `<li>${escape(item.fromName)} pays ${escape(item.toName)} <strong>${number(item.chips)} chips</strong>${item.money ? ` · ${escape(item.money)}` : ''}</li>`).join('');
   dialog.innerHTML = `<section class="tonight-sheet"><header class="tonight-header"><div><p class="eyebrow">TABLE LEDGER</p><h2 id="tonight-title">Tonight</h2></div><button type="button" class="seat-sheet-close" data-close-tonight aria-label="Close Tonight sheet">×</button></header><p class="helper tonight-note">${escape(state.settlementNote || 'Current table totals.')}</p>${summary.centsPer1000Chips ? `<p class="cash-rate">Cash value per 1,000 chips: $${(summary.centsPer1000Chips / 100).toFixed(2)}</p>` : ''}<div class="settlement-table" role="table" aria-label="Tonight chip ledger"><div class="settlement-head" role="row"><span role="columnheader">Name</span><span role="columnheader">Buy-in total</span><span role="columnheader">Stack / cash-out</span><span role="columnheader">Net</span><span role="columnheader">Hands won / played</span></div>${rows || '<p class="empty-ledger">No player totals yet.</p>'}</div><section class="settlement-transfers"><h3>Who pays whom</h3><ul>${transfers || '<li>No transfers needed.</li>'}</ul></section><p class="informal-note">Informal tally for friends. This app doesn’t handle money.</p><textarea id="tonight-summary-copy" class="copy-fallback" readonly hidden aria-label="Tonight summary to copy"></textarea><footer class="tonight-footer"><button type="button" id="copy-tonight">Copy summary</button><button type="button" class="primary" data-close-tonight>Close</button></footer></section>`;
@@ -624,7 +664,7 @@ function render() {
       <details class="panel" id="players-panel" open><summary>Players <span>${state.players.length}/10</span></summary><ul class="players-list">${state.seatOrder.map(id => { const p = state.players.find(p => p.id === id); return `<li><strong>${escape(p.name)}${p.id === state.playerId ? ' · You' : ''}</strong><span>${p.sittingOut ? '⏸ Away' : p.connected ? '✓ Connected' : '⏸ Offline'}</span><span>Won ${p.handsWon} of ${p.handsPlayed} hands</span></li>`; }).join('')}</ul><div class="panel-content"><button id="donate-chips" ${playing || me.stack < 1 || state.players.length < 2 ? 'disabled' : ''}>Donate chips</button><button id="open-tonight-players">Tonight</button><p class="helper">${playing ? 'Available between hands.' : 'Give chips from your stack to another player.'}</p></div></details>
       <details class="panel" id="hand-log" ${railMedia.matches ? 'open' : ''}><summary>Hand log <span>Hand ${state.handNumber}</span></summary><ol class="log-list">${handLog()}</ol></details>
       ${host ? hostPanel(playing, actor) : ''}
-      <details class="panel" id="your-seat"><summary>Your seat</summary><div class="panel-content"><p class="helper">${playing ? 'Sit out applies from the next hand. Leave and rebuy between hands.' : 'Ask your host for a rebuy or add-on.'}</p><button id="sit-out">${me.sittingOut ? 'Play next hand' : 'Sit out next hand'}</button><button id="leave" class="quiet danger" ${playing ? 'disabled' : ''}>Leave table</button>${rebuyRequestControls()}${alertControls()}</div></details>
+      <details class="panel" id="your-seat"><summary>Your seat</summary><div class="panel-content"><p class="helper">${playing ? 'Sit out applies from the next hand. Leave and rebuy between hands.' : 'Ask your host for a rebuy or add-on.'}</p><button id="sit-out">${me.sittingOut ? 'Play next hand' : 'Sit out next hand'}</button><button id="leave" class="quiet danger" ${playing ? 'disabled' : ''}>Leave table</button>${rebuyRequestControls()}${themePickerMarkup('seat')}${alertControls()}</div></details>
     </aside></details></div>
     <section class="dock" aria-label="Your betting controls"><div class="dock-inner"><div class="dock-summary"><div class="turn-label ${state.legal.active ? '' : 'waiting'}" role="status">${!ready ? 'RECONNECTING' : state.legal.active ? 'YOUR TURN' : state.street === 'showdown' ? 'SHOWDOWN' : actor ? `${escape(actor.name).toUpperCase()} TO ACT` : host ? 'HOST · TABLE CONTROLS' : 'WAITING FOR HOST'}</div><div class="balance"><span>Your stack</span><strong>${number(me.stack)}</strong></div><div class="balance"><span>To call</span><strong>${number(state.legal.toCall)}</strong></div></div>
       ${!playing ? `<div class="lobby-actions"><button id="invite-players">Invite players</button><button id="change-seat">Change seat</button><button id="set-buy-in">${host ? 'Set buy-in' : 'View buy-in'}</button><button id="open-tonight-dock">Tonight</button>${host ? `<button id="open-rebuy-requests-dock" ${requestCount ? '' : 'disabled'}>Rebuy requests (${requestCount})</button><button id="start-hand" class="primary" ${state.players.filter(p => p.stack > 0 && !p.sittingOut).length < 2 ? 'disabled' : ''}>${state.handNumber ? 'Start next hand' : 'Start game'} →</button>` : '<span class="helper">Your host starts the hand.</span>'}</div>` : ''}
@@ -633,6 +673,7 @@ function render() {
       ${raiseOpen && state.legal.canRaise ? (() => { const min = Math.min(state.legal.minRaiseTo, state.legal.maxRaiseTo); const max = state.legal.maxRaiseTo; return `<form id="raise-form" class="raise-panel"><div><label for="raise-amount">${state.currentBet ? 'Raise' : 'Bet'} to · multiples of ${number(state.settings.smallBlind)}</label><div class="amount-stepper"><button type="button" data-raise-step="-1" aria-label="Decrease by one small blind">−</button><input id="raise-amount" aria-label="Raise to amount" type="number" inputmode="numeric" min="${min}" max="${max}" value="${min}" step="${state.settings.smallBlind}" required><button type="button" data-raise-step="1" aria-label="Increase by one small blind">+</button></div><details class="range-adjust"><summary>Adjust with slider</summary><input id="raise-range" type="range" aria-label="Raise amount slider (logarithmic)" min="0" max="100" value="${sliderPosition(min, min, max)}" step="1" data-min="${min}" data-max="${max}" data-blind="${state.settings.smallBlind}"></details></div><button class="primary raise-submit" type="submit">Confirm</button><div class="quick-bets"><button type="button" data-quick="min">Min</button><button type="button" data-quick="half">½ pot</button><button type="button" data-quick="three-quarter">¾ pot</button><button type="button" data-quick="pot">Pot</button><button type="button" data-quick="all">All-in</button></div></form>`; })() : ''}
     </div></section>`;
   restoreRegion(tableRoot, uiState);
+  document.querySelectorAll('#table .theme-picker-section').forEach(wireThemePicker);
   wireTable(me, total); updateClock(); setButtons(); renderSeatReorder();
   ellipseObserver.disconnect();
   document.querySelectorAll('.seat-oval').forEach(el => ellipseObserver.observe(el));
@@ -732,4 +773,7 @@ window.visualViewport?.addEventListener('resize', updateKeyboardInset);
 window.visualViewport?.addEventListener('scroll', updateKeyboardInset);
 updateKeyboardInset();
 setInterval(updateClock, 1000);
+$('#lobby-theme-picker').innerHTML = themePickerMarkup('lobby');
+wireThemePicker($('#lobby-theme-picker'));
 setButtons(); socket.connect();
+})();
