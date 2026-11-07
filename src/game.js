@@ -40,7 +40,7 @@ function settings(input) {
 export function createTable(input = {}) {
   return { settings: settings(input), players: [], seatOrder: [], dealerSeat: -1, smallBlindId: null, bigBlindId: null,
     street: 'lobby', handNumber: 0, turn: null, currentBet: 0, minRaise: 0, pots: [],
-    totalChips: 0, log: [], history: [], blindDeadline: null, lastResult: null };
+    totalChips: 0, departed: [], log: [], history: [], blindDeadline: null, lastResult: null };
 }
 export function assertConservation(state) {
   check(state.players.every(p => integer(p.stack, 0) && integer(p.contributed, 0)), 'Invalid chip accounting.');
@@ -57,7 +57,7 @@ export function addPlayer(state, id, name) {
   check(!state.players.some(p => normalizedName(p.name).toLowerCase() === name.toLowerCase()), 'Name already taken in this room');
   return edit(state, s => {
     const seat = Array.from({ length: 10 }, (_, i) => i).find(i => !s.players.some(p => p.seat === i));
-    s.players.push({ id, name: name.trim(), seat, stack: s.settings.startingStack, sittingOut: false,
+    s.players.push({ id, name: name.trim(), seat, stack: s.settings.startingStack, buyIn: s.settings.startingStack, handsPlayed: 0, handsWon: 0, sittingOut: false,
       inHand: false, folded: false, streetBet: 0, contributed: 0, actedAt: null });
     s.totalChips += s.settings.startingStack;
     s.seatOrder = [...s.players].sort((a, b) => a.seat - b.seat).map(p => p.id);
@@ -72,7 +72,7 @@ export function configure(state, input) {
     s.blindDeadline = null;
     // Before the first deal the host's starting stack applies to every seat.
     if (s.handNumber === 0) {
-      s.players.forEach(p => { p.stack = value.startingStack; });
+      s.players.forEach(p => { p.stack = value.startingStack; p.buyIn = value.startingStack; });
       s.totalChips = s.players.length * value.startingStack;
     }
     log(s, 'Table settings updated.');
@@ -85,6 +85,7 @@ export function rebuy(state, id, amount) {
   return edit(state, s => {
     const p = player(s, id);
     p.stack += amount;
+    p.buyIn += amount;
     s.totalChips += amount;
     log(s, `${p.name} added ${amount} chips.`);
   });
@@ -114,6 +115,7 @@ export function removePlayer(state, id) {
   check(!isPlaying(state), 'Leave or kick between hands. Sit out now to skip the next hand.');
   return edit(state, s => {
     const p = player(s, id);
+    s.departed.push({ id: p.id, name: p.name, buyIn: p.buyIn, cashOut: p.stack, handsWon: p.handsWon, handsPlayed: p.handsPlayed });
     s.totalChips -= p.stack;
     s.players = s.players.filter(p => p.id !== id);
     s.seatOrder = s.seatOrder.filter(playerId => playerId !== id);
@@ -155,8 +157,11 @@ export function startHand(state, now = 0) {
         log(s, `Blinds increased to ${s.settings.smallBlind}/${s.settings.bigBlind}.`);
       }
     }
-    s.players.forEach(p => Object.assign(p, { inHand: !p.sittingOut && p.stack > 0,
-      folded: false, streetBet: 0, contributed: 0, actedAt: null }));
+    s.players.forEach(p => {
+      p.inHand = !p.sittingOut && p.stack > 0;
+      if (p.inHand) p.handsPlayed++;
+      Object.assign(p, { folded: false, streetBet: 0, contributed: 0, actedAt: null });
+    });
     const entrants = live(s);
     s.dealerSeat = next(entrants, s.dealerSeat).seat;
     const dealer = entrants.find(p => p.seat === s.dealerSeat);
@@ -204,6 +209,7 @@ function finish(state, awards) {
     player(state, award.id).stack += award.amount;
     log(state, `${player(state, award.id).name} wins ${award.amount} chips (${award.label}).`);
   }
+  for (const id of new Set(awards.filter(award => award.amount > 0).map(award => award.id))) player(state, id).handsWon++;
   state.players.forEach(p => { p.contributed = 0; p.streetBet = 0; });
   state.street = 'complete';
   state.turn = null;

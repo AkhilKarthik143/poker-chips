@@ -80,6 +80,7 @@ test('fold-out pays instantly; undo restores chips and current turn', () => {
   let s = startHand(table()); s = play(s, 'fold');
   const previous = s; s = play(s, 'fold');
   assert.equal(s.street, 'complete'); assert.deepEqual(s.players.map(p => p.stack), [1000, 995, 1005]);
+  assert.deepEqual(s.players.map(p => p.handsWon), [0, 0, 1]);
   s = undo(s); assert.deepEqual(s.players, previous.players); assert.equal(s.turn, '1');
 });
 test('short blind and lone funded player do not invent a side pot', () => {
@@ -112,6 +113,32 @@ test('administration validates, changes chip ledger, and clears undo boundaries'
   assert.throws(() => configure(s, { bigBlind: 20 }), /between/);
   assert.throws(() => addPlayer(s, '2', 'New'), /between/);
   s = play(s, 'fold'); s = removePlayer(s, '1'); assert.equal(s.history.length, 0); assertConservation(s);
+});
+test('night ledger tracks buy-in, rebuys, entrants and departed cash-out without affecting chips', () => {
+  let s = createTable({ startingStack: 100 });
+  s = addPlayer(s, 'a', 'Alex'); s = addPlayer(s, 'b', 'Blair'); s = addPlayer(s, 'c', 'Casey');
+  assert.deepEqual(s.players.map(p => [p.buyIn, p.handsPlayed, p.handsWon]), [[100, 0, 0], [100, 0, 0], [100, 0, 0]]);
+  s = rebuy(s, 'a', 50); assert.equal(s.players[0].buyIn, 150); assert.equal(s.players[0].stack, 150);
+  s = configure(s, { startingStack: 200 });
+  assert.deepEqual(s.players.map(p => [p.buyIn, p.stack]), [[200, 200], [200, 200], [200, 200]]);
+  s = setSitOut(s, 'c', true); s = startHand(s);
+  assert.deepEqual(s.players.map(p => p.handsPlayed), [1, 1, 0]);
+  s = award(checkDown(s));
+  s = removePlayer(s, 'c');
+  assert.deepEqual(s.departed, [{ id: 'c', name: 'Casey', buyIn: 200, cashOut: 200, handsWon: 0, handsPlayed: 0 }]);
+  assert.equal(s.totalChips, 400); assertConservation(s);
+});
+test('hands won count once across split pots and undo restores the result ledger', () => {
+  let s = startHand(table([50, 100, 200]));
+  s = play(s, 'all-in'); s = play(s, 'all-in'); s = play(s, 'call');
+  s = pickWinners(s, 0, ['1']); s = pickWinners(s, 1, ['1']);
+  assert.equal(s.players[1].handsWon, 1);
+  const completed = s;
+  s = undo(s);
+  assert.equal(s.street, 'showdown'); assert.equal(s.players[1].handsWon, 0);
+  assert.equal(completed.players[1].handsWon, 1);
+  const split = pickWinners(checkDown(startHand(table())), 0, ['0', '2']);
+  assert.deepEqual(split.players.map(p => p.handsWon), [1, 0, 1]);
 });
 test('timer increases blinds only on a new hand', () => {
   let s = startHand(table([1000, 1000], { blindMinutes: 1 }), 1000);
