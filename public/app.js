@@ -1,6 +1,7 @@
-/* global io, document, navigator, localStorage, setTimeout, clearTimeout, setInterval, ResizeObserver, matchMedia */
+/* global window, document, navigator, localStorage, setTimeout, clearTimeout, setInterval, ResizeObserver, matchMedia, crypto, requestAnimationFrame, cancelAnimationFrame, CSS, Event */
+const { moveItem, reconcileOrder } = window.SeatOrder;
 const $ = selector => document.querySelector(selector);
-const socket = io({ autoConnect: false });
+const socket = window.io({ autoConnect: false });
 const STORAGE_KEY = 'tablemate-seat-v1';
 let state = null;
 let identity = null;
@@ -12,14 +13,14 @@ let lastTurn = null;
 let toastTimer;
 let serverOffset = 0;
 let seatDraft = null;
-let seatListView = false;
 let seatMessage = '';
-let savedOrderKey = '';
 let dragSeat = null;
+let queuedDragState = null;
 const railMedia = matchMedia('(min-width:1200px)');
 railMedia.addEventListener('change', () => render());
 const ellipseObserver = new ResizeObserver(() => positionSeats());
 const number = value => Number(value).toLocaleString();
+const compactStack = value => Number(value) >= 1_000_000 ? `${(Number(value) / 1_000_000).toFixed(1).replace(/\.0$/, '')}M` : Number(value) >= 10_000 ? `${(Number(value) / 1_000).toFixed(1).replace(/\.0$/, '')}K` : number(value);
 const snapToBlind = (value, blind) => Math.ceil(value / blind) * blind;
 const sliderPosition = (amount, min, max) => max <= min ? 0 : Math.round((Math.log(amount / min) / Math.log(max / min)) * 100);
 const sliderAmount = (position, min, max, blind) => snapToBlind(min * Math.pow(max / min, position / 100), blind);
@@ -60,14 +61,24 @@ async function run(event, data = {}) {
 }
 function setButtons() {
   $('#entry-submit').disabled = busy || !ready;
-  if (busy || !ready) document.querySelectorAll('#table button, #table input, #table select').forEach(el => { el.disabled = true; });
+  const temporarilyDisabled = busy || !ready;
+  document.querySelectorAll('#table button, #table input, #table select').forEach(el => {
+    if (temporarilyDisabled && !el.disabled) { el.dataset.runtimeDisabled = 'true'; el.disabled = true; }
+    else if (!temporarilyDisabled && el.dataset.runtimeDisabled) { el.disabled = false; delete el.dataset.runtimeDisabled; }
+  });
+  const save = $('#seat-reorder-dialog .seat-save');
+  if (save && state) save.disabled = busy || !ready || JSON.stringify(seatDraft) === JSON.stringify(state.seatOrder);
 }
 function receive(value) {
   // Socket.IO keeps packet order; revision also guards delayed acknowledgement state.
   if (state && value.roomCode === state.roomCode && value.revision < state.revision) return;
+  if (dragSeat) { queuedDragState = value; return; }
+  const previousOrder = state?.seatOrder || [];
   state = value; serverOffset = value.serverTime - Date.now();
-  if (savedOrderKey !== JSON.stringify(state.seatOrder)) { seatDraft = [...state.seatOrder]; savedOrderKey = JSON.stringify(state.seatOrder); }
-  if (!seatDraft || seatDraft.some(id => !state.seatOrder.includes(id)) || seatDraft.length !== state.seatOrder.length) seatDraft = [...state.seatOrder];
+  seatDraft = seatDraft ? reconcileOrder(seatDraft, state.seatOrder) : [...state.seatOrder];
+  if (JSON.stringify(previousOrder) !== JSON.stringify(state.seatOrder) && $('#seat-reorder-dialog').open) {
+    seatMessage = 'The table membership or order changed while you were arranging seats. Your draft was kept; departed players were removed and new players added at the end.';
+  }
   if (state.turn === state.playerId && lastTurn !== state.turn && ready && typeof navigator.vibrate === 'function') navigator.vibrate([90, 50, 90]);
   if (lastTurn !== state.turn) raiseOpen = false;
   lastTurn = state.turn;
@@ -172,11 +183,24 @@ function donationDialog() {
 }
 function openControls(target) {
   const panel = document.getElementById(state.hostId === state.playerId ? 'host-menu' : 'your-seat');
+  const sidebar = document.querySelector('#table .sidebar');
   $('#table-rail').open = true;
   panel.open = true;
-  const control = document.getElementById(target) || panel.querySelector('summary');
-  control.focus();
-
+  const heading = panel.querySelector('summary');
+  const reveal = target => {
+    const bounds = sidebar.getBoundingClientRect(); const targetBounds = target.getBoundingClientRect();
+    if (targetBounds.top < bounds.top) sidebar.scrollTop -= bounds.top - targetBounds.top;
+    else if (targetBounds.bottom > bounds.bottom) sidebar.scrollTop += targetBounds.bottom - bounds.bottom;
+  };
+  reveal(panel); reveal(heading);
+  heading.focus({ preventScroll: true });
+}
+function openSeatReorder() {
+  const dialog = $('#seat-reorder-dialog');
+  seatDraft = [...state.seatOrder];
+  seatMessage = '';
+  if (!dialog.open) dialog.showModal();
+  renderSeatReorder();
 }
 function handLog() {
   let previous = null;
@@ -207,15 +231,156 @@ function nextAssignments(order, changed) {
   });
   return { D: ordered[0], SB: ordered[eligible.length === 2 ? 0 : 1], BB: ordered[eligible.length === 2 ? 1 : 2] };
 }
-function seatOval(order, editing) {
+const roleNames = { D: 'Dealer', SB: 'Small blind', BB: 'Big blind' };
+function renderSeatReorder() {
+  const dialog = $('#seat-reorder-dialog');
+  if (!dialog.open || dragSeat) return;
+  const previousScroll = dialog.querySelector('.seat-sort-list')?.scrollTop || 0;
+  const focusedPlayer = document.activeElement?.closest?.('[data-seat-row]')?.dataset.playerId;
+  const host = state.hostId === state.playerId;
+  const editable = host && ['lobby', 'complete'].includes(state.street);
+  const changed = JSON.stringify(seatDraft) !== JSON.stringify(state.seatOrder);
+  const roles = editable ? nextAssignments(seatDraft, changed) : { D: state.players.find(p => p.seat === state.dealerSeat)?.id, SB: state.smallBlindId, BB: state.bigBlindId };
+  const rows = seatDraft.map((id, index) => {
+    const player = state.players.find(p => p.id === id);
+    if (!player) return '';
+    const badges = Object.entries(roles).filter(([, playerId]) => playerId === id).map(([role]) => `<span class="role-chip role-${role}" aria-label="${roleNames[role]}">${role}</span>`).join('');
+    const label = `Seat ${index + 1}, ${escape(player.name)}, stack ${number(player.stack)}${Object.entries(roles).filter(([, playerId]) => playerId === id).map(([role]) => `, ${roleNames[role]}`).join('')}`;
+    return `<li data-seat-row data-player-id="${escape(id)}" tabindex="0" aria-label="${label}" ${editable ? 'aria-roledescription="sortable seat" aria-grabbed="false"' : ''}><button type="button" class="seat-grip" aria-label="Drag ${escape(player.name)}">⠿</button><span class="seat-index">${index + 1}</span><strong class="seat-player">${escape(player.name)}</strong><span class="seat-stack" title="${number(player.stack)} chips" aria-label="${number(player.stack)} chips">${compactStack(player.stack)}</span><span class="seat-role-chips">${badges}</span>${editable ? `<span class="seat-actions"><button type="button" data-seat-move="up" aria-label="Move ${escape(player.name)} up" ${index === 0 ? 'disabled' : ''}>↑</button><button type="button" data-seat-move="down" aria-label="Move ${escape(player.name)} down" ${index === seatDraft.length - 1 ? 'disabled' : ''}>↓</button></span>` : ''}</li>`;
+  }).join('');
+  dialog.innerHTML = `<section class="seat-sheet ${editable ? '' : 'read-only'}"><header class="seat-sheet-header"><div><p class="eyebrow">TABLE SEATING</p><h2 id="seat-reorder-title">${editable ? 'Arrange players' : 'Seat order'}</h2></div><button type="button" class="seat-sheet-close" aria-label="Close seat order">×</button></header><p class="seat-sheet-note">${editable ? 'Drag by the handle, hold a row, or use the arrow keys. Seat 1 stays at the top.' : 'This order is read-only. Ask the host to change seats between hands.'}</p><p class="seat-preview" id="seat-preview">Next hand: ${['D', 'SB', 'BB'].map(role => `${role} ${escape(state.players.find(p => p.id === roles[role])?.name || '—')}`).join(' · ')}</p>${state.players.length ? `<ol class="seat-sort-list" aria-label="${editable ? 'Reorder players' : 'Player seat order'}">${rows}</ol>` : '<p>No players seated.</p>'}<p class="seat-message" role="status">${escape(seatMessage)}</p><div class="seat-live sr-only" aria-live="polite" aria-atomic="true"></div>${editable ? `<footer class="seat-sheet-footer"><button type="button" class="seat-shuffle">Shuffle seats</button><button type="button" class="seat-cancel">Cancel</button><button type="button" class="primary seat-save" ${!changed || busy || !ready ? 'disabled' : ''}>Save order</button></footer>` : ''}</section>`;
+  const list = dialog.querySelector('.seat-sort-list'); if (list) list.scrollTop = previousScroll;
+  if (focusedPlayer) dialog.querySelector(`[data-player-id="${CSS.escape(focusedPlayer)}"]`)?.focus({ preventScroll: true });
+  dialog.querySelector('.seat-sheet-close').addEventListener('click', () => dialog.close());
+  dialog.querySelector('.seat-cancel')?.addEventListener('click', () => { seatDraft = [...state.seatOrder]; seatMessage = ''; dialog.close(); });
+  dialog.querySelector('.seat-shuffle')?.addEventListener('click', () => {
+    for (let i = seatDraft.length - 1; i > 0; i--) {
+      const bytes = new Uint32Array(1); crypto.getRandomValues(bytes);
+      const j = bytes[0] % (i + 1);
+      [seatDraft[i], seatDraft[j]] = [seatDraft[j], seatDraft[i]];
+    }
+    seatMessage = ''; renderSeatReorder(); dialog.querySelector('.seat-live').textContent = 'Seats shuffled. Review the order before saving.';
+  });
+  dialog.querySelectorAll('[data-seat-move]').forEach(button => button.addEventListener('click', () => {
+    const row = button.closest('[data-seat-row]'); const index = seatDraft.indexOf(row.dataset.playerId);
+    const next = moveItem(seatDraft, index, index + (button.dataset.seatMove === 'up' ? -1 : 1));
+    if (next[index] !== seatDraft[index]) { seatDraft = next; seatMessage = ''; renderSeatReorder(); const moved = dialog.querySelector(`[data-player-id="${CSS.escape(row.dataset.playerId)}"]`); moved?.focus({ preventScroll: true }); dialog.querySelector('.seat-live').textContent = `Moved ${moved.querySelector('.seat-player').textContent} to seat ${seatDraft.indexOf(moved.dataset.playerId) + 1} of ${seatDraft.length}`; }
+  }));
+  dialog.querySelectorAll('[data-seat-row]').forEach(row => {
+    row.addEventListener('keydown', event => {
+      if (event.target !== row) return;
+      if (event.key === ' ' || event.key === 'Enter') { event.preventDefault(); row.classList.toggle('keyboard-grabbed'); const grabbed = row.classList.contains('keyboard-grabbed'); row.setAttribute('aria-grabbed', String(grabbed)); dialog.querySelector('.seat-live').textContent = grabbed ? `Picked up ${row.querySelector('.seat-player').textContent}. Use up and down arrows to move.` : `Dropped ${row.querySelector('.seat-player').textContent} at seat ${seatDraft.indexOf(row.dataset.playerId) + 1} of ${seatDraft.length}.`; }
+      if (event.key === 'Escape' && row.classList.contains('keyboard-grabbed')) { event.preventDefault(); row.classList.remove('keyboard-grabbed'); row.setAttribute('aria-grabbed', 'false'); seatMessage = 'Move cancelled.'; renderSeatReorder(); }
+      if ((event.key === 'ArrowUp' || event.key === 'ArrowDown') && row.classList.contains('keyboard-grabbed')) {
+        event.preventDefault(); const index = seatDraft.indexOf(row.dataset.playerId); const next = moveItem(seatDraft, index, index + (event.key === 'ArrowUp' ? -1 : 1));
+        if (next[index] !== seatDraft[index]) { seatDraft = next; seatMessage = ''; renderSeatReorder(); const moved = dialog.querySelector(`[data-player-id="${CSS.escape(row.dataset.playerId)}"]`); moved?.focus({ preventScroll: true }); moved?.setAttribute('aria-grabbed', 'true'); dialog.querySelector('.seat-live').textContent = `Moved ${moved.querySelector('.seat-player').textContent} to seat ${seatDraft.indexOf(moved.dataset.playerId) + 1} of ${seatDraft.length}`; }
+      }
+    });
+  });
+  dialog.querySelector('.seat-save')?.addEventListener('click', saveSeatOrder);
+  if (editable) wireSeatDrag(dialog);
+}
+function updateSeatPreviewDuringDrag(list, placeholder) {
+  seatDraft = [...list.children].map(row => row === placeholder ? dragSeat.id : row.dataset.playerId).filter(Boolean);
+  const roles = nextAssignments(seatDraft, JSON.stringify(seatDraft) !== JSON.stringify(state.seatOrder));
+  list.querySelectorAll('[data-seat-row]').forEach(row => {
+    const index = seatDraft.indexOf(row.dataset.playerId);
+    row.querySelector('.seat-index').textContent = index + 1;
+    row.querySelector('.seat-role-chips').innerHTML = Object.entries(roles).filter(([, id]) => id === row.dataset.playerId).map(([role]) => `<span class="role-chip role-${role}" aria-label="${roleNames[role]}">${role}</span>`).join('');
+    row.querySelector('[data-seat-move="up"]').disabled = index === 0;
+    row.querySelector('[data-seat-move="down"]').disabled = index === seatDraft.length - 1;
+  });
+  $('#seat-preview').textContent = `Next hand: ${['D', 'SB', 'BB'].map(role => `${role} ${state.players.find(p => p.id === roles[role])?.name || '—'}`).join(' · ')}`;
+}
+async function saveSeatOrder() {
+  if (busy || !ready || JSON.stringify(seatDraft) === JSON.stringify(state.seatOrder)) return;
+  busy = true; setButtons();
+  try {
+    const result = await request('host:reorderSeats', { order: [...seatDraft] });
+    seatMessage = 'Seat order saved.'; receive(result.state); $('#seat-reorder-dialog').close();
+  } catch (error) { seatMessage = error.message; renderSeatReorder(); }
+  finally { busy = false; setButtons(); }
+}
+function wireSeatDrag(dialog) {
+  const list = dialog.querySelector('.seat-sort-list');
+  if (!list) return;
+  const animatePositions = before => {
+    list.querySelectorAll('[data-seat-row]').forEach(row => {
+      const old = before.get(row.dataset.playerId); const now = row.getBoundingClientRect();
+      if (old) { const dy = old.top - now.top; if (dy) { row.style.transform = `translateY(${dy}px)`; row.style.transition = 'none'; requestAnimationFrame(() => { row.style.transition = 'transform 170ms ease'; row.style.transform = ''; }); } }
+    });
+  };
+  const placePlaceholder = (x, y) => {
+    if (!dragSeat) return;
+    const target = document.elementFromPoint(x, y)?.closest('[data-seat-row]');
+    if (!target || !list.contains(target)) return;
+    const before = new Map([...list.querySelectorAll('[data-seat-row]')].map(el => [el.dataset.playerId, el.getBoundingClientRect()]));
+    const targetRect = target.getBoundingClientRect();
+    if (y < targetRect.top + targetRect.height / 2) target.before(dragSeat.placeholder); else target.after(dragSeat.placeholder);
+    animatePositions(before);
+    updateSeatPreviewDuringDrag(list, dragSeat.placeholder);
+  };
+  const autoScroll = () => {
+    if (!dragSeat) return;
+    const box = list.getBoundingClientRect(); const edge = 54;
+    if (dragSeat.lastY < box.top + edge) list.scrollTop -= 10;
+    else if (dragSeat.lastY > box.bottom - edge) list.scrollTop += 10;
+    if (dragSeat.lastY < box.top + edge || dragSeat.lastY > box.bottom - edge) placePlaceholder(dragSeat.lastX, dragSeat.lastY);
+    dragSeat.autoScrollFrame = requestAnimationFrame(autoScroll);
+  };
+  const begin = (row, event, immediate) => {
+    if (dragSeat || !list.contains(row)) return;
+    const rect = row.getBoundingClientRect();
+    const ghost = row.cloneNode(true); ghost.classList.add('seat-ghost'); ghost.setAttribute('aria-hidden', 'true'); ghost.style.width = `${rect.width}px`; ghost.style.left = `${rect.left}px`; ghost.style.top = `${rect.top}px`;
+    const placeholder = document.createElement('li'); placeholder.className = 'seat-placeholder'; placeholder.setAttribute('aria-hidden', 'true'); placeholder.style.height = `${rect.height}px`;
+    row.before(placeholder); row.remove(); dialog.appendChild(ghost);
+    dragSeat = { id: row.dataset.playerId, pointer: event.pointerId, row, ghost, placeholder, list, dialog, startOrder: [...seatDraft], origin: event.clientY, lastX: event.clientX, lastY: event.clientY, active: immediate };
+    if (immediate) { row.classList.add('drag-original'); navigator.vibrate?.(8); event.preventDefault(); }
+    list.setPointerCapture?.(event.pointerId);
+    dragSeat.autoScrollFrame = requestAnimationFrame(autoScroll);
+  };
+  list.addEventListener('pointerdown', event => {
+    const row = event.target.closest('[data-seat-row]'); if (!row) return;
+    if (event.target.closest('button:not(.seat-grip)')) return;
+    const grip = event.target.closest('.seat-grip'); const touch = event.pointerType === 'touch';
+    if (grip || !touch) { begin(row, event, true); return; }
+    const id = row.dataset.playerId; const startX = event.clientX; const startY = event.clientY;
+    const clear = move => { if (Math.abs(move.clientY - startY) > 8 || Math.abs(move.clientX - startX) > 8) { clearTimeout(timer); list.removeEventListener('pointermove', clear); } };
+    const timer = setTimeout(() => { list.removeEventListener('pointermove', clear); const current = list.querySelector(`[data-player-id="${CSS.escape(id)}"]`); if (current) begin(current, event, true); }, 250);
+    const stop = () => { clearTimeout(timer); list.removeEventListener('pointermove', clear); };
+    list.addEventListener('pointermove', clear, { passive: true });
+    list.addEventListener('pointerup', stop, { once: true });
+    list.addEventListener('pointercancel', stop, { once: true });
+  });
+  list.addEventListener('pointermove', event => {
+    if (!dragSeat || dragSeat.pointer !== event.pointerId) return;
+    if (!dragSeat.active) { if (Math.abs(event.clientY - dragSeat.origin) < 5) return; dragSeat.active = true; }
+    event.preventDefault(); dragSeat.lastX = event.clientX; dragSeat.lastY = event.clientY; dragSeat.ghost.style.top = `${event.clientY - dragSeat.ghost.offsetHeight / 2}px`;
+    placePlaceholder(event.clientX, event.clientY);
+  }, { passive: false });
+  const finish = (event, cancelled = false) => {
+    if (!dragSeat || (event && dragSeat.pointer !== event.pointerId)) return;
+    const session = dragSeat; dragSeat = null; cancelAnimationFrame(session.autoScrollFrame); session.ghost.remove();
+    const outside = event && !list.contains(document.elementFromPoint(event.clientX, event.clientY));
+    if (cancelled || outside) { session.placeholder.before(session.row); session.placeholder.remove(); seatDraft = session.startOrder; }
+    else { session.placeholder.replaceWith(session.row); seatDraft = [...list.querySelectorAll('[data-seat-row]')].map(row => row.dataset.playerId); }
+    session.row.classList.remove('drag-original');
+    seatMessage = cancelled || outside ? 'Move cancelled.' : '';
+    if (queuedDragState) { const latest = queuedDragState; queuedDragState = null; receive(latest); }
+    renderSeatReorder();
+  };
+  list.addEventListener('pointerup', event => finish(event));
+  list.addEventListener('pointercancel', event => finish(event, true));
+  dialog.oncancel = event => { if (dragSeat) { event.preventDefault(); finish(null, true); } };
+}
+function seatOval(order) {
   const playing = !['lobby', 'complete'].includes(state.street);
-  const roles = editing ? nextAssignments(order, JSON.stringify(order) !== JSON.stringify(state.seatOrder)) : { D: state.players.find(p => p.seat === state.dealerSeat)?.id, SB: state.smallBlindId, BB: state.bigBlindId };
-  return `<div class="seat-oval ${editing ? 'reorder-oval' : 'live-oval'}" aria-label="${editing ? 'Arrange seats' : 'Clockwise seat order'}"><div class="table-felt" aria-hidden="true"></div>${order.map((id, index) => {
-    const orderIndex = index;
+  const roles = { D: state.players.find(p => p.seat === state.dealerSeat)?.id, SB: state.smallBlindId, BB: state.bigBlindId };
+  return `<div class="seat-oval live-oval" aria-label="Clockwise seat order"><div class="table-felt" aria-hidden="true"></div>${order.map((id, index) => {
     const p = state.players.find(player => player.id === id);
     const status = playing && p.folded ? '× Folded' : playing && p.inHand && p.stack === 0 ? '⚡ All-in' : p.sittingOut ? '⏸ Away' : !p.connected ? '⏸ Offline' : p.id === state.turn ? '▶ To act' : playing ? '● In hand' : '✓ Ready';
     const statusKind = playing && p.folded ? 'folded' : playing && p.inHand && p.stack === 0 ? 'allin' : p.sittingOut || !p.connected ? 'away' : p.id === state.turn ? 'active' : 'ready';
-    return `<article class="oval-seat slot-${index} ${!editing && p.id === state.turn ? 'acting' : ''} ${p.id === state.playerId ? 'my-seat' : ''} ${playing && p.folded ? 'folded-seat' : ''}" ${editing ? `data-drag-seat="${orderIndex}"` : ''}><div class="oval-name"><small>${orderIndex + 1}</small><strong title="${escape(p.name)}">${escape(p.name)}</strong></div><span class="seat-owner">${p.id === state.playerId ? `You • Seat ${orderIndex + 1}` : `Seat ${orderIndex + 1}`}</span><div class="seat-roles">${Object.entries(roles).filter(([, id]) => id === p.id).map(([role]) => `<span class="role-${role}" title="${role === 'D' ? 'Dealer' : role === 'SB' ? 'Small blind' : 'Big blind'}">${role}</span>`).join('')}</div><strong class="oval-stack">${number(p.stack)}</strong><small>Bet ${number(p.streetBet)}</small><span class="oval-status status-${statusKind} ${!playing && p.connected && !p.sittingOut ? 'ready-pill' : ''}">${status}</span></article>`;
+    return `<article class="oval-seat slot-${index} ${p.id === state.turn ? 'acting' : ''} ${p.id === state.playerId ? 'my-seat' : ''} ${playing && p.folded ? 'folded-seat' : ''}"><div class="oval-name"><small>${index + 1}</small><strong title="${escape(p.name)}">${escape(p.name)}</strong></div><span class="seat-owner">${p.id === state.playerId ? `You • Seat ${index + 1}` : `Seat ${index + 1}`}</span><div class="seat-roles">${Object.entries(roles).filter(([, id]) => id === p.id).map(([role]) => `<span class="role-${role}" title="${role === 'D' ? 'Dealer' : role === 'SB' ? 'Small blind' : 'Big blind'}">${role}</span>`).join('')}</div><strong class="oval-stack" title="${number(p.stack)} chips" aria-label="${number(p.stack)} chips">${compactStack(p.stack)}</strong><small>Bet ${number(p.streetBet)}</small><span class="oval-status status-${statusKind} ${!playing && p.connected && !p.sittingOut ? 'ready-pill' : ''}">${status}</span></article>`;
   }).join('')}</div>`;
 }
 function positionSeats() {
@@ -262,7 +427,7 @@ function render() {
         ${playing ? `<p class="pot-label">Hand ${state.handNumber} · Total pot</p><div class="pot-number">${number(total)}</div><span class="pot-unit">CHIPS</span>` : `<p class="pot-label">${state.street === 'complete' ? 'Hand complete' : 'Your table is open'}</p><h2>${state.players.length < 2 ? 'Waiting for players' : host ? 'Ready to deal' : 'Waiting for host to start'}</h2><p>${state.players.filter(p => p.stack > 0 && !p.sittingOut).length} players ready</p>`}
         <p class="street-instruction" aria-live="polite">${instructions[state.street]}</p>
         ${state.street === 'showdown' && state.pots.length > 1 ? `<div class="pot-summary">${state.pots.map((p, i) => `<span>${i ? `Side pot ${i}` : 'Main pot'} · ${number(p.amount)}</span>`).join('')}</div>` : ''}</div>
-      ${seatOval(state.seatOrder, false)}</div><div class="table-meta"><span>Action moves clockwise</span><span id="blind-clock"></span></div>
+      ${seatOval(state.seatOrder)}</div><div class="table-meta"><span>Action moves clockwise</span><span id="blind-clock"></span></div>
       ${state.lastResult && state.street === 'complete' ? `<section class="result"><h2>That’s a hand.</h2>${state.lastResult.awards.map(a => `<p>${escape(state.players.find(p => p.id === a.id)?.name || 'Departed player')} <strong>+${number(a.amount)}</strong> · ${escape(a.label)}</p>`).join('')}</section>` : ''}
       ${state.street === 'showdown' ? `<section class="showdown"><h2>Who takes the pot?</h2><p class="helper">${host ? 'Select every tied winner for each pot. Chips settle after all pots are assigned; odd chips go left of the dealer.' : 'The host is selecting winners from the physical cards.'}</p>${state.pots.map((pot, index) => `<form class="winner-form" data-pot="${pot.id}"><h3>${index ? `Side pot ${index}` : 'Main pot'} · ${number(pot.amount)} chips</h3>${pot.winners ? `<p class="helper">Selected: ${pot.winners.map(id => escape(state.players.find(p => p.id === id).name)).join(' + ')}</p>` : pot.eligible.map(id => `<label for="winner-${pot.id}-${id}"><input id="winner-${pot.id}-${id}" type="checkbox" name="winner" value="${escape(id)}" ${!host ? 'disabled' : ''}>${escape(state.players.find(p => p.id === id).name)}</label>`).join('')}${host && !pot.winners ? '<button class="primary" type="submit">Confirm winner(s)</button>' : ''}</form>`).join('')}</section>` : ''}
     </section><details class="rail-drawer" id="table-rail" ${railMedia.matches ? 'open' : ''}><summary>Players, hand log & controls</summary><aside class="sidebar">
@@ -278,18 +443,13 @@ function render() {
     </div></section>`;
   for (const id of detailsOpen) { const el = document.getElementById(id); if (el) el.open = true; }
   for (const id of choices) { const el = document.getElementById(id); if (el) el.checked = true; }
-  wireTable(me, total); updateClock(); setButtons();
+  wireTable(me, total); updateClock(); setButtons(); renderSeatReorder();
   ellipseObserver.disconnect();
   document.querySelectorAll('.seat-oval').forEach(el => ellipseObserver.observe(el));
   positionSeats();
 }
 function hostPanel(playing, actor) {
-  const changed = JSON.stringify(seatDraft) !== JSON.stringify(state.seatOrder);
-  const reorderDisabled = playing || seatDraft.length < 2 || !changed;
-  const preview = nextAssignments(seatDraft, changed);
-  const reorderRows = seatDraft.map((id, index) => `<li><span>${index + 1}. ${escape(state.players.find(p => p.id === id).name)}</span><button type="button" aria-label="Move seat ${index + 1} up" data-seat-move="up" data-seat-index="${index}" ${index === 0 ? 'disabled' : ''}>↑</button><button type="button" aria-label="Move seat ${index + 1} down" data-seat-move="down" data-seat-index="${index}" ${index === seatDraft.length - 1 ? 'disabled' : ''}>↓</button></li>`).join('');
-  return `<details class="panel" id="host-menu"><summary>Host controls</summary><div class="panel-content"><button id="undo" ${!state.canUndo ? 'disabled' : ''}>Undo last action</button>${actor && !actor.connected ? '<button id="host-fold" class="danger">Fold disconnected player</button>' : ''}<p class="helper">${playing ? 'Settings and seat order are available between hands.' : 'Changes to the starting stack apply to new seats. Before the first hand, they apply to everyone.'}</p>
-    <section class="seat-order"><h3>Seat order</h3>${playing ? '<p class="helper">Available between hands.</p>' : `<p class="helper">Drag a seat onto another to move it clockwise. Saving restarts the button at the first eligible seat.</p><button id="seat-view" aria-pressed="${seatListView}">${seatListView ? 'Table view' : 'List view'}</button>${seatListView ? `<ol>${reorderRows}</ol>` : seatOval(seatDraft, true)}<p class="helper" id="next-seats">Next hand: ${['D', 'SB', 'BB'].map(role => `${role}: ${escape(state.players.find(p => p.id === preview[role])?.name || '—')}`).join(' · ')}</p><button id="save-seat-order" class="primary" ${reorderDisabled ? 'disabled' : ''}>Save order</button>`}<p class="helper" id="seat-message" role="status">${escape(seatMessage)}</p></section>
+  return `<details class="panel" id="host-menu"><summary tabindex="0">Host controls</summary><div class="panel-content"><button id="undo" ${!state.canUndo ? 'disabled' : ''}>Undo last action</button>${actor && !actor.connected ? '<button id="host-fold" class="danger">Fold disconnected player</button>' : ''}<p class="helper">${playing ? 'Settings are available between hands.' : 'Changes to the starting stack apply to new seats. Before the first hand, they apply to everyone.'}</p>
     <form id="settings-form"><div class="form-grid"><div><label for="host-stack">Starting stack</label><input id="host-stack" type="number" min="1" max="1000000000" value="${state.settings.startingStack}" ${playing ? 'disabled' : ''} required></div><div><label for="host-timer">Timer (minutes)</label><input id="host-timer" type="number" min="0" max="1440" value="${state.settings.blindMinutes}" ${playing ? 'disabled' : ''} required></div><div><label for="host-sb">Small blind</label><input id="host-sb" type="number" min="1" value="${state.settings.smallBlind}" ${playing ? 'disabled' : ''} required></div><div><label for="host-bb">Big blind</label><input id="host-bb" type="number" min="1" value="${state.settings.bigBlind}" ${playing ? 'disabled' : ''} required></div></div><button type="submit" ${playing ? 'disabled' : ''}>Save table settings</button></form>
     <form id="rebuy-form"><label for="rebuy-player">Rebuy / add-on</label><select id="rebuy-player" ${playing ? 'disabled' : ''}>${state.players.map(option).join('')}</select><label for="rebuy-amount">Chips to add</label><input id="rebuy-amount" type="number" min="1" max="1000000000" value="${state.settings.startingStack}" ${playing ? 'disabled' : ''} required><button type="submit" ${playing ? 'disabled' : ''}>Add chips</button></form>
     ${state.players.length > 1 ? `<form id="kick-form"><label for="kick-player">Remove a player</label><select id="kick-player" ${playing ? 'disabled' : ''}>${state.players.filter(p => p.id !== state.playerId).map(option).join('')}</select><button class="danger quiet" type="submit" ${playing ? 'disabled' : ''}>Remove selected player</button></form>` : ''}</div></details>`;
@@ -299,46 +459,16 @@ function wireTable(me, pot) {
     try { await navigator.clipboard.writeText(state.roomCode); toast(`Table code ${state.roomCode} copied.`); }
     catch { toast(`Your table code is ${state.roomCode}.`); }
   });
-  $('#table-settings').addEventListener('click', () => openControls('host-stack'));
+  $('#table-settings').addEventListener('click', () => openControls());
   $('#donate-chips').addEventListener('click', donationDialog);
   $('#header-invite').addEventListener('click', inviteDialog);
   $('#invite-players')?.addEventListener('click', inviteDialog);
   $('#set-buy-in')?.addEventListener('click', inviteDialog);
-  $('#change-seat')?.addEventListener('click', () => { openControls('seat-view'); if (state.hostId !== state.playerId) toast('Ask the host to change the seat order between hands.'); });
+  $('#change-seat')?.addEventListener('click', openSeatReorder);
   document.querySelectorAll('[data-open-seat]').forEach(button => button.addEventListener('click', inviteDialog));
   $('#start-hand')?.addEventListener('click', () => run('start-hand'));
   $('#undo')?.addEventListener('click', () => run('undo'));
   $('#host-fold')?.addEventListener('click', () => run('host-fold'));
-  document.querySelectorAll('[data-seat-move]').forEach(button => button.addEventListener('click', () => {
-    const index = Number(button.dataset.seatIndex); const swap = button.dataset.seatMove === 'up' ? index - 1 : index + 1;
-    [seatDraft[index], seatDraft[swap]] = [seatDraft[swap], seatDraft[index]]; render();
-  }));
-  $('#seat-view')?.addEventListener('click', () => { seatListView = !seatListView; render(); });
-  $('#save-seat-order')?.addEventListener('click', async () => {
-    if (busy || !ready) return;
-    busy = true; setButtons();
-    try { const result = await request('host:reorderSeats', { order: [...seatDraft] }); seatMessage = 'Seat order saved.'; receive(result.state); }
-    catch (error) { seatMessage = error.message; }
-    finally { busy = false; render(); }
-  });
-  const oval = document.querySelector('.reorder-oval');
-  oval?.addEventListener('pointerdown', event => {
-    const seat = event.target.closest('[data-drag-seat]');
-    if (!seat || busy || !ready) return;
-    dragSeat = { from: Number(seat.dataset.dragSeat), to: Number(seat.dataset.dragSeat), pointer: event.pointerId };
-    seat.classList.add('drag-source'); oval.setPointerCapture(event.pointerId); event.preventDefault();
-  });
-  oval?.addEventListener('pointermove', event => {
-    if (!dragSeat) return;
-    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest('[data-drag-seat]');
-    oval.querySelectorAll('.drop-target').forEach(el => el.classList.remove('drop-target'));
-    if (target && oval.contains(target)) { dragSeat.to = Number(target.dataset.dragSeat); target.classList.add('drop-target'); target.setAttribute('data-drop-name', state.players.find(p => p.id === seatDraft[dragSeat.from]).name); }
-  });
-  oval?.addEventListener('pointerup', () => {
-    if (!dragSeat) return;
-    const [id] = seatDraft.splice(dragSeat.from, 1); seatDraft.splice(dragSeat.to, 0, id); dragSeat = null; render();
-  });
-  oval?.addEventListener('pointercancel', () => { dragSeat = null; render(); });
   $('#sit-out').addEventListener('click', () => run('sit-out', { value: !me.sittingOut }));
   $('#leave').addEventListener('click', () => run('leave'));
   document.querySelectorAll('[data-action]').forEach(el => el.addEventListener('click', () => run('action', { type: el.dataset.action })));

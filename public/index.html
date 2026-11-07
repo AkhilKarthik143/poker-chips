@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="/tokens.css">
   <link rel="stylesheet" href="/style.css">
   <script src="/socket.io/socket.io.js" defer></script>
+  <script src="/reorder.js" defer></script>
   <script src="/app.js" defer></script>
 </head>
 <body>
@@ -48,7 +49,7 @@
             <div><label for="big-blind">Big blind</label><input id="big-blind" type="number" value="10" min="1" step="1" required></div>
           </div>
           <label for="blind-minutes">Increase blinds</label>
-          <select id="blind-minutes"><option value="0">Keep them steady</option value="10">Double every 10 minutes</option><option value="15">Double every 15 minutes</option><option value="20">Double every 20 minutes</option><option value="30">Double every 30 minutes</option></select>
+          <select id="blind-minutes"><option value="0">Keep them steady</option><option value="10">Double every 10 minutes</option><option value="15">Double every 15 minutes</option><option value="20">Double every 20 minutes</option><option value="30">Double every 30 minutes</option></select>
         </div>
         <button id="entry-submit" class="primary entry-submit" type="submit">Create a table <span aria-hidden="true">↗</span></button>
         <p id="entry-caption" class="form-caption">You’re the host. House rules, your call.</p>
@@ -58,6 +59,7 @@
   </main>
   <main id="table" class="table-page" hidden></main>
   <dialog id="seat-dialog" aria-labelledby="dialog-title"></dialog>
+  <dialog id="seat-reorder-dialog" aria-labelledby="seat-reorder-title"></dialog>
   <div id="toast" class="toast" role="alert" hidden></div>
   <noscript>This table needs JavaScript to keep everyone’s chips in sync.</noscript>
   <footer id="site-footer" class="site-footer"><span>A LITTLE LESS SETUP. A LOT MORE POKER.</span><span>Made for the table.</span></footer>
