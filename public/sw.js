@@ -11,8 +11,8 @@ self.addEventListener('push', event => {
   event.waitUntil(self.registration.showNotification('Tablemate', {
     body,
     tag,
-    icon: '/icons/tablemate-192.svg',
-    badge: '/icons/tablemate-192.svg',
+    icon: '/icons/tablemate-192.png',
+    badge: '/icons/tablemate-192.png',
     data: { path: '/' }
   }));
 });
