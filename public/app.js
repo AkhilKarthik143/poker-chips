@@ -417,6 +417,25 @@ function render() {
   const total = state.players.reduce((sum, p) => sum + p.contributed, 0);
   const detailsOpen = new Set([...document.querySelectorAll('#table details[open]')].map(el => el.id));
   const choices = [...document.querySelectorAll('.winner-form input:checked')].map(el => el.id);
+  const tableRoot = $('#table');
+  const pathFromRoot = element => {
+    const path = [];
+    for (let node = element; node && node !== tableRoot; node = node.parentElement) {
+      const parent = node.parentElement;
+      if (!parent) return null;
+      path.unshift([...parent.children].indexOf(node));
+    }
+    return path;
+  };
+  const activeElement = tableRoot.contains(document.activeElement) ? document.activeElement : null;
+  const activePath = activeElement ? pathFromRoot(activeElement) : null;
+  const activeId = activeElement?.id;
+  const fields = [...document.querySelectorAll('#table input[id], #table select[id], #table textarea[id]')].map(el => {
+    let start = null; let end = null;
+    try { start = el.selectionStart; end = el.selectionEnd; } catch { /* Numeric fields do not expose text selection. */ }
+    return { id: el.id, value: el.value, start, end };
+  });
+  const scrollPositions = [tableRoot, ...tableRoot.querySelectorAll('*')].filter(el => el.scrollTop || el.scrollLeft).map(el => ({ path: pathFromRoot(el), tag: el.tagName, id: el.id, className: el.className, top: el.scrollTop, left: el.scrollLeft }));
   document.body.classList.add('in-game');
   $('#lobby').hidden = true; $('#site-footer').hidden = true; $('#table').hidden = false;
   $('#table').innerHTML = `
@@ -443,6 +462,13 @@ function render() {
     </div></section>`;
   for (const id of detailsOpen) { const el = document.getElementById(id); if (el) el.open = true; }
   for (const id of choices) { const el = document.getElementById(id); if (el) el.checked = true; }
+  for (const field of fields) { const el = document.getElementById(field.id); if (el && !el.disabled) { el.value = field.value; try { if (field.start !== null) el.setSelectionRange(field.start, field.end); } catch { /* number inputs do not support selection ranges */ } } }
+  for (const position of scrollPositions) {
+    const el = position.path.reduce((parent, index) => parent?.children[index], tableRoot);
+    if (el && el.tagName === position.tag && (position.id ? el.id === position.id : el.className === position.className)) { el.scrollTop = position.top; el.scrollLeft = position.left; }
+  }
+  const focusTarget = activeId ? document.getElementById(activeId) : activePath?.reduce((parent, index) => parent?.children[index], tableRoot);
+  if (focusTarget && tableRoot.contains(focusTarget) && !focusTarget.disabled) focusTarget.focus({ preventScroll: true });
   wireTable(me, total); updateClock(); setButtons(); renderSeatReorder();
   ellipseObserver.disconnect();
   document.querySelectorAll('.seat-oval').forEach(el => ellipseObserver.observe(el));
