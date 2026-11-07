@@ -1,5 +1,5 @@
 /* global window, document, navigator, localStorage, setTimeout, clearTimeout, setInterval, ResizeObserver, matchMedia, crypto, requestAnimationFrame, cancelAnimationFrame, CSS, Event */
-const { moveItem, reconcileOrder } = window.SeatOrder;
+const { moveItem, reconcileOrder } = window.Tablemate;
 const $ = selector => document.querySelector(selector);
 const socket = window.io({ autoConnect: false });
 const STORAGE_KEY = 'tablemate-seat-v1';
@@ -144,6 +144,51 @@ $('#entry-form').addEventListener('submit', async event => {
   finally { busy = false; if (state) render(); setButtons(); }
 });
 
+const sheetLocks = new WeakMap();
+function openSheet(dialog, { labelledBy, focusSelector } = {}) {
+  if (!dialog) return;
+  if (labelledBy) dialog.setAttribute('aria-labelledby', labelledBy);
+  dialog.classList.add('app-sheet');
+  if (dialog.open) return dialog;
+  const active = document.activeElement;
+  const activeId = active?.id || '';
+  const scrollY = window.scrollY;
+  const body = document.body;
+  const previousBodyStyle = { position: body.style.position, top: body.style.top, left: body.style.left,
+    right: body.style.right, width: body.style.width, overflow: body.style.overflow };
+  sheetLocks.set(dialog, { active, activeId, scrollY, previousBodyStyle });
+  body.classList.add('sheet-open');
+  body.style.position = 'fixed'; body.style.top = `${-scrollY}px`; body.style.left = '0';
+  body.style.right = '0'; body.style.width = '100%'; body.style.overflow = 'hidden';
+  const focusable = () => [...dialog.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], summary, [tabindex]:not([tabindex="-1"])')]
+    .filter(el => el.getClientRects().length > 0 && !el.closest('[hidden]'));
+  const trapFocus = event => {
+    if (event.key !== 'Tab') return;
+    const items = focusable();
+    if (!items.length) { event.preventDefault(); dialog.focus(); return; }
+    const first = items[0]; const last = items.at(-1);
+    if (event.shiftKey && (document.activeElement === first || !dialog.contains(document.activeElement))) {
+      event.preventDefault(); last.focus();
+    } else if (!event.shiftKey && (document.activeElement === last || !dialog.contains(document.activeElement))) {
+      event.preventDefault(); first.focus();
+    }
+  };
+  dialog.addEventListener('keydown', trapFocus);
+  dialog.addEventListener('close', () => {
+    dialog.removeEventListener('keydown', trapFocus);
+    const lock = sheetLocks.get(dialog); sheetLocks.delete(dialog);
+    if (!lock) return;
+    body.classList.remove('sheet-open');
+    Object.assign(body.style, lock.previousBodyStyle);
+    window.scrollTo(0, lock.scrollY);
+    const restore = lock.activeId ? document.getElementById(lock.activeId) : lock.active;
+    if (restore?.isConnected) restore.focus({ preventScroll: true });
+  }, { once: true });
+  dialog.showModal();
+  const initial = focusSelector ? dialog.querySelector(focusSelector) : null;
+  (initial || focusable()[0] || dialog).focus({ preventScroll: true });
+  return dialog;
+}
 function showDialog(title, content, onConfirm, confirmLabel = 'Confirm') {
   const dialog = $('#seat-dialog');
   dialog.innerHTML = `<form id="dialog-form"><h2 id="dialog-title">${escape(title)}</h2>${content}<p id="dialog-error" role="alert"></p><div class="dialog-actions"><button type="button" id="dialog-close">Cancel</button><button type="submit" class="primary">${confirmLabel}</button></div></form>`;
@@ -153,7 +198,7 @@ function showDialog(title, content, onConfirm, confirmLabel = 'Confirm') {
     try { await onConfirm(); dialog.close(); } catch (error) { $('#dialog-error').textContent = error.message; }
     finally { button.disabled = false; }
   };
-  if (!dialog.open) dialog.showModal();
+  openSheet(dialog, { labelledBy: 'dialog-title' });
 }
 async function previewJoin(data) {
   const info = await request('table-preview', { code: data.code });
@@ -199,8 +244,8 @@ function openSeatReorder() {
   const dialog = $('#seat-reorder-dialog');
   seatDraft = [...state.seatOrder];
   seatMessage = '';
-  if (!dialog.open) dialog.showModal();
-  renderSeatReorder();
+  renderSeatReorder(true);
+  openSheet(dialog, { labelledBy: 'seat-reorder-title' });
 }
 function handLog() {
   let previous = null;
@@ -232,9 +277,9 @@ function nextAssignments(order, changed) {
   return { D: ordered[0], SB: ordered[eligible.length === 2 ? 0 : 1], BB: ordered[eligible.length === 2 ? 1 : 2] };
 }
 const roleNames = { D: 'Dealer', SB: 'Small blind', BB: 'Big blind' };
-function renderSeatReorder() {
+function renderSeatReorder(force = false) {
   const dialog = $('#seat-reorder-dialog');
-  if (!dialog.open || dragSeat) return;
+  if ((!dialog.open && !force) || dragSeat) return;
   const previousScroll = dialog.querySelector('.seat-sort-list')?.scrollTop || 0;
   const focusedPlayer = document.activeElement?.closest?.('[data-seat-row]')?.dataset.playerId;
   const host = state.hostId === state.playerId;
@@ -407,6 +452,58 @@ function positionSeats() {
     felt.style.width = `${2 * rx}px`; felt.style.height = `${2 * ry}px`;
   });
 }
+function nodePath(root, element) {
+  const path = [];
+  for (let node = element; node && node !== root; node = node.parentElement) {
+    const parent = node.parentElement;
+    if (!parent) return null;
+    path.unshift([...parent.children].indexOf(node));
+  }
+  return path;
+}
+function atPath(root, path) {
+  return Array.isArray(path) ? path.reduce((parent, index) => parent?.children[index], root) : null;
+}
+function describeNode(root, element) {
+  return { id: element.id || '', path: nodePath(root, element) };
+}
+function findNode(root, description) {
+  if (description?.id) {
+    const found = document.getElementById(description.id);
+    if (found && root.contains(found)) return found;
+  }
+  return atPath(root, description?.path);
+}
+function captureRegion(root) {
+  const fields = [...root.querySelectorAll('input, select, textarea')].map(el => {
+    let start = null; let end = null;
+    try { start = el.selectionStart; end = el.selectionEnd; } catch { /* Number inputs do not expose text selection. */ }
+    return { node: describeNode(root, el), value: el.value, checked: 'checked' in el ? el.checked : undefined, start, end };
+  });
+  const details = [...root.querySelectorAll('details')].map(el => ({ node: describeNode(root, el), open: el.open }));
+  const scroll = [root, ...root.querySelectorAll('*')].filter(el => el.scrollTop || el.scrollLeft).map(el => ({
+    node: describeNode(root, el), tag: el.tagName, top: el.scrollTop, left: el.scrollLeft
+  }));
+  const active = root.contains(document.activeElement) ? describeNode(root, document.activeElement) : null;
+  return { fields, details, scroll, active, windowScrollY: window.scrollY };
+}
+function restoreRegion(root, snapshot) {
+  for (const item of snapshot.details) { const el = findNode(root, item.node); if (el?.tagName === 'DETAILS') el.open = item.open; }
+  for (const item of snapshot.fields) {
+    const el = findNode(root, item.node);
+    if (!el) continue;
+    el.value = item.value;
+    if (item.checked !== undefined) el.checked = item.checked;
+    try { if (item.start !== null) el.setSelectionRange(item.start, item.end); } catch { /* Number inputs do not support selection ranges. */ }
+  }
+  for (const item of snapshot.scroll) {
+    const el = findNode(root, item.node);
+    if (el?.tagName === item.tag) { el.scrollTop = item.top; el.scrollLeft = item.left; }
+  }
+  window.scrollTo(0, snapshot.windowScrollY);
+  const focus = snapshot.active && findNode(root, snapshot.active);
+  if (focus && !focus.disabled) focus.focus({ preventScroll: true });
+}
 function render() {
   if (!state) return;
   const me = state.players.find(p => p.id === state.playerId);
@@ -415,27 +512,8 @@ function render() {
   const playing = !['lobby', 'complete'].includes(state.street);
   const actor = state.players.find(p => p.id === state.turn);
   const total = state.players.reduce((sum, p) => sum + p.contributed, 0);
-  const detailsOpen = new Set([...document.querySelectorAll('#table details[open]')].map(el => el.id));
-  const choices = [...document.querySelectorAll('.winner-form input:checked')].map(el => el.id);
   const tableRoot = $('#table');
-  const pathFromRoot = element => {
-    const path = [];
-    for (let node = element; node && node !== tableRoot; node = node.parentElement) {
-      const parent = node.parentElement;
-      if (!parent) return null;
-      path.unshift([...parent.children].indexOf(node));
-    }
-    return path;
-  };
-  const activeElement = tableRoot.contains(document.activeElement) ? document.activeElement : null;
-  const activePath = activeElement ? pathFromRoot(activeElement) : null;
-  const activeId = activeElement?.id;
-  const fields = [...document.querySelectorAll('#table input[id], #table select[id], #table textarea[id]')].map(el => {
-    let start = null; let end = null;
-    try { start = el.selectionStart; end = el.selectionEnd; } catch { /* Numeric fields do not expose text selection. */ }
-    return { id: el.id, value: el.value, start, end };
-  });
-  const scrollPositions = [tableRoot, ...tableRoot.querySelectorAll('*')].filter(el => el.scrollTop || el.scrollLeft).map(el => ({ path: pathFromRoot(el), tag: el.tagName, id: el.id, className: el.className, top: el.scrollTop, left: el.scrollLeft }));
+  const uiState = captureRegion(tableRoot);
   document.body.classList.add('in-game');
   $('#lobby').hidden = true; $('#site-footer').hidden = true; $('#table').hidden = false;
   $('#table').innerHTML = `
@@ -460,15 +538,7 @@ function render() {
       ${state.turn ? `<div class="actions"><button data-action="fold" class="quiet" ${!state.legal.active ? 'disabled' : ''}>Fold</button><button data-action="${state.legal.canCheck ? 'check' : 'call'}" class="neutral" ${!state.legal.active ? 'disabled' : ''}>${state.legal.canCheck ? 'Check' : `Call ${number(state.legal.toCall)}`}</button><button id="toggle-raise" class="primary" aria-expanded="${raiseOpen}" ${!state.legal.canRaise ? 'disabled' : ''}>${state.currentBet ? 'Raise' : 'Bet'}</button><button data-action="all-in" class="all-in" ${!state.legal.canAllIn ? 'disabled' : ''}>All-in</button></div>` : ''}
       ${raiseOpen && state.legal.canRaise ? (() => { const min = Math.min(state.legal.minRaiseTo, state.legal.maxRaiseTo); const max = state.legal.maxRaiseTo; return `<form id="raise-form" class="raise-panel"><div><label for="raise-amount">${state.currentBet ? 'Raise' : 'Bet'} to · multiples of ${number(state.settings.smallBlind)}</label><div class="amount-stepper"><button type="button" data-raise-step="-1" aria-label="Decrease by one small blind">−</button><input id="raise-amount" aria-label="Raise to amount" type="number" inputmode="numeric" min="${min}" max="${max}" value="${min}" step="${state.settings.smallBlind}" required><button type="button" data-raise-step="1" aria-label="Increase by one small blind">+</button></div><details class="range-adjust"><summary>Adjust with slider</summary><input id="raise-range" type="range" aria-label="Raise amount slider (logarithmic)" min="0" max="100" value="${sliderPosition(min, min, max)}" step="1" data-min="${min}" data-max="${max}" data-blind="${state.settings.smallBlind}"></details></div><button class="primary raise-submit" type="submit">Confirm</button><div class="quick-bets"><button type="button" data-quick="min">Min</button><button type="button" data-quick="half">½ pot</button><button type="button" data-quick="three-quarter">¾ pot</button><button type="button" data-quick="pot">Pot</button><button type="button" data-quick="all">All-in</button></div></form>`; })() : ''}
     </div></section>`;
-  for (const id of detailsOpen) { const el = document.getElementById(id); if (el) el.open = true; }
-  for (const id of choices) { const el = document.getElementById(id); if (el) el.checked = true; }
-  for (const field of fields) { const el = document.getElementById(field.id); if (el && !el.disabled) { el.value = field.value; try { if (field.start !== null) el.setSelectionRange(field.start, field.end); } catch { /* number inputs do not support selection ranges */ } } }
-  for (const position of scrollPositions) {
-    const el = position.path.reduce((parent, index) => parent?.children[index], tableRoot);
-    if (el && el.tagName === position.tag && (position.id ? el.id === position.id : el.className === position.className)) { el.scrollTop = position.top; el.scrollLeft = position.left; }
-  }
-  const focusTarget = activeId ? document.getElementById(activeId) : activePath?.reduce((parent, index) => parent?.children[index], tableRoot);
-  if (focusTarget && tableRoot.contains(focusTarget) && !focusTarget.disabled) focusTarget.focus({ preventScroll: true });
+  restoreRegion(tableRoot, uiState);
   wireTable(me, total); updateClock(); setButtons(); renderSeatReorder();
   ellipseObserver.disconnect();
   document.querySelectorAll('.seat-oval').forEach(el => ellipseObserver.observe(el));

@@ -1,5 +1,24 @@
 # Decisions and progress
 
+## Tablemate UX overhaul (2026-11)
+
+### Progress log
+- Investigation: created `feature/ux-overhaul`; `npm ci` passed. Baseline lint passed and all 46 tests passed. npm reported 2 audit findings (1 moderate, 1 high); no dependency audit changes made.
+- Investigation: CSS cleanup and responsive reorder work already exist in local commits `f79bd5e`, `caf86d7`, `5a73c5b`, and `70043e1`; branch began six commits ahead of `origin/main`. They remain local and will not be pushed.
+- Investigation: `receive()` rejects stale revisions, queues latest state while `dragSeat` is active, then reconciles and rerenders after the drag. `render()` rebuilds `#table` via `innerHTML`, preserving current IDs' values, focused path, scroll offsets, open identified details, winner checks, and the independent dialogs. Raise slider details have no ID and are not preserved; S2 will make this path-based.
+- Investigation: `positionSeats()` lays out the live and reorder ovals from each `.seat-oval` width and player count. `request()` attaches revision/token to every non-entry event. `validatePayload()` uses strict required/optional field maps. `edit()` clones game state and snapshots the prior state, excluding history; administrative changes clear undo history.
+- Investigation: `src/server.js` stores rooms in memory with per-room identity/token/connection maps and broadcasts per-player projections; new rebuy requests and push subscriptions must remain outside game snapshots and projections.
+- Assumption: the requested S1–S4 implementation already committed before this task counts as those stage commits; I will add corrective commits only if new checks show gaps.
+- Assumption: `NOTES.md` is the progress ledger. The pasted prompt file is a reference and will not be overwritten.
+- Playwright 1.65.0 is already a dev dependency; the Chromium install command succeeded. Browser-required checks can run locally.
+- S2: added `openSheet()` with modal focus containment, native Esc close, body scroll lock/restore, safe-area styling and shared dialog labeling. `render()` now preserves scroll offsets, window scroll, focus, all form values/selections, checkbox state and open `<details>` by ID or DOM path; open dialogs live outside the rewritten table. Pure classic-script helpers now share `globalThis.Tablemate` and are tested with `node:vm`. Gate: lint passed, 51 tests passed, `git diff --check` passed.
+
+### Blockers
+- None.
+
+### Untested on real devices
+- Android vibration, iOS audio/silent switch, iOS Home Screen push, and physical wake-lock behavior require real devices; browser emulation cannot prove those behaviors.
+
 - Scope: chip accounting for in-person Texas Hold’em; no cards, dealing, evaluation, payments, or chat.
 - Host selects one or more winners for each pot. Majority voting is not needed because the brief allows either.
 - Integer chips only; a raise amount is the total street bet (raise-to).

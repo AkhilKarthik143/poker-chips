@@ -260,4 +260,14 @@ input::placeholder { color:var(--dp-color-placeholder); }
   *, *::before, *::after { scroll-behavior:auto!important; transition:none!important; animation:none!important; }
 }
 
+body.sheet-open { overscroll-behavior:none; }
+dialog.app-sheet { overscroll-behavior:contain; max-height:calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 24px); }
+dialog.app-sheet :focus-visible { scroll-margin:20px; }
+@media(max-width:699px) {
+  dialog.app-sheet:not(#seat-reorder-dialog) {
+    position:fixed; inset:0; width:100vw; height:100dvh; max-width:none; max-height:100dvh;
+    margin:0; border-radius:0; padding:max(24px,env(safe-area-inset-top)) 18px max(24px,env(safe-area-inset-bottom));
+  }
+}
+
 }
