@@ -8,7 +8,7 @@ const uuid = value => typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a
 const token = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
 const code = value => typeof value === 'string' && /^[A-HJ-NP-Z]{8}$/i.test(value);
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
-const settingFields = {startingStack:integer(1e9,1),smallBlind:integer(1e9,1),bigBlind:integer(1e9,1),blindMinutes:integer(1440)};
+const settingFields = {startingStack:integer(1e9,1),smallBlind:integer(1e9,1),bigBlind:integer(1e9,1),blindMinutes:integer(1440),centsPer1000Chips:integer(10_000_000)};
 const settings = value => object(value) && Object.entries(value).every(([key, n]) => Object.hasOwn(settingFields,key) && settingFields[key](n));
 const ids = value => Array.isArray(value) && value.length >= 1 && value.length <= 10 && value.every(uuid);
 const auth = {token,revision:integer(Number.MAX_SAFE_INTEGER)};

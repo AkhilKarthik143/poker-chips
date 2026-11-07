@@ -52,8 +52,11 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
   function view(room, id) {
     const state = structuredClone(room.game);
     delete state.history;
+    const handInProgress = game.isPlaying(room.game);
     return { ...state, roomCode: room.code, hostId: room.hostId, playerId: id, revision: room.revision,
       canUndo: room.game.history.length > 0, serverTime: now(),
+      settlement: structuredClone(room.lastSettlement || game.settlement(room.game)),
+      settlementNote: handInProgress ? 'Hand in progress. Showing totals from before this hand.' : '',
       players: state.players.map(p => ({ ...p, connected: room.connections.has(p.id) })),
       // Side pots are finalized once, when the hand reaches showdown. Do not
       // expose recalculated layers after every street; that makes one hand look
@@ -63,6 +66,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
   }
   function broadcast(room) {
     room.game.log.forEach(item => { if (item.timestamp === undefined) item.timestamp = now(); });
+    if (!game.isPlaying(room.game)) room.lastSettlement = game.settlement(room.game);
     for (const [id, socketId] of room.connections) io.sockets.sockets.get(socketId)?.emit('state', view(room, id));
   }
   function bind(socket, room, id) {
@@ -137,7 +141,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
       let code;
       do { code = Array.from({ length: 8 }, () => ALPHABET[randomInt(ALPHABET.length)]).join(''); } while (rooms.has(code));
       const token = randomBytes(32).toString('hex');
-      const room = { code, hostId: id, game: state, tokens: new Map([[id, token]]), connections: new Map(), lastActive: now(), revision: 0 };
+      const room = { code, hostId: id, game: state, tokens: new Map([[id, token]]), connections: new Map(), lastActive: now(), revision: 0, lastSettlement: null };
       rooms.set(code, room); bind(socket, room, id); broadcast(room);
       return { token, playerId: id, roomCode: code, state: view(room, id) };
     });

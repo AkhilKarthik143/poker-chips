@@ -30,11 +30,12 @@ function edit(state, fn, remember = false) {
   return copy;
 }
 function settings(input) {
-  const value = { startingStack: 1000, smallBlind: 5, bigBlind: 10, blindMinutes: 0, ...input };
+  const value = { startingStack: 1000, smallBlind: 5, bigBlind: 10, blindMinutes: 0, centsPer1000Chips: 0, ...input };
   check(integer(value.startingStack, 1, MAX_SETTING), 'Starting stack must be a positive whole number.');
   check(integer(value.smallBlind, 1, MAX_SETTING) && integer(value.bigBlind, 1, MAX_SETTING) && value.smallBlind <= value.bigBlind, 'Blinds must be positive whole numbers; small blind cannot exceed big blind.');
   check(value.bigBlind % value.smallBlind === 0, 'Big blind must be a multiple of the small blind.');
   check(integer(value.blindMinutes, 0, 1440), 'Blind timer must be 0–1440 whole minutes.');
+  check(integer(value.centsPer1000Chips, 0, 10_000_000), 'Cash value must be 0–10000000 cents per 1000 chips.');
   return value;
 }
 export function createTable(input = {}) {
@@ -46,6 +47,57 @@ export function assertConservation(state) {
   check(state.players.every(p => integer(p.stack, 0) && integer(p.contributed, 0)), 'Invalid chip accounting.');
   check(state.players.reduce((sum, p) => sum + p.stack + p.contributed, 0) === state.totalChips, 'Chip conservation failed.');
   return true;
+}
+function money(chips, centsPer1000Chips) {
+  if (!centsPer1000Chips) return null;
+  const magnitude = BigInt(Math.abs(chips));
+  const cents = (magnitude * BigInt(centsPer1000Chips) + 500n) / 1000n;
+  const dollars = cents / 100n;
+  const remainder = String(cents % 100n).padStart(2, '0');
+  const sign = chips < 0 ? '-' : chips > 0 ? '+' : '';
+  return `${sign}$${dollars.toLocaleString('en-US')}.${remainder}`;
+}
+const compareText = (a, b) => a < b ? -1 : a > b ? 1 : 0;
+function comparePeople(a, b) {
+  return compareText(a.name.normalize('NFKC').toLowerCase(), b.name.normalize('NFKC').toLowerCase()) || compareText(a.id, b.id);
+}
+export function settlement(state) {
+  const groups = new Map();
+  const add = (record, departed) => {
+    const name = normalizedName(record.name);
+    const key = name.toLowerCase();
+    const current = groups.get(key) || { id: String(record.id || ''), name, buyIn: 0, cashOut: 0, net: 0, handsWon: 0, handsPlayed: 0, active: false };
+    const buyIn = record.buyIn || 0;
+    const cashOut = departed ? record.cashOut : record.stack;
+    current.id = [current.id, String(record.id || '')].sort(compareText)[0];
+    if (!departed || !current.active) current.name = name;
+    current.active ||= !departed;
+    current.buyIn += buyIn; current.cashOut += cashOut; current.net += cashOut - buyIn;
+    current.handsWon += record.handsWon || 0; current.handsPlayed += record.handsPlayed || 0;
+    groups.set(key, current);
+  };
+  for (const player of state.players) add(player, false);
+  for (const player of state.departed || []) add(player, true);
+  const rate = state.settings.centsPer1000Chips;
+  const rows = [...groups.values()].map(({ active: _active, ...row }) => ({ ...row,
+    buyInMoney: money(row.buyIn, rate), cashOutMoney: money(row.cashOut, rate), netMoney: money(row.net, rate) }))
+    .sort((a, b) => b.net - a.net || comparePeople(a, b));
+  const debtors = rows.filter(row => row.net < 0).map(row => ({ ...row, remaining: -row.net }))
+    .sort((a, b) => b.remaining - a.remaining || comparePeople(a, b));
+  const creditors = rows.filter(row => row.net > 0).map(row => ({ ...row, remaining: row.net }))
+    .sort((a, b) => b.remaining - a.remaining || comparePeople(a, b));
+  const transfers = [];
+  let debtor = 0; let creditor = 0;
+  while (debtor < debtors.length && creditor < creditors.length) {
+    const from = debtors[debtor]; const to = creditors[creditor];
+    const chips = Math.min(from.remaining, to.remaining);
+    transfers.push({ fromId: from.id, fromName: from.name, toId: to.id, toName: to.name,
+      chips, money: money(chips, rate) });
+    from.remaining -= chips; to.remaining -= chips;
+    if (!from.remaining) debtor++;
+    if (!to.remaining) creditor++;
+  }
+  return { rows, transfers, centsPer1000Chips: rate || 0 };
 }
 export function addPlayer(state, id, name) {
   check(!isPlaying(state), 'Join between hands.');

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createTable, addPlayer, configure, startHand, act, calculatePots, pickWinners, legalActions, undo, reorderSeats,
-  rebuy, setSitOut, removePlayer, assertConservation } from '../src/game.js';
+  rebuy, donate, setSitOut, removePlayer, settlement, assertConservation } from '../src/game.js';
 function table(stacks = [1000, 1000, 1000], options = {}) {
   let s = createTable(options);
   stacks.forEach((_, i) => { s = addPlayer(s, String(i), `Player ${i}`); });
@@ -140,6 +140,39 @@ test('hands won count once across split pots and undo restores the result ledger
   const split = pickWinners(checkDown(startHand(table())), 0, ['0', '2']);
   assert.deepEqual(split.players.map(p => p.handsWon), [1, 0, 1]);
 });
+test('settlement merges normalized names and emits deterministic transfers for every net', () => {
+  let s = createTable({ startingStack: 1000, centsPer1000Chips: 2500 });
+  s = addPlayer(s, 'sam', 'Sam'); s = addPlayer(s, 'alex', 'Alex'); s = addPlayer(s, 'blair', 'Blair');
+  s.players.find(p => p.id === 'sam').stack = 900;
+  s.players.find(p => p.id === 'alex').stack = 1200;
+  s.players.find(p => p.id === 'blair').stack = 900;
+  const before = structuredClone(s);
+  const summary = settlement(s);
+  assert.deepEqual(summary.rows.map(row => row.name), ['Alex', 'Blair', 'Sam']);
+  assert.deepEqual(summary.rows.map(row => row.net), [200, -100, -100]);
+  assert.equal(summary.rows.reduce((sum, row) => sum + row.net, 0), 0);
+  assert.deepEqual(summary.transfers.map(item => [item.fromName, item.toName, item.chips]), [['Blair', 'Alex', 100], ['Sam', 'Alex', 100]]);
+  assert.equal(summary.transfers.length, 2);
+  assert.equal(summary.rows[0].netMoney, '+$5.00'); assert.equal(summary.transfers[0].money, '+$2.50');
+  assert.deepEqual(s, before);
+});
+test('settlement includes and merges departed/rejoined names and rounds cash values to cents', () => {
+  let s = createTable({ startingStack: 1000, centsPer1000Chips: 1000 });
+  s = addPlayer(s, 'sam-old', 'Sam'); s = addPlayer(s, 'alex', 'Alex');
+  s = donate(s, 'sam-old', 'alex', 100); s = removePlayer(s, 'sam-old'); s = addPlayer(s, 'sam-new', 'sAM');
+  const summary = settlement(s);
+  const sam = summary.rows.find(row => row.name.toLowerCase() === 'sam');
+  assert.equal(sam.buyIn, 2000); assert.equal(sam.cashOut, 1900); assert.equal(sam.net, -100);
+  assert.equal(sam.netMoney, '-$1.00');
+  assert.deepEqual(summary.transfers.map(item => [item.fromName.toLowerCase(), item.toName, item.chips]), [['sam', 'Alex', 100]]);
+  let rounding = createTable({ startingStack: 1000, centsPer1000Chips: 501 });
+  rounding = addPlayer(rounding, 'a', 'A'); rounding = addPlayer(rounding, 'b', 'B');
+  rounding.players[0].stack++; rounding.players[1].stack--;
+  assert.equal(settlement(rounding).transfers[0].money, '+$0.01');
+  assert.deepEqual(settlement(createTable()).transfers, []);
+  const solo = addPlayer(createTable(), 'solo', 'Solo');
+  assert.equal(settlement(solo).rows.length, 1); assert.deepEqual(settlement(solo).transfers, []);
+});
 test('timer increases blinds only on a new hand', () => {
   let s = startHand(table([1000, 1000], { blindMinutes: 1 }), 1000);
   assert.equal(s.blindDeadline, 61000);
@@ -151,6 +184,8 @@ test('ten-seat cap and invalid settings are rejected', () => {
   assert.throws(() => addPlayer(s, '11', 'Full'), /10 players/);
   assert.throws(() => createTable({ smallBlind: 20, bigBlind: 10 }));
   assert.throws(() => createTable({ startingStack: -1 }));
+  assert.throws(() => createTable({ centsPer1000Chips: -1 }));
+  assert.throws(() => createTable({ centsPer1000Chips: 10_000_001 }));
   assert.throws(() => createTable({ smallBlind: 3, bigBlind: 10 }), /multiple/);
 });
 

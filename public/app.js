@@ -93,6 +93,7 @@ function receive(value) {
 }
 function reset(message) {
   state = null; lastTurn = null; raiseOpen = false; alertWinHands = []; window.Alerts?.reset(); saveIdentity(null);
+  document.querySelectorAll('dialog[open]').forEach(dialog => dialog.close());
   status(socket.connected ? 'Connected' : 'Reconnecting', socket.connected);
   document.body.classList.remove('in-game');
   $('#table').hidden = true; $('#table').replaceChildren(); $('#lobby').hidden = false; $('#site-footer').hidden = false;
@@ -143,7 +144,7 @@ $('#entry-form').addEventListener('submit', async event => {
   busy = true; setButtons();
   try {
     const data = { name: $('#name').value.trim() };
-    if (mode === 'create') data.settings = { startingStack: Number($('#starting-stack').value), smallBlind: Number($('#small-blind').value), bigBlind: Number($('#big-blind').value), blindMinutes: Number($('#blind-minutes').value) };
+    if (mode === 'create') data.settings = { startingStack: Number($('#starting-stack').value), smallBlind: Number($('#small-blind').value), bigBlind: Number($('#big-blind').value), blindMinutes: Number($('#blind-minutes').value), centsPer1000Chips: Math.round(Number($('#cash-value').value) * 100) };
     else { data.code = $('#room-code').value.trim().toUpperCase(); await previewJoin(data); return; }
     const result = await request(mode, data);
     saveIdentity({ code: result.roomCode, playerId: result.playerId, token: result.token });
@@ -278,6 +279,40 @@ function alertControls() {
   const preferences = window.Alerts?.preferences() || { sound: true, vibration: true, keepScreenOn: true };
   const toggle = (key, label) => `<label class="preference-toggle"><input type="checkbox" data-alert-setting="${key}" ${preferences[key] ? 'checked' : ''}><span>${label}</span></label>`;
   return `<section class="alert-controls" aria-label="Alerts and screen"><h3>Alerts & display</h3>${toggle('sound', 'Sound')}${window.Alerts?.vibrationSupported ? toggle('vibration', 'Vibration') : ''}${window.Alerts?.wakeLockSupported ? toggle('keepScreenOn', 'Keep screen on') : ''}<p class="helper">iPhone silent switch can mute sound.</p><button type="button" id="test-alert">Test alert</button></section>`;
+}
+function tonightText(summary) {
+  const players = summary.rows.map(row => `${row.name}: buy-in ${number(row.buyIn)}, cash-out ${number(row.cashOut)}, net ${row.net > 0 ? '+' : ''}${number(row.net)} chips${row.netMoney ? ` (${row.netMoney})` : ''}; won ${row.handsWon} of ${row.handsPlayed} hands.`);
+  const transfers = summary.transfers.map(item => `${item.fromName} pays ${item.toName} ${number(item.chips)} chips${item.money ? ` · ${item.money}` : ''}.`);
+  return [`Tonight · Table ${state.roomCode}`, ...players, 'Who pays whom:', ...(transfers.length ? transfers : ['No transfers needed.']), 'Informal tally for friends. This app doesn’t handle money.'].join('\n');
+}
+function openTonight() {
+  const dialog = $('#tonight-dialog');
+  const summary = state.settlement || { rows: [], transfers: [], centsPer1000Chips: 0 };
+  const rows = summary.rows.map(row => {
+    const sign = row.net > 0 ? '+' : row.net < 0 ? '−' : '';
+    const icon = row.net > 0 ? '↑' : row.net < 0 ? '↓' : '→';
+    return `<article class="settlement-row" role="row"><strong role="cell">${escape(row.name)}</strong><span role="cell"><small>Buy-in total</small>${number(row.buyIn)} chips${row.buyInMoney ? `<small>${escape(row.buyInMoney)}</small>` : ''}</span><span role="cell"><small>Stack / cash-out</small>${number(row.cashOut)} chips${row.cashOutMoney ? `<small>${escape(row.cashOutMoney)}</small>` : ''}</span><span role="cell" class="settlement-net"><small>Net</small><b aria-label="${row.net > 0 ? 'Up' : row.net < 0 ? 'Down' : 'Even'}">${icon} ${sign}${number(Math.abs(row.net))} chips</b>${row.netMoney ? `<small>${escape(row.netMoney)}</small>` : ''}</span><span role="cell"><small>Hands won / played</small>${row.handsWon} / ${row.handsPlayed}</span></article>`;
+  }).join('');
+  const transfers = summary.transfers.map(item => `<li>${escape(item.fromName)} pays ${escape(item.toName)} <strong>${number(item.chips)} chips</strong>${item.money ? ` · ${escape(item.money)}` : ''}</li>`).join('');
+  dialog.innerHTML = `<section class="tonight-sheet"><header class="tonight-header"><div><p class="eyebrow">TABLE LEDGER</p><h2 id="tonight-title">Tonight</h2></div><button type="button" class="seat-sheet-close" data-close-tonight aria-label="Close Tonight sheet">×</button></header><p class="helper tonight-note">${escape(state.settlementNote || 'Current table totals.')}</p>${summary.centsPer1000Chips ? `<p class="cash-rate">Cash value per 1,000 chips: $${(summary.centsPer1000Chips / 100).toFixed(2)}</p>` : ''}<div class="settlement-table" role="table" aria-label="Tonight chip ledger"><div class="settlement-head" role="row"><span role="columnheader">Name</span><span role="columnheader">Buy-in total</span><span role="columnheader">Stack / cash-out</span><span role="columnheader">Net</span><span role="columnheader">Hands won / played</span></div>${rows || '<p class="empty-ledger">No player totals yet.</p>'}</div><section class="settlement-transfers"><h3>Who pays whom</h3><ul>${transfers || '<li>No transfers needed.</li>'}</ul></section><p class="informal-note">Informal tally for friends. This app doesn’t handle money.</p><textarea id="tonight-summary-copy" class="copy-fallback" readonly hidden aria-label="Tonight summary to copy"></textarea><footer class="tonight-footer"><button type="button" id="copy-tonight">Copy summary</button><button type="button" class="primary" data-close-tonight>Close</button></footer></section>`;
+  dialog.querySelectorAll('[data-close-tonight]').forEach(button => button.addEventListener('click', () => dialog.close()));
+  dialog.querySelector('#copy-tonight').addEventListener('click', async () => {
+    const text = tonightText(summary);
+    try { await navigator.clipboard.writeText(text); toast('Tonight summary copied.'); }
+    catch {
+      const field = dialog.querySelector('#tonight-summary-copy'); field.hidden = false; field.value = text; field.focus(); field.select();
+      try { if (document.execCommand('copy')) toast('Tonight summary copied.'); else toast('Select and copy the summary text below.'); }
+      catch { toast('Select and copy the summary text below.'); }
+    }
+  });
+  openSheet(dialog, { labelledBy: 'tonight-title' });
+}
+function leaveConfirmation() {
+  const me = state.players.find(player => player.id === state.playerId);
+  const key = me?.name.normalize('NFKC').trim().toLowerCase();
+  const row = state.settlement?.rows.find(player => player.name.normalize('NFKC').trim().toLowerCase() === key);
+  const net = row ? `${row.net > 0 ? '+' : ''}${number(row.net)} chips${row.netMoney ? ` · ${row.netMoney}` : ''}` : 'No settled totals yet.';
+  showDialog('Leave table', `<p>Your net so far: <strong>${escape(net)}</strong>.</p><p class="helper">Leaving removes your seat. You can copy the Tonight summary first.</p>`, async () => { await request('leave'); if (state) reset('You left the table.'); }, 'Leave table');
 }
 function nextAssignments(order, changed) {
   const eligible = order.filter(id => { const p = state.players.find(p => p.id === id); return p.stack > 0 && !p.sittingOut; });
@@ -541,13 +576,13 @@ function render() {
       ${state.lastResult && state.street === 'complete' ? `<section class="result"><h2>That’s a hand.</h2>${state.lastResult.awards.map(a => `<p>${escape(state.players.find(p => p.id === a.id)?.name || 'Departed player')} <strong>+${number(a.amount)}</strong> · ${escape(a.label)}</p>`).join('')}${[...new Set(state.lastResult.awards.map(a => a.id))].map(id => { const winner = state.players.find(p => p.id === id); return winner ? `<p class="winner-record">${escape(winner.name)} has won ${winner.handsWon} of ${winner.handsPlayed} hands tonight.</p>` : ''; }).join('')}</section>` : ''}
       ${state.street === 'showdown' ? `<section class="showdown"><h2>Who takes the pot?</h2><p class="helper">${host ? 'Select every tied winner for each pot. Chips settle after all pots are assigned; odd chips go left of the dealer.' : 'The host is selecting winners from the physical cards.'}</p>${state.pots.map((pot, index) => `<form class="winner-form" data-pot="${pot.id}"><h3>${index ? `Side pot ${index}` : 'Main pot'} · ${number(pot.amount)} chips</h3>${pot.winners ? `<p class="helper">Selected: ${pot.winners.map(id => escape(state.players.find(p => p.id === id).name)).join(' + ')}</p>` : pot.eligible.map(id => `<label for="winner-${pot.id}-${id}"><input id="winner-${pot.id}-${id}" type="checkbox" name="winner" value="${escape(id)}" ${!host ? 'disabled' : ''}>${escape(state.players.find(p => p.id === id).name)}</label>`).join('')}${host && !pot.winners ? '<button class="primary" type="submit">Confirm winner(s)</button>' : ''}</form>`).join('')}</section>` : ''}
     </section><details class="rail-drawer" id="table-rail" ${railMedia.matches ? 'open' : ''}><summary>Players, hand log & controls</summary><aside class="sidebar">
-      <details class="panel" id="players-panel" open><summary>Players <span>${state.players.length}/10</span></summary><ul class="players-list">${state.seatOrder.map(id => { const p = state.players.find(p => p.id === id); return `<li><strong>${escape(p.name)}${p.id === state.playerId ? ' · You' : ''}</strong><span>${p.sittingOut ? '⏸ Away' : p.connected ? '✓ Connected' : '⏸ Offline'}</span><span>Won ${p.handsWon} of ${p.handsPlayed} hands</span></li>`; }).join('')}</ul><div class="panel-content"><button id="donate-chips" ${playing || me.stack < 1 || state.players.length < 2 ? 'disabled' : ''}>Donate chips</button><p class="helper">${playing ? 'Available between hands.' : 'Give chips from your stack to another player.'}</p></div></details>
+      <details class="panel" id="players-panel" open><summary>Players <span>${state.players.length}/10</span></summary><ul class="players-list">${state.seatOrder.map(id => { const p = state.players.find(p => p.id === id); return `<li><strong>${escape(p.name)}${p.id === state.playerId ? ' · You' : ''}</strong><span>${p.sittingOut ? '⏸ Away' : p.connected ? '✓ Connected' : '⏸ Offline'}</span><span>Won ${p.handsWon} of ${p.handsPlayed} hands</span></li>`; }).join('')}</ul><div class="panel-content"><button id="donate-chips" ${playing || me.stack < 1 || state.players.length < 2 ? 'disabled' : ''}>Donate chips</button><button id="open-tonight-players">Tonight</button><p class="helper">${playing ? 'Available between hands.' : 'Give chips from your stack to another player.'}</p></div></details>
       <details class="panel" id="hand-log" ${railMedia.matches ? 'open' : ''}><summary>Hand log <span>Hand ${state.handNumber}</span></summary><ol class="log-list">${handLog()}</ol></details>
       ${host ? hostPanel(playing, actor) : ''}
       <details class="panel" id="your-seat"><summary>Your seat</summary><div class="panel-content"><p class="helper">${playing ? 'Sit out applies from the next hand. Leave and rebuy between hands.' : 'Ask your host for a rebuy or add-on.'}</p><button id="sit-out">${me.sittingOut ? 'Play next hand' : 'Sit out next hand'}</button><button id="leave" class="quiet danger" ${playing ? 'disabled' : ''}>Leave table</button>${alertControls()}</div></details>
     </aside></details></div>
     <section class="dock" aria-label="Your betting controls"><div class="dock-inner"><div class="dock-summary"><div class="turn-label ${state.legal.active ? '' : 'waiting'}" role="status">${!ready ? 'RECONNECTING' : state.legal.active ? 'YOUR TURN' : state.street === 'showdown' ? 'SHOWDOWN' : actor ? `${escape(actor.name).toUpperCase()} TO ACT` : host ? 'HOST · TABLE CONTROLS' : 'WAITING FOR HOST'}</div><div class="balance"><span>Your stack</span><strong>${number(me.stack)}</strong></div><div class="balance"><span>To call</span><strong>${number(state.legal.toCall)}</strong></div></div>
-      ${!playing ? `<div class="lobby-actions"><button id="invite-players">Invite players</button><button id="change-seat">Change seat</button><button id="set-buy-in">${host ? 'Set buy-in' : 'View buy-in'}</button>${host ? `<button id="start-hand" class="primary" ${state.players.filter(p => p.stack > 0 && !p.sittingOut).length < 2 ? 'disabled' : ''}>${state.handNumber ? 'Start next hand' : 'Start game'} →</button>` : '<span class="helper">Your host starts the hand.</span>'}</div>` : ''}
+      ${!playing ? `<div class="lobby-actions"><button id="invite-players">Invite players</button><button id="change-seat">Change seat</button><button id="set-buy-in">${host ? 'Set buy-in' : 'View buy-in'}</button><button id="open-tonight-dock">Tonight</button>${host ? `<button id="start-hand" class="primary" ${state.players.filter(p => p.stack > 0 && !p.sittingOut).length < 2 ? 'disabled' : ''}>${state.handNumber ? 'Start next hand' : 'Start game'} →</button>` : '<span class="helper">Your host starts the hand.</span>'}</div>` : ''}
       ${state.turn ? `<div class="actions"><button data-action="fold" class="quiet" ${!state.legal.active ? 'disabled' : ''}>Fold</button><button data-action="${state.legal.canCheck ? 'check' : 'call'}" class="neutral" ${!state.legal.active ? 'disabled' : ''}>${state.legal.canCheck ? 'Check' : `Call ${number(state.legal.toCall)}`}</button><button id="toggle-raise" class="primary" aria-expanded="${raiseOpen}" ${!state.legal.canRaise ? 'disabled' : ''}>${state.currentBet ? 'Raise' : 'Bet'}</button><button data-action="all-in" class="all-in" ${!state.legal.canAllIn ? 'disabled' : ''}>All-in</button></div>` : ''}
       ${raiseOpen && state.legal.canRaise ? (() => { const min = Math.min(state.legal.minRaiseTo, state.legal.maxRaiseTo); const max = state.legal.maxRaiseTo; return `<form id="raise-form" class="raise-panel"><div><label for="raise-amount">${state.currentBet ? 'Raise' : 'Bet'} to · multiples of ${number(state.settings.smallBlind)}</label><div class="amount-stepper"><button type="button" data-raise-step="-1" aria-label="Decrease by one small blind">−</button><input id="raise-amount" aria-label="Raise to amount" type="number" inputmode="numeric" min="${min}" max="${max}" value="${min}" step="${state.settings.smallBlind}" required><button type="button" data-raise-step="1" aria-label="Increase by one small blind">+</button></div><details class="range-adjust"><summary>Adjust with slider</summary><input id="raise-range" type="range" aria-label="Raise amount slider (logarithmic)" min="0" max="100" value="${sliderPosition(min, min, max)}" step="1" data-min="${min}" data-max="${max}" data-blind="${state.settings.smallBlind}"></details></div><button class="primary raise-submit" type="submit">Confirm</button><div class="quick-bets"><button type="button" data-quick="min">Min</button><button type="button" data-quick="half">½ pot</button><button type="button" data-quick="three-quarter">¾ pot</button><button type="button" data-quick="pot">Pot</button><button type="button" data-quick="all">All-in</button></div></form>`; })() : ''}
     </div></section>`;
@@ -559,7 +594,7 @@ function render() {
 }
 function hostPanel(playing, actor) {
   return `<details class="panel" id="host-menu"><summary tabindex="0">Host controls</summary><div class="panel-content"><button id="undo" ${!state.canUndo ? 'disabled' : ''}>Undo last action</button>${actor && !actor.connected ? '<button id="host-fold" class="danger">Fold disconnected player</button>' : ''}<p class="helper">${playing ? 'Settings are available between hands.' : 'Changes to the starting stack apply to new seats. Before the first hand, they apply to everyone.'}</p>
-    <form id="settings-form"><div class="form-grid"><div><label for="host-stack">Starting stack</label><input id="host-stack" type="number" min="1" max="1000000000" value="${state.settings.startingStack}" ${playing ? 'disabled' : ''} required></div><div><label for="host-timer">Timer (minutes)</label><input id="host-timer" type="number" min="0" max="1440" value="${state.settings.blindMinutes}" ${playing ? 'disabled' : ''} required></div><div><label for="host-sb">Small blind</label><input id="host-sb" type="number" min="1" value="${state.settings.smallBlind}" ${playing ? 'disabled' : ''} required></div><div><label for="host-bb">Big blind</label><input id="host-bb" type="number" min="1" value="${state.settings.bigBlind}" ${playing ? 'disabled' : ''} required></div></div><button type="submit" ${playing ? 'disabled' : ''}>Save table settings</button></form>
+    <form id="settings-form"><div class="form-grid"><div><label for="host-stack">Starting stack</label><input id="host-stack" type="number" min="1" max="1000000000" value="${state.settings.startingStack}" ${playing ? 'disabled' : ''} required></div><div><label for="host-timer">Timer (minutes)</label><input id="host-timer" type="number" min="0" max="1440" value="${state.settings.blindMinutes}" ${playing ? 'disabled' : ''} required></div><div><label for="host-sb">Small blind</label><input id="host-sb" type="number" min="1" value="${state.settings.smallBlind}" ${playing ? 'disabled' : ''} required></div><div><label for="host-bb">Big blind</label><input id="host-bb" type="number" min="1" value="${state.settings.bigBlind}" ${playing ? 'disabled' : ''} required></div><div><label for="host-cash-value">Cash value per 1,000 chips ($)</label><input id="host-cash-value" type="number" inputmode="decimal" min="0" max="100000" step="0.01" value="${(state.settings.centsPer1000Chips / 100).toFixed(2)}" ${playing ? 'disabled' : ''}></div></div><button type="submit" ${playing ? 'disabled' : ''}>Save table settings</button></form>
     <form id="rebuy-form"><label for="rebuy-player">Rebuy / add-on</label><select id="rebuy-player" ${playing ? 'disabled' : ''}>${state.players.map(option).join('')}</select><label for="rebuy-amount">Chips to add</label><input id="rebuy-amount" type="number" min="1" max="1000000000" value="${state.settings.startingStack}" ${playing ? 'disabled' : ''} required><button type="submit" ${playing ? 'disabled' : ''}>Add chips</button></form>
     ${state.players.length > 1 ? `<form id="kick-form"><label for="kick-player">Remove a player</label><select id="kick-player" ${playing ? 'disabled' : ''}>${state.players.filter(p => p.id !== state.playerId).map(option).join('')}</select><button class="danger quiet" type="submit" ${playing ? 'disabled' : ''}>Remove selected player</button></form>` : ''}</div></details>`;
 }
@@ -579,7 +614,9 @@ function wireTable(me, pot) {
   $('#undo')?.addEventListener('click', () => run('undo'));
   $('#host-fold')?.addEventListener('click', () => run('host-fold'));
   $('#sit-out').addEventListener('click', () => run('sit-out', { value: !me.sittingOut }));
-  $('#leave').addEventListener('click', () => run('leave'));
+  $('#leave').addEventListener('click', leaveConfirmation);
+  $('#open-tonight-players')?.addEventListener('click', openTonight);
+  $('#open-tonight-dock')?.addEventListener('click', openTonight);
   document.querySelectorAll('[data-alert-setting]').forEach(input => input.addEventListener('change', () => window.Alerts?.setPreference(input.dataset.alertSetting, input.checked)));
   $('#test-alert')?.addEventListener('click', () => window.Alerts?.test());
   document.querySelectorAll('[data-action]').forEach(el => el.addEventListener('click', () => run('action', { type: el.dataset.action })));
@@ -609,7 +646,7 @@ function wireTable(me, pot) {
   }));
   $('#raise-form')?.addEventListener('submit', event => { event.preventDefault(); run('action', { type: 'raise', amount: Number($('#raise-amount').value) }); });
   $('#settings-form')?.addEventListener('submit', event => {
-    event.preventDefault(); run('host-settings', { settings: { startingStack: Number($('#host-stack').value), smallBlind: Number($('#host-sb').value), bigBlind: Number($('#host-bb').value), blindMinutes: Number($('#host-timer').value) } });
+    event.preventDefault(); run('host-settings', { settings: { startingStack: Number($('#host-stack').value), smallBlind: Number($('#host-sb').value), bigBlind: Number($('#host-bb').value), blindMinutes: Number($('#host-timer').value), centsPer1000Chips: Math.round(Number($('#host-cash-value').value) * 100) } });
   });
   $('#rebuy-form')?.addEventListener('submit', event => { event.preventDefault(); run('rebuy', { playerId: $('#rebuy-player').value, amount: Number($('#rebuy-amount').value) }); });
   $('#kick-form')?.addEventListener('submit', event => { event.preventDefault(); run('kick', { playerId: $('#kick-player').value }); });

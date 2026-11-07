@@ -51,6 +51,8 @@
           </div>
           <label for="blind-minutes">Increase blinds</label>
           <select id="blind-minutes"><option value="0">Keep them steady</option><option value="10">Double every 10 minutes</option><option value="15">Double every 15 minutes</option><option value="20">Double every 20 minutes</option><option value="30">Double every 30 minutes</option></select>
+          <label for="cash-value">Cash value per 1,000 chips ($) · optional</label>
+          <input id="cash-value" type="number" inputmode="decimal" min="0" max="100000" step="0.01" value="0">
         </div>
         <button id="entry-submit" class="primary entry-submit" type="submit">Create a table <span aria-hidden="true">↗</span></button>
         <p id="entry-caption" class="form-caption">You’re the host. House rules, your call.</p>
@@ -61,6 +63,7 @@
   <main id="table" class="table-page" hidden></main>
   <dialog id="seat-dialog" aria-labelledby="dialog-title"></dialog>
   <dialog id="seat-reorder-dialog" aria-labelledby="seat-reorder-title"></dialog>
+  <dialog id="tonight-dialog" aria-labelledby="tonight-title"></dialog>
   <div id="toast" class="toast" role="alert" hidden></div>
   <noscript>This table needs JavaScript to keep everyone’s chips in sync.</noscript>
   <footer id="site-footer" class="site-footer"><span>A LITTLE LESS SETUP. A LOT MORE POKER.</span><span>Made for the table.</span></footer>

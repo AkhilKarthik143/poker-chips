@@ -176,3 +176,18 @@ test('join preview is read-only, hides identities, and rejects a changed buy-in'
   await ok(a, 'start-hand');
   assert.match((await emit(b, 'table-preview', { code: created.roomCode })).error, /between hands/);
 });
+
+test('view broadcasts settlement snapshots and marks the prior values during a hand', async t => {
+  const { client, server } = await setup(t);
+  const a = await client(); const b = await client();
+  const created = await ok(a, 'create', { name: 'Alex', settings: { startingStack: 100, smallBlind: 5, bigBlind: 10, centsPer1000Chips: 2500 } });
+  await ok(b, 'join', { code: created.roomCode, name: 'Blair' }); await barrier(server, [a, b]);
+  assert.equal(a.state.settlement.centsPer1000Chips, 2500);
+  assert.equal(a.state.settlement.rows.reduce((sum, row) => sum + row.net, 0), 0);
+  assert.equal((await emit(a, 'host-settings', { settings: { centsPer1000Chips: 10_000_001 } })).ok, false);
+  const previous = structuredClone(a.state.settlement);
+  await ok(a, 'start-hand'); await barrier(server, [a, b]);
+  assert.deepEqual(a.state.settlement, previous);
+  assert.match(a.state.settlementNote, /Hand in progress/);
+  assert.equal(JSON.stringify(a.state).includes(created.token), false);
+});
