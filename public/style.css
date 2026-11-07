@@ -261,6 +261,13 @@ input::placeholder { color:var(--dp-color-placeholder); }
 }
 
 body.sheet-open { overscroll-behavior:none; }
+.alert-controls { margin-top:18px; padding-top:14px; border-top:1px solid var(--dp-color-rule-muted); }
+.alert-controls h3 { margin-bottom:8px; font-size:15px; }
+.alert-controls .preference-toggle { display:flex; align-items:center; gap:10px; min-height:44px; margin:4px 0; color:var(--dp-color-ink); font-size:14px; }
+.alert-controls .preference-toggle input { width:22px; height:22px; min-height:22px; margin:0; accent-color:var(--dp-color-accent); }
+.alert-controls .helper { margin:8px 0; font-size:13px; }
+.alert-controls button { width:100%; min-height:44px; }
+.sound-unlock { position:fixed; z-index:20; bottom:calc(env(safe-area-inset-bottom) + 20px); left:50%; transform:translateX(-50%); max-width:calc(100vw - 32px); background:var(--dp-color-accent-warm); border:2px solid var(--dp-color-outline); box-shadow:4px 4px 0 var(--dp-color-accent); color:var(--dp-color-ink); }
 dialog.app-sheet { overscroll-behavior:contain; max-height:calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 24px); }
 dialog.app-sheet :focus-visible { scroll-margin:20px; }
 @media(max-width:699px) {

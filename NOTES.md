@@ -12,6 +12,8 @@
 - Assumption: `NOTES.md` is the progress ledger. The pasted prompt file is a reference and will not be overwritten.
 - Playwright 1.65.0 is already a dev dependency; the Chromium install command succeeded. Browser-required checks can run locally.
 - S2: added `openSheet()` with modal focus containment, native Esc close, body scroll lock/restore, safe-area styling and shared dialog labeling. `render()` now preserves scroll offsets, window scroll, focus, all form values/selections, checkbox state and open `<details>` by ID or DOM path; open dialogs live outside the rewritten table. Pure classic-script helpers now share `globalThis.Tablemate` and are tested with `node:vm`. Gate: lint passed, 51 tests passed, `git diff --check` passed.
+- S5: added `public/alerts.js` with Web Audio tones, a gesture-unlock pill, preference persistence, gated vibration/haptic tick, hidden-tab title flashing, and optional screen wake lock. Wired transition/dedupe helpers and Your seat toggles; the warning sound is a TODO hook because no turn timer exists. Added browser/service-worker ESLint global blocks. Gate: lint passed, 51 tests passed, `git diff --check` passed.
+- S5 device limits: real vibration, iPhone silent-switch behavior, and physical wake-lock reacquisition are not verifiable in this browser environment; logged for final summary.
 
 ### Blockers
 - None.

@@ -14,4 +14,17 @@ export default [{
     'no-var': 'error',
     'prefer-const': 'error'
   }
+}, {
+  files: ['public/**/*.js'],
+  languageOptions: { globals: Object.fromEntries([
+    'window', 'document', 'navigator', 'localStorage', 'sessionStorage', 'matchMedia', 'ResizeObserver',
+    'IntersectionObserver', 'crypto', 'requestAnimationFrame', 'cancelAnimationFrame', 'CSS', 'Event',
+    'CustomEvent', 'HTMLElement', 'AudioContext', 'visualViewport', 'performance', 'Notification', 'location'
+  ].map(name => [name, 'readonly'])) }
+}, {
+  files: ['public/sw.js'],
+  languageOptions: { globals: Object.fromEntries([
+    'self', 'caches', 'clients', 'registration', 'skipWaiting', 'importScripts', 'Request', 'Response',
+    'Headers', 'Notification', 'PushEvent', 'FetchEvent', 'ExtendableEvent', 'ServiceWorkerGlobalScope', 'location'
+  ].map(name => [name, 'readonly'])) }
 }];

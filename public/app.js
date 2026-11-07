@@ -16,6 +16,7 @@ let seatDraft = null;
 let seatMessage = '';
 let dragSeat = null;
 let queuedDragState = null;
+let alertWinHands = [];
 const railMedia = matchMedia('(min-width:1200px)');
 railMedia.addEventListener('change', () => render());
 const ellipseObserver = new ResizeObserver(() => positionSeats());
@@ -73,19 +74,25 @@ function receive(value) {
   // Socket.IO keeps packet order; revision also guards delayed acknowledgement state.
   if (state && value.roomCode === state.roomCode && value.revision < state.revision) return;
   if (dragSeat) { queuedDragState = value; return; }
+  const previousState = state;
+  const alertResult = window.Tablemate.alertTransition(previousState, value, value.playerId, ready, alertWinHands);
+  alertWinHands = alertResult.seenHands;
   const previousOrder = state?.seatOrder || [];
   state = value; serverOffset = value.serverTime - Date.now();
   seatDraft = seatDraft ? reconcileOrder(seatDraft, state.seatOrder) : [...state.seatOrder];
   if (JSON.stringify(previousOrder) !== JSON.stringify(state.seatOrder) && $('#seat-reorder-dialog').open) {
     seatMessage = 'The table membership or order changed while you were arranging seats. Your draft was kept; departed players were removed and new players added at the end.';
   }
-  if (state.turn === state.playerId && lastTurn !== state.turn && ready && typeof navigator.vibrate === 'function') navigator.vibrate([90, 50, 90]);
+  if (alertResult.alert === 'yourTurn') window.Alerts?.yourTurn();
+  if (alertResult.alert === 'win') window.Alerts?.win();
+  if (state.turn !== state.playerId) window.Alerts?.stopTitleFlash();
+  window.Alerts?.setTableActive(Boolean(ready && state));
   if (lastTurn !== state.turn) raiseOpen = false;
   lastTurn = state.turn;
   render();
 }
 function reset(message) {
-  state = null; lastTurn = null; raiseOpen = false; saveIdentity(null);
+  state = null; lastTurn = null; raiseOpen = false; alertWinHands = []; window.Alerts?.reset(); saveIdentity(null);
   status(socket.connected ? 'Connected' : 'Reconnecting', socket.connected);
   document.body.classList.remove('in-game');
   $('#table').hidden = true; $('#table').replaceChildren(); $('#lobby').hidden = false; $('#site-footer').hidden = false;
@@ -107,7 +114,7 @@ socket.on('connect', async () => {
   } else ready = true;
   setButtons();
 });
-socket.on('disconnect', () => { ready = false; status('Reconnecting'); if (state) render(); setButtons(); });
+socket.on('disconnect', () => { ready = false; window.Alerts?.setTableActive(false); status('Reconnecting'); if (state) render(); setButtons(); });
 socket.on('connect_error', () => { ready = false; status('Offline · retrying'); setButtons(); });
 socket.on('state', receive);
 socket.on('removed', ({ message }) => { reset(message); ready = socket.connected; setButtons(); });
@@ -132,6 +139,7 @@ $('#create-tab').addEventListener('click', () => entryMode('create'));
 $('#join-tab').addEventListener('click', () => entryMode('join'));
 $('#entry-form').addEventListener('submit', async event => {
   event.preventDefault(); if (busy || !ready) return;
+  window.Alerts?.unlock();
   busy = true; setButtons();
   try {
     const data = { name: $('#name').value.trim() };
@@ -194,7 +202,7 @@ function showDialog(title, content, onConfirm, confirmLabel = 'Confirm') {
   dialog.innerHTML = `<form id="dialog-form"><h2 id="dialog-title">${escape(title)}</h2>${content}<p id="dialog-error" role="alert"></p><div class="dialog-actions"><button type="button" id="dialog-close">Cancel</button><button type="submit" class="primary">${confirmLabel}</button></div></form>`;
   $('#dialog-close').onclick = () => dialog.close();
   $('#dialog-form').onsubmit = async event => {
-    event.preventDefault(); const button = event.submitter; button.disabled = true;
+    event.preventDefault(); window.Alerts?.unlock(); const button = event.submitter; button.disabled = true;
     try { await onConfirm(); dialog.close(); } catch (error) { $('#dialog-error').textContent = error.message; }
     finally { button.disabled = false; }
   };
@@ -266,6 +274,11 @@ const instructions = {
   complete: 'Chips settled. Collect the cards and get ready for the next hand.'
 };
 function option(p) { return `<option value="${escape(p.id)}">${escape(p.name)} · ${number(p.stack)}</option>`; }
+function alertControls() {
+  const preferences = window.Alerts?.preferences() || { sound: true, vibration: true, keepScreenOn: true };
+  const toggle = (key, label) => `<label class="preference-toggle"><input type="checkbox" data-alert-setting="${key}" ${preferences[key] ? 'checked' : ''}><span>${label}</span></label>`;
+  return `<section class="alert-controls" aria-label="Alerts and screen"><h3>Alerts & display</h3>${toggle('sound', 'Sound')}${window.Alerts?.vibrationSupported ? toggle('vibration', 'Vibration') : ''}${window.Alerts?.wakeLockSupported ? toggle('keepScreenOn', 'Keep screen on') : ''}<p class="helper">iPhone silent switch can mute sound.</p><button type="button" id="test-alert">Test alert</button></section>`;
+}
 function nextAssignments(order, changed) {
   const eligible = order.filter(id => { const p = state.players.find(p => p.id === id); return p.stack > 0 && !p.sittingOut; });
   if (eligible.length < 2) return {};
@@ -380,7 +393,7 @@ function wireSeatDrag(dialog) {
     const placeholder = document.createElement('li'); placeholder.className = 'seat-placeholder'; placeholder.setAttribute('aria-hidden', 'true'); placeholder.style.height = `${rect.height}px`;
     row.before(placeholder); row.remove(); dialog.appendChild(ghost);
     dragSeat = { id: row.dataset.playerId, pointer: event.pointerId, row, ghost, placeholder, list, dialog, startOrder: [...seatDraft], origin: event.clientY, lastX: event.clientX, lastY: event.clientY, active: immediate };
-    if (immediate) { row.classList.add('drag-original'); navigator.vibrate?.(8); event.preventDefault(); }
+    if (immediate) { row.classList.add('drag-original'); window.Alerts?.tick(); event.preventDefault(); }
     list.setPointerCapture?.(event.pointerId);
     dragSeat.autoScrollFrame = requestAnimationFrame(autoScroll);
   };
@@ -531,7 +544,7 @@ function render() {
       <details class="panel" id="players-panel" open><summary>Players <span>${state.players.length}/10</span></summary><ul class="players-list">${state.seatOrder.map(id => { const p = state.players.find(p => p.id === id); return `<li><strong>${escape(p.name)}${p.id === state.playerId ? ' · You' : ''}</strong><span>${p.sittingOut ? '⏸ Away' : p.connected ? '✓ Connected' : '⏸ Offline'}</span></li>`; }).join('')}</ul><div class="panel-content"><button id="donate-chips" ${playing || me.stack < 1 || state.players.length < 2 ? 'disabled' : ''}>Donate chips</button><p class="helper">${playing ? 'Available between hands.' : 'Give chips from your stack to another player.'}</p></div></details>
       <details class="panel" id="hand-log" ${railMedia.matches ? 'open' : ''}><summary>Hand log <span>Hand ${state.handNumber}</span></summary><ol class="log-list">${handLog()}</ol></details>
       ${host ? hostPanel(playing, actor) : ''}
-      <details class="panel" id="your-seat"><summary>Your seat</summary><div class="panel-content"><p class="helper">${playing ? 'Sit out applies from the next hand. Leave and rebuy between hands.' : 'Ask your host for a rebuy or add-on.'}</p><button id="sit-out">${me.sittingOut ? 'Play next hand' : 'Sit out next hand'}</button><button id="leave" class="quiet danger" ${playing ? 'disabled' : ''}>Leave table</button></div></details>
+      <details class="panel" id="your-seat"><summary>Your seat</summary><div class="panel-content"><p class="helper">${playing ? 'Sit out applies from the next hand. Leave and rebuy between hands.' : 'Ask your host for a rebuy or add-on.'}</p><button id="sit-out">${me.sittingOut ? 'Play next hand' : 'Sit out next hand'}</button><button id="leave" class="quiet danger" ${playing ? 'disabled' : ''}>Leave table</button>${alertControls()}</div></details>
     </aside></details></div>
     <section class="dock" aria-label="Your betting controls"><div class="dock-inner"><div class="dock-summary"><div class="turn-label ${state.legal.active ? '' : 'waiting'}" role="status">${!ready ? 'RECONNECTING' : state.legal.active ? 'YOUR TURN' : state.street === 'showdown' ? 'SHOWDOWN' : actor ? `${escape(actor.name).toUpperCase()} TO ACT` : host ? 'HOST · TABLE CONTROLS' : 'WAITING FOR HOST'}</div><div class="balance"><span>Your stack</span><strong>${number(me.stack)}</strong></div><div class="balance"><span>To call</span><strong>${number(state.legal.toCall)}</strong></div></div>
       ${!playing ? `<div class="lobby-actions"><button id="invite-players">Invite players</button><button id="change-seat">Change seat</button><button id="set-buy-in">${host ? 'Set buy-in' : 'View buy-in'}</button>${host ? `<button id="start-hand" class="primary" ${state.players.filter(p => p.stack > 0 && !p.sittingOut).length < 2 ? 'disabled' : ''}>${state.handNumber ? 'Start next hand' : 'Start game'} →</button>` : '<span class="helper">Your host starts the hand.</span>'}</div>` : ''}
@@ -567,6 +580,8 @@ function wireTable(me, pot) {
   $('#host-fold')?.addEventListener('click', () => run('host-fold'));
   $('#sit-out').addEventListener('click', () => run('sit-out', { value: !me.sittingOut }));
   $('#leave').addEventListener('click', () => run('leave'));
+  document.querySelectorAll('[data-alert-setting]').forEach(input => input.addEventListener('change', () => window.Alerts?.setPreference(input.dataset.alertSetting, input.checked)));
+  $('#test-alert')?.addEventListener('click', () => window.Alerts?.test());
   document.querySelectorAll('[data-action]').forEach(el => el.addEventListener('click', () => run('action', { type: el.dataset.action })));
   $('#toggle-raise')?.addEventListener('click', () => { raiseOpen = !raiseOpen; render(); });
   $('#raise-amount')?.addEventListener('input', e => {
