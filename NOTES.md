@@ -5,7 +5,7 @@
 ### Final summary
 - Shipped the eleven-stage UX overhaul on the local `feature/ux-overhaul` branch: mobile seat reorder, responsive sheets and table layouts, state-safe rendering, alerts, the nightly ledger and settle-up, rebuy requests, five themes, contrast checks, and optional VAPID-gated Web Push.
 - Kept betting, pot, and payout behavior intact; extended the ledger and settlement model additively. Push subscriptions and presence stay private and in memory. Rooms and notification subscriptions are lost on server restart.
-- Final local gates: `npm ci`, lint, 63 tests, contrast checks for five palettes, four-player chip-conservation simulation, health/static asset routes, browser viewport and interaction checks, and `git diff --check` all pass. The source scan found no inline script/style attributes or debug logging.
+- Final local gates: `npm ci`, lint, 63 tests, contrast checks for five palettes, four-player chip-conservation simulation, health/static asset routes, browser viewport and interaction checks, 44px mobile hit targets, and `git diff --check` all pass. The source scan found no inline script/style attributes or debug logging.
 - S10 is implemented but live delivery is not enabled: no VAPID keys are configured in this environment or the Render service. Configure the three VAPID values before enabling real notifications. npm reports 2 audit findings (1 moderate, 1 high); no automatic audit fix was applied.
 - No blockers. Real-device vibration, iOS audio/silent-switch, Home Screen push delivery, physical wake-lock behavior, and delivery through real push providers remain unverified. All commits remain local; nothing was pushed or opened as a PR.
 
@@ -33,6 +33,7 @@
 - S4 follow-up: isolated Chromium geometry checks found the raise sheet overlapped the fixed dock by 3px at 768px. Increased its tablet gap; reorder, Tonight and raise overlays now stay within 360, 390, 768 and 1280px viewports with no horizontal overflow.
 - Final browser sweep: captured lobby/table (2, 6 and 10 players), reorder, raise and Tonight states at 360, 390, 768 and 1280px under `/tmp/tablemate-qa`. A live guest join during an active reorder drag queued state, preserved the draft, and the saved seat array exactly matched the preview.
 - S11: documented gameplay, ledger, themes, alerts, push setup and validation evidence in README/DEPLOY/VALIDATION. Final gates passed: lint, 63 tests, five-theme contrast, four-player simulation, health/static asset routes, source scan and `git diff --check`. Committed locally; no push or PR.
+- Mobile tap-target follow-up: browser geometry checks found the home wordmark at 36px tall and the table Invite button at 40px wide. Set the wordmark to a 44px minimum height and Invite to a 44px minimum width. Repeat checks at 360×740 and 390×844 across lobby, join, table, controls, reorder, Tonight, leave and raise states found no visible target below 44×44px.
 
 ### Blockers
 - None.

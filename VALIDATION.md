@@ -25,6 +25,7 @@ Used Playwright 1.65 with isolated Chromium contexts and ephemeral local servers
 - 2-, 6- and 10-player tables at 360×740, 390×844, 768×1024 and 1280×800 measured no horizontal overflow and no overlapping seat cards.
 - Reorder, Tonight and raise overlays remained within all four viewport widths. A guest joined while a reorder drag was active; the latest state queued until drop, retained the draft, and the saved server order exactly matched the visible preview. Raised the tablet raise-panel gap after this check found a 3px overlap with the dock at 768px.
 - Captured lobby, 2/6/10-player tables, reorder, raise and Tonight screenshots at all four viewport sizes under `/tmp/tablemate-qa` (temporary QA output, not part of the repository).
+- Audited visible button, link, field, summary, radio and labeled-checkbox hit areas at 360×740 and 390×844 across the lobby, join confirmation, table, controls, Your seat/theme picker, reorder, Tonight, leave confirmation and raise panel. All measured hit areas were at least 44×44 CSS pixels.
 - With VAPID missing, the push control is hidden. With mocked VAPID configuration and an iPhone user-agent outside standalone mode, the Your seat panel shows Add to Home Screen guidance and no permission button.
 - Manifest and service-worker routes return expected MIME types; the same-origin worker installs. No browser script errors occurred in these runs.
 
