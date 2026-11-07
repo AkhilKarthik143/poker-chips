@@ -22,4 +22,24 @@
   --card-face-red: #C4453A;
   --card-face-black: #1A1A1A;
   --card-back-bg: #6434df;
+
+  --dp-color-ground: var(--bg-page);
+  --dp-color-panel: var(--bg-panel);
+  --dp-color-ink: var(--text-primary);
+  --dp-color-outline: var(--border-seat-empty);
+  --dp-color-accent: var(--accent);
+  --dp-color-accent-secondary: #ff78c5;
+  --dp-color-accent-warm: var(--status-active);
+  --dp-color-accent-fresh: #9bf1cd;
+  --dp-color-field-soft: var(--bg-table);
+  --dp-color-selection: var(--bg-seat-occupied);
+  --dp-color-rule-muted: #b8b6c5;
+  --dp-color-ink-muted: #465168;
+  --dp-color-disabled-ink: #536078;
+  --dp-color-disabled-outline: #596174;
+  --dp-color-placeholder: #747b8a;
+  --dp-color-felt: #dff8e9;
+  --dp-color-disabled-surface: #f2f0ea;
+  --dp-typography-display: "PlayfulGeometricDisplay", "Trebuchet MS", sans-serif;
+  --dp-typography-reading: "PlayfulGeometricReading", "Avenir Next", sans-serif;
 }
