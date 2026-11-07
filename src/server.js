@@ -57,6 +57,9 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
       canUndo: room.game.history.length > 0, serverTime: now(),
       settlement: structuredClone(room.lastSettlement || game.settlement(room.game)),
       settlementNote: handInProgress ? 'Hand in progress. Showing totals from before this hand.' : '',
+      rebuyRequests: [...room.rebuyRequests].filter(([playerId]) => room.hostId === id || playerId === id).map(([playerId, request]) => ({
+        id: playerId, name: room.game.players.find(player => player.id === playerId)?.name || 'Player', amount: request.amount, at: request.at
+      })),
       players: state.players.map(p => ({ ...p, connected: room.connections.has(p.id) })),
       // Side pots are finalized once, when the hand reaches showdown. Do not
       // expose recalculated layers after every street; that makes one hand look
@@ -99,6 +102,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     }
     room.connections.delete(id);
     room.tokens.delete(id);
+    room.rebuyRequests.delete(id);
   }
   function sweep() {
     for (const [key, bucket] of attempts) if (now() - bucket.start >= 60_000) attempts.delete(key);
@@ -141,7 +145,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
       let code;
       do { code = Array.from({ length: 8 }, () => ALPHABET[randomInt(ALPHABET.length)]).join(''); } while (rooms.has(code));
       const token = randomBytes(32).toString('hex');
-      const room = { code, hostId: id, game: state, tokens: new Map([[id, token]]), connections: new Map(), lastActive: now(), revision: 0, lastSettlement: null };
+      const room = { code, hostId: id, game: state, tokens: new Map([[id, token]]), connections: new Map(), rebuyRequests: new Map(), lastActive: now(), revision: 0, lastSettlement: null };
       rooms.set(code, room); bind(socket, room, id); broadcast(room);
       return { token, playerId: id, roomCode: code, state: view(room, id) };
     });
@@ -192,6 +196,40 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     mutate('sit-out', (room, id, payload) => game.setSitOut(room.game, id, payload.value));
     mutate('donate', (room, id, payload) => game.donate(room.game, id, payload.recipientId, payload.amount));
     mutate('rebuy', (room, _id, payload) => game.rebuy(room.game, payload.playerId, payload.amount), true);
+    on('rebuy:request', payload => {
+      const { room, id } = member(socket, payload);
+      requireValue(!room.rebuyRequests.has(id), 'You already have a pending rebuy request.');
+      const amount = payload.amount ?? room.game.settings.startingStack;
+      room.rebuyRequests.set(id, { amount, at: now() }); room.lastActive = now();
+      broadcast(room);
+      return {};
+    });
+    on('rebuy:cancel', payload => {
+      const { room, id } = member(socket, payload);
+      requireValue(room.rebuyRequests.has(id), 'There is no pending rebuy request to cancel.');
+      room.rebuyRequests.delete(id); room.lastActive = now(); broadcast(room);
+      return {};
+    });
+    on('rebuy:deny', payload => {
+      const { room, id } = member(socket, payload); host(room, id);
+      const request = room.rebuyRequests.get(payload.playerId);
+      requireValue(request, 'That rebuy request is no longer pending.');
+      room.rebuyRequests.delete(payload.playerId); room.lastActive = now();
+      const target = io.sockets.sockets.get(room.connections.get(payload.playerId));
+      target?.emit('rebuy-result', { type: 'denied' });
+      broadcast(room);
+      return {};
+    });
+    mutate('rebuy:approve', (room, _id, payload) => {
+      const requested = room.rebuyRequests.get(payload.playerId);
+      requireValue(requested, 'That rebuy request is no longer pending.');
+      const amount = payload.amount ?? requested.amount;
+      const nextState = game.rebuy(room.game, payload.playerId, amount);
+      room.rebuyRequests.delete(payload.playerId); room.lastActive = now();
+      const target = io.sockets.sockets.get(room.connections.get(payload.playerId));
+      target?.emit('rebuy-result', { type: 'approved', amount });
+      return nextState;
+    }, true);
     mutate('host-fold', room => {
       requireValue(room.game.turn && !room.connections.has(room.game.turn), 'Only the disconnected current player can be folded by the host.');
       return game.act(room.game, room.game.turn, { type: 'fold' });

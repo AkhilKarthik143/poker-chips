@@ -191,3 +191,74 @@ test('view broadcasts settlement snapshots and marks the prior values during a h
   assert.match(a.state.settlementNote, /Hand in progress/);
   assert.equal(JSON.stringify(a.state).includes(created.token), false);
 });
+
+test('rebuy requests are revision-stable, visible only to host and requester, and cancel/deny cleanly', async t => {
+  const { client, server } = await setup(t);
+  const host = await client(); const requester = await client(); const other = await client();
+  const table = await ok(host, 'create', { name: 'Host', settings: { startingStack: 250, smallBlind: 5, bigBlind: 10 } });
+  const player = await ok(requester, 'join', { code: table.roomCode, name: 'Requesting' });
+  const spectator = await ok(other, 'join', { code: table.roomCode, name: 'Other' });
+  await barrier(server, [host, requester, other]);
+  const revision = host.state.revision;
+  assert.equal((await emit(requester, 'rebuy:request', { amount: 125 })).ok, true);
+  await barrier(server, [host, requester, other]);
+  assert.equal(host.state.revision, revision);
+  assert.deepEqual(host.state.rebuyRequests.map(item => [item.id, item.name, item.amount]), [[player.playerId, 'Requesting', 125]]);
+  assert.deepEqual(requester.state.rebuyRequests.map(item => item.id), [player.playerId]);
+  assert.deepEqual(other.state.rebuyRequests, []);
+  assert.equal(JSON.stringify(other.state.rebuyRequests).includes('Requesting'), false);
+  const duplicate = await emit(requester, 'rebuy:request', { amount: 100 });
+  assert.equal(duplicate.ok, false); assert.match(duplicate.error, /already have/);
+  await ok(other, 'rebuy:request', {}); await barrier(server, [host, requester, other]);
+  assert.deepEqual(host.state.rebuyRequests.map(item => item.amount), [125, 250]);
+  const deniedResult = new Promise(resolve => requester.once('rebuy-result', resolve));
+  const denied = await emit(host, 'rebuy:deny', { playerId: player.playerId });
+  assert.equal(denied.ok, true); assert.deepEqual(await deniedResult, { type: 'denied' });
+  await barrier(server, [host, requester, other]);
+  assert.equal(host.state.revision, revision);
+  assert.deepEqual(host.state.rebuyRequests.map(item => item.id), [spectator.playerId]);
+  const canceled = await emit(other, 'rebuy:cancel');
+  assert.equal(canceled.ok, true); await barrier(server, [host, other]);
+  assert.equal(host.state.revision, revision); assert.deepEqual(host.state.rebuyRequests, []);
+  assert.equal((await emit(other, 'rebuy:deny', { playerId: player.playerId })).ok, false);
+});
+
+test('rebuy approval uses the normal revision gate, rejects during a hand, and then adds chips and ledger buy-in', async t => {
+  const { client, server } = await setup(t);
+  const host = await client(); const requester = await client();
+  const table = await ok(host, 'create', { name: 'Host', settings: { startingStack: 100, smallBlind: 5, bigBlind: 10 } });
+  const player = await ok(requester, 'join', { code: table.roomCode, name: 'Player' }); await barrier(server, [host, requester]);
+  await ok(requester, 'rebuy:request', {}); await barrier(server, [host, requester]);
+  const initialRevision = host.state.revision;
+  await ok(host, 'start-hand'); await barrier(server, [host, requester]);
+  const deniedNonHost = await emit(requester, 'rebuy:approve', { playerId: player.playerId, amount: 150 });
+  assert.equal(deniedNonHost.ok, false);
+  const duringHandRevision = host.state.revision;
+  const midHand = await emit(host, 'rebuy:approve', { playerId: player.playerId, amount: 150 });
+  assert.equal(midHand.ok, false); assert.match(midHand.error, /between hands/);
+  assert.equal(host.state.revision, duringHandRevision);
+  assert.equal(server.rooms.get(table.roomCode).rebuyRequests.has(player.playerId), true);
+  await ok(host, 'action', { type: 'fold' }); await barrier(server, [host, requester]);
+  const result = new Promise(resolve => requester.once('rebuy-result', resolve));
+  const before = host.state.revision;
+  await ok(host, 'rebuy:approve', { playerId: player.playerId, amount: 150 }); await barrier(server, [host, requester]);
+  assert.equal(host.state.revision, before + 1);
+  assert.equal(host.state.players.find(item => item.id === player.playerId).buyIn, 250);
+  assert.equal(server.rooms.get(table.roomCode).rebuyRequests.has(player.playerId), false);
+  assert.deepEqual(await result, { type: 'approved', amount: 150 });
+  assert.ok(initialRevision < before);
+});
+
+test('leaving or kicking a requester clears its pending rebuy request', async t => {
+  const { client, server } = await setup(t);
+  const host = await client(); const leaving = await client(); const kicked = await client();
+  const table = await ok(host, 'create', { name: 'Host' });
+  const departed = await ok(leaving, 'join', { code: table.roomCode, name: 'Leaving' });
+  const removed = await ok(kicked, 'join', { code: table.roomCode, name: 'Kicked' }); await barrier(server, [host, leaving, kicked]);
+  await ok(leaving, 'rebuy:request', {}); await ok(kicked, 'rebuy:request', {}); await barrier(server, [host, leaving, kicked]);
+  await ok(leaving, 'leave'); await barrier(server, [host, kicked]);
+  assert.equal(server.rooms.get(table.roomCode).rebuyRequests.has(departed.playerId), false);
+  await ok(host, 'kick', { playerId: removed.playerId }); await barrier(server, [host]);
+  assert.equal(server.rooms.get(table.roomCode).rebuyRequests.has(removed.playerId), false);
+  assert.deepEqual(host.state.rebuyRequests, []);
+});

@@ -16,6 +16,7 @@
 - S5 device limits: real vibration, iPhone silent-switch behavior, and physical wake-lock reacquisition are not verifiable in this browser environment; logged for final summary.
 - S6: added undo-snapshotted `buyIn`, `handsPlayed`, `handsWon`, and `departed` fields. Rebuys add to buy-in; first-hand configuration resets buy-in with stack; active entrants count each hand; each unique positive award winner counts once. Added player and result-card copy. Gate: lint passed and 53 tests passed.
 - S7: added pure `settlement()` grouping names by NFKC/case-insensitive key, deterministic net ordering and debtor/creditor matching, with server-calculated integer cents and formatted dollars. Settings validation and both create/host forms expose optional cash value. Server broadcasts a stable prior settlement during hands with a note. Added the Tonight sheet, copy fallback, three entry points, and own-net leave confirmation. Gate: lint passed, 56 tests passed, `git diff --check` passed.
+- S8: added room-local pending requests with strict request/cancel/deny/approve payloads. Request/cancel/deny are authenticated but revision-stable; optional revision is explicitly accepted because the client always attaches one. Approval uses the normal host+revision mutation path, retains requests on mid-hand failure, updates buy-in only on success, and emits a private result toast. Views filter requests to host plus requester; leave/kick cleanup and dock/panel UI are covered. Gate: lint passed and 59 tests passed.
 
 ### Blockers
 - None.

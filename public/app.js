@@ -17,6 +17,7 @@ let seatMessage = '';
 let dragSeat = null;
 let queuedDragState = null;
 let alertWinHands = [];
+let rebuyRequestMessage = '';
 const railMedia = matchMedia('(min-width:1200px)');
 railMedia.addEventListener('change', () => render());
 const ellipseObserver = new ResizeObserver(() => positionSeats());
@@ -75,6 +76,8 @@ function receive(value) {
   if (state && value.roomCode === state.roomCode && value.revision < state.revision) return;
   if (dragSeat) { queuedDragState = value; return; }
   const previousState = state;
+  const previousRequestIds = new Set((previousState?.rebuyRequests || []).map(item => item.id));
+  const receivedRequest = previousState && value.hostId === value.playerId && (value.rebuyRequests || []).some(item => item.id !== value.playerId && !previousRequestIds.has(item.id));
   const alertResult = window.Tablemate.alertTransition(previousState, value, value.playerId, ready, alertWinHands);
   alertWinHands = alertResult.seenHands;
   const previousOrder = state?.seatOrder || [];
@@ -85,11 +88,13 @@ function receive(value) {
   }
   if (alertResult.alert === 'yourTurn') window.Alerts?.yourTurn();
   if (alertResult.alert === 'win') window.Alerts?.win();
+  if (receivedRequest) window.Alerts?.warn();
   if (state.turn !== state.playerId) window.Alerts?.stopTitleFlash();
   window.Alerts?.setTableActive(Boolean(ready && state));
   if (lastTurn !== state.turn) raiseOpen = false;
   lastTurn = state.turn;
   render();
+  if ($('#rebuy-requests-dialog').open) renderRebuyRequests();
 }
 function reset(message) {
   state = null; lastTurn = null; raiseOpen = false; alertWinHands = []; window.Alerts?.reset(); saveIdentity(null);
@@ -118,6 +123,9 @@ socket.on('connect', async () => {
 socket.on('disconnect', () => { ready = false; window.Alerts?.setTableActive(false); status('Reconnecting'); if (state) render(); setButtons(); });
 socket.on('connect_error', () => { ready = false; status('Offline · retrying'); setButtons(); });
 socket.on('state', receive);
+socket.on('rebuy-result', result => {
+  toast(result.type === 'approved' ? `The host approved ${number(result.amount)} rebuy chips.` : 'The host denied your rebuy request.');
+});
 socket.on('removed', ({ message }) => { reset(message); ready = socket.connected; setButtons(); });
 socket.on('session-replaced', () => {
   // Another tab shares localStorage: do not erase its valid seat token.
@@ -235,8 +243,8 @@ function donationDialog() {
     receive(result.state); toast('Chips donated.');
   }, 'Confirm donation');
 }
-function openControls() {
-  const panel = document.getElementById(state.hostId === state.playerId ? 'host-menu' : 'your-seat');
+function openControls(targetId) {
+  const panel = document.getElementById(targetId || (state.hostId === state.playerId ? 'host-menu' : 'your-seat'));
   const sidebar = document.querySelector('#table .sidebar');
   $('#table-rail').open = true;
   panel.open = true;
@@ -280,6 +288,11 @@ function alertControls() {
   const toggle = (key, label) => `<label class="preference-toggle"><input type="checkbox" data-alert-setting="${key}" ${preferences[key] ? 'checked' : ''}><span>${label}</span></label>`;
   return `<section class="alert-controls" aria-label="Alerts and screen"><h3>Alerts & display</h3>${toggle('sound', 'Sound')}${window.Alerts?.vibrationSupported ? toggle('vibration', 'Vibration') : ''}${window.Alerts?.wakeLockSupported ? toggle('keepScreenOn', 'Keep screen on') : ''}<p class="helper">iPhone silent switch can mute sound.</p><button type="button" id="test-alert">Test alert</button></section>`;
 }
+function rebuyRequestControls() {
+  const pending = (state.rebuyRequests || []).find(item => item.id === state.playerId);
+  if (pending) return `<section class="rebuy-request-controls"><h3>Rebuy request</h3><p role="status">Pending · ${number(pending.amount)} chips</p><button type="button" id="cancel-rebuy-request">Cancel request</button></section>`;
+  return `<form id="rebuy-request-form" class="rebuy-request-controls"><h3>Request rebuy</h3><label for="rebuy-request-amount">Amount · virtual chips</label><div class="amount-stepper"><button type="button" data-rebuy-step="-1" aria-label="Decrease rebuy amount">−</button><input id="rebuy-request-amount" type="number" inputmode="numeric" min="1" max="1000000000" step="${state.settings.smallBlind}" value="${state.settings.startingStack}" required><button type="button" data-rebuy-step="1" aria-label="Increase rebuy amount">+</button></div><p class="helper">The host approves requests between hands.</p><button type="submit">Send rebuy request</button></form>`;
+}
 function tonightText(summary) {
   const players = summary.rows.map(row => `${row.name}: buy-in ${number(row.buyIn)}, cash-out ${number(row.cashOut)}, net ${row.net > 0 ? '+' : ''}${number(row.net)} chips${row.netMoney ? ` (${row.netMoney})` : ''}; won ${row.handsWon} of ${row.handsPlayed} hands.`);
   const transfers = summary.transfers.map(item => `${item.fromName} pays ${item.toName} ${number(item.chips)} chips${item.money ? ` · ${item.money}` : ''}.`);
@@ -306,6 +319,37 @@ function openTonight() {
     }
   });
   openSheet(dialog, { labelledBy: 'tonight-title' });
+}
+function renderRebuyRequests(force = false) {
+  const dialog = $('#rebuy-requests-dialog');
+  if (!dialog.open && !force) return;
+  const snapshot = dialog.open ? captureRegion(dialog) : null;
+  const requests = state.hostId === state.playerId ? (state.rebuyRequests || []) : [];
+  const rows = requests.map(item => `<article class="rebuy-request-row"><div><h3>${escape(item.name)}</h3><p>Requested ${number(item.amount)} chips</p></div><label for="request-amount-${escape(item.id)}">Approve amount</label><input id="request-amount-${escape(item.id)}" data-request-amount="${escape(item.id)}" type="number" inputmode="numeric" min="1" max="1000000000" step="1" value="${item.amount}"><div class="rebuy-request-actions"><button type="button" data-rebuy-approve="${escape(item.id)}">Approve</button><button type="button" class="quiet danger" data-rebuy-deny="${escape(item.id)}">Deny</button></div></article>`).join('');
+  dialog.innerHTML = `<section class="rebuy-requests-sheet"><header class="tonight-header"><div><p class="eyebrow">HOST CONTROLS</p><h2 id="rebuy-requests-title">Rebuy requests (${requests.length})</h2></div><button type="button" class="seat-sheet-close" data-close-rebuy aria-label="Close rebuy requests">×</button></header><p id="rebuy-request-message" role="alert" class="seat-message">${escape(rebuyRequestMessage)}</p>${rows || '<p class="empty-ledger">No pending requests.</p>'}</section>`;
+  if (snapshot) restoreRegion(dialog, snapshot);
+  dialog.querySelector('[data-close-rebuy]').addEventListener('click', () => dialog.close());
+  dialog.querySelectorAll('[data-rebuy-approve]').forEach(button => button.addEventListener('click', () => respondToRebuy(button.dataset.rebuyApprove, true)));
+  dialog.querySelectorAll('[data-rebuy-deny]').forEach(button => button.addEventListener('click', () => respondToRebuy(button.dataset.rebuyDeny, false)));
+}
+function openRebuyRequests() {
+  rebuyRequestMessage = '';
+  renderRebuyRequests(true);
+  openSheet($('#rebuy-requests-dialog'), { labelledBy: 'rebuy-requests-title' });
+}
+async function respondToRebuy(playerId, approve) {
+  if (busy) return;
+  const dialog = $('#rebuy-requests-dialog');
+  const input = dialog.querySelector(`[data-request-amount="${CSS.escape(playerId)}"]`);
+  const payload = { playerId };
+  if (approve && input) payload.amount = Number(input.value);
+  busy = true; setButtons(); rebuyRequestMessage = '';
+  try {
+    const result = await request(approve ? 'rebuy:approve' : 'rebuy:deny', payload);
+    if (result.state) receive(result.state);
+    rebuyRequestMessage = approve ? 'Rebuy approved.' : 'Request denied.';
+  } catch (error) { rebuyRequestMessage = error.message; }
+  finally { busy = false; setButtons(); renderRebuyRequests(); }
 }
 function leaveConfirmation() {
   const me = state.players.find(player => player.id === state.playerId);
@@ -557,6 +601,7 @@ function render() {
   const me = state.players.find(p => p.id === state.playerId);
   if (!me) return;
   const host = state.hostId === state.playerId;
+  const requestCount = host ? (state.rebuyRequests || []).length : 0;
   const playing = !['lobby', 'complete'].includes(state.street);
   const actor = state.players.find(p => p.id === state.turn);
   const total = state.players.reduce((sum, p) => sum + p.contributed, 0);
@@ -566,7 +611,7 @@ function render() {
   $('#lobby').hidden = true; $('#site-footer').hidden = true; $('#table').hidden = false;
   $('#table').innerHTML = `
     ${!ready ? '<div class="reconnect-banner" role="status">Reconnecting… Your seat and chips are saved. Actions will return when the table is in sync.</div>' : ''}
-    <header class="table-heading"><h1><button id="copy-code" title="Copy table code"><span class="header-table-label">Table </span><strong>${escape(state.roomCode)}</strong></button></h1><span>${state.players.length}/10<span class="player-count-label"> players</span></span><span>Blinds <strong>${number(state.settings.smallBlind)}/${number(state.settings.bigBlind)}</strong></span><button id="header-invite">Invite</button><button id="table-settings" aria-label="Table settings" title="Table settings">⚙</button></header>
+    <header class="table-heading"><h1><button id="copy-code" title="Copy table code"><span class="header-table-label">Table </span><strong>${escape(state.roomCode)}</strong></button></h1><span>${state.players.length}/10<span class="player-count-label"> players</span></span><span>Blinds <strong>${number(state.settings.smallBlind)}/${number(state.settings.bigBlind)}</strong></span><button id="header-invite">Invite</button><button id="table-settings" aria-label="Table settings${requestCount ? `, ${requestCount} rebuy requests` : ''}" title="Table settings">⚙${requestCount ? `<span class="rebuy-count" aria-hidden="true">${requestCount}</span>` : ''}</button></header>
     <div class="table-layout"><section class="play-area" aria-label="Poker table">
       <div class="table-stage"><div class="pot-board ${playing ? 'live-pot' : 'waiting-pot'}"><div class="streets" aria-label="Betting street">${['preflop', 'flop', 'turn', 'river', 'showdown'].map(street => `<span class="${state.street === street ? 'current' : ''}" ${state.street === street ? 'aria-current="step"' : ''}>${state.street === street ? '• ' : ''}${street.toUpperCase()}</span>`).join('')}</div>
         ${playing ? `<p class="pot-label">Hand ${state.handNumber} · Total pot</p><div class="pot-number">${number(total)}</div><span class="pot-unit">CHIPS</span>` : `<p class="pot-label">${state.street === 'complete' ? 'Hand complete' : 'Your table is open'}</p><h2>${state.players.length < 2 ? 'Waiting for players' : host ? 'Ready to deal' : 'Waiting for host to start'}</h2><p>${state.players.filter(p => p.stack > 0 && !p.sittingOut).length} players ready</p>`}
@@ -579,10 +624,11 @@ function render() {
       <details class="panel" id="players-panel" open><summary>Players <span>${state.players.length}/10</span></summary><ul class="players-list">${state.seatOrder.map(id => { const p = state.players.find(p => p.id === id); return `<li><strong>${escape(p.name)}${p.id === state.playerId ? ' · You' : ''}</strong><span>${p.sittingOut ? '⏸ Away' : p.connected ? '✓ Connected' : '⏸ Offline'}</span><span>Won ${p.handsWon} of ${p.handsPlayed} hands</span></li>`; }).join('')}</ul><div class="panel-content"><button id="donate-chips" ${playing || me.stack < 1 || state.players.length < 2 ? 'disabled' : ''}>Donate chips</button><button id="open-tonight-players">Tonight</button><p class="helper">${playing ? 'Available between hands.' : 'Give chips from your stack to another player.'}</p></div></details>
       <details class="panel" id="hand-log" ${railMedia.matches ? 'open' : ''}><summary>Hand log <span>Hand ${state.handNumber}</span></summary><ol class="log-list">${handLog()}</ol></details>
       ${host ? hostPanel(playing, actor) : ''}
-      <details class="panel" id="your-seat"><summary>Your seat</summary><div class="panel-content"><p class="helper">${playing ? 'Sit out applies from the next hand. Leave and rebuy between hands.' : 'Ask your host for a rebuy or add-on.'}</p><button id="sit-out">${me.sittingOut ? 'Play next hand' : 'Sit out next hand'}</button><button id="leave" class="quiet danger" ${playing ? 'disabled' : ''}>Leave table</button>${alertControls()}</div></details>
+      <details class="panel" id="your-seat"><summary>Your seat</summary><div class="panel-content"><p class="helper">${playing ? 'Sit out applies from the next hand. Leave and rebuy between hands.' : 'Ask your host for a rebuy or add-on.'}</p><button id="sit-out">${me.sittingOut ? 'Play next hand' : 'Sit out next hand'}</button><button id="leave" class="quiet danger" ${playing ? 'disabled' : ''}>Leave table</button>${rebuyRequestControls()}${alertControls()}</div></details>
     </aside></details></div>
     <section class="dock" aria-label="Your betting controls"><div class="dock-inner"><div class="dock-summary"><div class="turn-label ${state.legal.active ? '' : 'waiting'}" role="status">${!ready ? 'RECONNECTING' : state.legal.active ? 'YOUR TURN' : state.street === 'showdown' ? 'SHOWDOWN' : actor ? `${escape(actor.name).toUpperCase()} TO ACT` : host ? 'HOST · TABLE CONTROLS' : 'WAITING FOR HOST'}</div><div class="balance"><span>Your stack</span><strong>${number(me.stack)}</strong></div><div class="balance"><span>To call</span><strong>${number(state.legal.toCall)}</strong></div></div>
-      ${!playing ? `<div class="lobby-actions"><button id="invite-players">Invite players</button><button id="change-seat">Change seat</button><button id="set-buy-in">${host ? 'Set buy-in' : 'View buy-in'}</button><button id="open-tonight-dock">Tonight</button>${host ? `<button id="start-hand" class="primary" ${state.players.filter(p => p.stack > 0 && !p.sittingOut).length < 2 ? 'disabled' : ''}>${state.handNumber ? 'Start next hand' : 'Start game'} →</button>` : '<span class="helper">Your host starts the hand.</span>'}</div>` : ''}
+      ${!playing ? `<div class="lobby-actions"><button id="invite-players">Invite players</button><button id="change-seat">Change seat</button><button id="set-buy-in">${host ? 'Set buy-in' : 'View buy-in'}</button><button id="open-tonight-dock">Tonight</button>${host ? `<button id="open-rebuy-requests-dock" ${requestCount ? '' : 'disabled'}>Rebuy requests (${requestCount})</button><button id="start-hand" class="primary" ${state.players.filter(p => p.stack > 0 && !p.sittingOut).length < 2 ? 'disabled' : ''}>${state.handNumber ? 'Start next hand' : 'Start game'} →</button>` : '<span class="helper">Your host starts the hand.</span>'}</div>` : ''}
+      ${me.stack === 0 ? `<div class="rebuy-dock-row"><button type="button" id="open-rebuy-request-dock">${(state.rebuyRequests || []).some(item => item.id === me.id) ? 'Rebuy request pending' : 'Request rebuy'}</button></div>` : ''}
       ${state.turn ? `<div class="actions"><button data-action="fold" class="quiet" ${!state.legal.active ? 'disabled' : ''}>Fold</button><button data-action="${state.legal.canCheck ? 'check' : 'call'}" class="neutral" ${!state.legal.active ? 'disabled' : ''}>${state.legal.canCheck ? 'Check' : `Call ${number(state.legal.toCall)}`}</button><button id="toggle-raise" class="primary" aria-expanded="${raiseOpen}" ${!state.legal.canRaise ? 'disabled' : ''}>${state.currentBet ? 'Raise' : 'Bet'}</button><button data-action="all-in" class="all-in" ${!state.legal.canAllIn ? 'disabled' : ''}>All-in</button></div>` : ''}
       ${raiseOpen && state.legal.canRaise ? (() => { const min = Math.min(state.legal.minRaiseTo, state.legal.maxRaiseTo); const max = state.legal.maxRaiseTo; return `<form id="raise-form" class="raise-panel"><div><label for="raise-amount">${state.currentBet ? 'Raise' : 'Bet'} to · multiples of ${number(state.settings.smallBlind)}</label><div class="amount-stepper"><button type="button" data-raise-step="-1" aria-label="Decrease by one small blind">−</button><input id="raise-amount" aria-label="Raise to amount" type="number" inputmode="numeric" min="${min}" max="${max}" value="${min}" step="${state.settings.smallBlind}" required><button type="button" data-raise-step="1" aria-label="Increase by one small blind">+</button></div><details class="range-adjust"><summary>Adjust with slider</summary><input id="raise-range" type="range" aria-label="Raise amount slider (logarithmic)" min="0" max="100" value="${sliderPosition(min, min, max)}" step="1" data-min="${min}" data-max="${max}" data-blind="${state.settings.smallBlind}"></details></div><button class="primary raise-submit" type="submit">Confirm</button><div class="quick-bets"><button type="button" data-quick="min">Min</button><button type="button" data-quick="half">½ pot</button><button type="button" data-quick="three-quarter">¾ pot</button><button type="button" data-quick="pot">Pot</button><button type="button" data-quick="all">All-in</button></div></form>`; })() : ''}
     </div></section>`;
@@ -593,7 +639,8 @@ function render() {
   positionSeats();
 }
 function hostPanel(playing, actor) {
-  return `<details class="panel" id="host-menu"><summary tabindex="0">Host controls</summary><div class="panel-content"><button id="undo" ${!state.canUndo ? 'disabled' : ''}>Undo last action</button>${actor && !actor.connected ? '<button id="host-fold" class="danger">Fold disconnected player</button>' : ''}<p class="helper">${playing ? 'Settings are available between hands.' : 'Changes to the starting stack apply to new seats. Before the first hand, they apply to everyone.'}</p>
+  const requestCount = (state.rebuyRequests || []).length;
+  return `<details class="panel" id="host-menu"><summary tabindex="0">Host controls</summary><div class="panel-content"><button id="undo" ${!state.canUndo ? 'disabled' : ''}>Undo last action</button><button type="button" id="open-rebuy-requests-host" ${requestCount ? '' : 'disabled'}>Rebuy requests (${requestCount})</button>${actor && !actor.connected ? '<button id="host-fold" class="danger">Fold disconnected player</button>' : ''}<p class="helper">${playing ? 'Settings are available between hands.' : 'Changes to the starting stack apply to new seats. Before the first hand, they apply to everyone.'}</p>
     <form id="settings-form"><div class="form-grid"><div><label for="host-stack">Starting stack</label><input id="host-stack" type="number" min="1" max="1000000000" value="${state.settings.startingStack}" ${playing ? 'disabled' : ''} required></div><div><label for="host-timer">Timer (minutes)</label><input id="host-timer" type="number" min="0" max="1440" value="${state.settings.blindMinutes}" ${playing ? 'disabled' : ''} required></div><div><label for="host-sb">Small blind</label><input id="host-sb" type="number" min="1" value="${state.settings.smallBlind}" ${playing ? 'disabled' : ''} required></div><div><label for="host-bb">Big blind</label><input id="host-bb" type="number" min="1" value="${state.settings.bigBlind}" ${playing ? 'disabled' : ''} required></div><div><label for="host-cash-value">Cash value per 1,000 chips ($)</label><input id="host-cash-value" type="number" inputmode="decimal" min="0" max="100000" step="0.01" value="${(state.settings.centsPer1000Chips / 100).toFixed(2)}" ${playing ? 'disabled' : ''}></div></div><button type="submit" ${playing ? 'disabled' : ''}>Save table settings</button></form>
     <form id="rebuy-form"><label for="rebuy-player">Rebuy / add-on</label><select id="rebuy-player" ${playing ? 'disabled' : ''}>${state.players.map(option).join('')}</select><label for="rebuy-amount">Chips to add</label><input id="rebuy-amount" type="number" min="1" max="1000000000" value="${state.settings.startingStack}" ${playing ? 'disabled' : ''} required><button type="submit" ${playing ? 'disabled' : ''}>Add chips</button></form>
     ${state.players.length > 1 ? `<form id="kick-form"><label for="kick-player">Remove a player</label><select id="kick-player" ${playing ? 'disabled' : ''}>${state.players.filter(p => p.id !== state.playerId).map(option).join('')}</select><button class="danger quiet" type="submit" ${playing ? 'disabled' : ''}>Remove selected player</button></form>` : ''}</div></details>`;
@@ -609,12 +656,19 @@ function wireTable(me, pot) {
   $('#invite-players')?.addEventListener('click', inviteDialog);
   $('#set-buy-in')?.addEventListener('click', inviteDialog);
   $('#change-seat')?.addEventListener('click', openSeatReorder);
+  $('#open-rebuy-requests-dock')?.addEventListener('click', openRebuyRequests);
+  $('#open-rebuy-requests-host')?.addEventListener('click', openRebuyRequests);
+  $('#open-rebuy-request-dock')?.addEventListener('click', () => openControls('your-seat'));
   document.querySelectorAll('[data-open-seat]').forEach(button => button.addEventListener('click', inviteDialog));
   $('#start-hand')?.addEventListener('click', () => run('start-hand'));
   $('#undo')?.addEventListener('click', () => run('undo'));
   $('#host-fold')?.addEventListener('click', () => run('host-fold'));
   $('#sit-out').addEventListener('click', () => run('sit-out', { value: !me.sittingOut }));
   $('#leave').addEventListener('click', leaveConfirmation);
+  $('#rebuy-request-form')?.addEventListener('submit', event => {
+    event.preventDefault(); run('rebuy:request', { amount: Number($('#rebuy-request-amount').value) });
+  });
+  $('#cancel-rebuy-request')?.addEventListener('click', () => run('rebuy:cancel'));
   $('#open-tonight-players')?.addEventListener('click', openTonight);
   $('#open-tonight-dock')?.addEventListener('click', openTonight);
   document.querySelectorAll('[data-alert-setting]').forEach(input => input.addEventListener('change', () => window.Alerts?.setPreference(input.dataset.alertSetting, input.checked)));
@@ -635,6 +689,10 @@ function wireTable(me, pot) {
     const amount = $('#raise-amount'); const step = Number(amount.step); const min = Number(amount.min); const max = Number(amount.max);
     amount.value = Math.max(min, Math.min(max, Number(amount.value) + Number(button.dataset.raiseStep) * step));
     amount.dispatchEvent(new Event('input', { bubbles: true }));
+  }));
+  document.querySelectorAll('[data-rebuy-step]').forEach(button => button.addEventListener('click', () => {
+    const amount = $('#rebuy-request-amount'); const step = Number(amount.step);
+    amount.value = Math.max(1, Math.min(1_000_000_000, Number(amount.value) + Number(button.dataset.rebuyStep) * step));
   }));
   document.querySelectorAll('[data-quick]').forEach(el => el.addEventListener('click', () => {
     const min = state.legal.minRaiseTo; const max = state.legal.maxRaiseTo;

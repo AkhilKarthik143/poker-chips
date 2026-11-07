@@ -27,6 +27,10 @@ const schemas = {
   'sit-out': [{...auth,value:value=>typeof value==='boolean'},{}],
   donate: [{...auth,recipientId:uuid,amount:integer(1e12,1)},{}],
   rebuy: [{...auth,playerId:uuid,amount:integer(1e9,1)},{}],
+  'rebuy:request': [{token},{revision:integer(Number.MAX_SAFE_INTEGER),amount:integer(1e9,1)}],
+  'rebuy:cancel': [{token},{revision:integer(Number.MAX_SAFE_INTEGER)}],
+  'rebuy:deny': [{token,playerId:uuid},{revision:integer(Number.MAX_SAFE_INTEGER)}],
+  'rebuy:approve': [{...auth,playerId:uuid},{amount:integer(1e9,1)}],
   'host-fold': [auth,{}],
   leave: [auth,{}],
   kick: [{...auth,playerId:uuid},{}]
