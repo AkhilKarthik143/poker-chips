@@ -1,50 +1,39 @@
 # Validation record
 
-Validated locally on September 20, 2026 (America/Los_Angeles).
+Validated locally on November 7, 2026 (America/Los_Angeles), on Node 24.20.0. The deployment target remains Node 20+ as configured in `render.yaml`.
 
 ## Executed checks
 
 | Check | Result |
 | --- | --- |
-| Clean lockfile install: `npm ci` | Pass; zero audit vulnerabilities |
-| `npm run lint` | Pass, zero errors/warnings |
-| `npm test` | 26 tests pass |
-| Node 20.20.2: lint, all tests, four-player script | Pass |
-| Node 24.20.0: lint and all tests | Pass |
-| `node --test test/server.test.js`, three consecutive runs | 6/6 tests pass each run |
-| `GET /healthz`, live server using `PORT=3000` | HTTP 200, `{"ok":true}` |
-| `node scripts/simulate-four.js` | Pass: four players, two all-ins, all four streets |
-| Four-player pots and final stacks | Pots 200 + 150; stacks 200/150/100/100; total 550 conserved after each action and payout |
-| Three-player integration payout | Pots 300 + 80; final stacks 300/140/60; total 500 |
-| Render Blueprint | Pass against official `https://render.com/schema/render.yaml.json` with JSON Schema 2020-12 validator |
-| `npm audit --omit=dev` | Zero vulnerabilities |
-| `git diff --check` | Pass |
+| Clean lockfile install: `npm ci` | Pass; 192 packages installed. npm reports 2 audit findings (1 moderate, 1 high). |
+| `npm run lint` | Pass; zero errors or warnings. |
+| `npm test` | Pass; 63 tests, including game conservation, undo, settlement, strict socket validation, client helpers, contrast and mocked push. |
+| `node scripts/check-contrast.js` | Pass for Felt, Midnight, Burgundy, Graphite and Daylight; thresholds cover text, disabled text, accent buttons/surfaces, settle-up net colors, borders and focus rings. |
+| `node scripts/simulate-four.js` | Pass: four players, two all-ins, every street; pots 200 + 150, final stacks 200/150/100/100, 550 chips conserved. |
+| `npm start` and `GET /healthz` | Pass; HTTP 200 with `{"ok":true}`. |
+| Manifest, service worker and icons | Pass in Chromium; correct static routes/content types, manifest JSON, local service-worker installation. |
+| `git diff --check` | Pass. |
+| CSP template scan | Pass; no inline `<script>` or `style="…"` attributes in `public/` templates. |
+| Game-rule diff review | Pass; `src/game.js` adds ledger fields and settlement only, without changing betting, pot, or payout logic. |
 
 ## Browser acceptance
 
-Environment: Codex in-app browser against the local Node service at `http://localhost:3000`. The user requested 360px support; tested with a 360×800 viewport, a 768×1024 tablet viewport, and the default desktop viewport. Temporary viewport overrides were reset afterward.
+Used Playwright 1.65 with isolated Chromium contexts and ephemeral local servers; the user's existing browser tab and live table were not reused.
 
-Observed working:
+- Theme bootstrap applied before CSS, survived reload, updated `theme-color`, and preserved the selected theme. The lobby and table radio groups support arrow-key navigation.
+- 2-, 6- and 10-player tables at 360×740, 390×844, 768×1024 and 1280×800 measured no horizontal overflow and no overlapping seat cards.
+- Reorder, Tonight and raise overlays remained within all four viewport widths. A guest joined while a reorder drag was active; the latest state queued until drop, retained the draft, and the saved server order exactly matched the visible preview. Raised the tablet raise-panel gap after this check found a 3px overlap with the dock at 768px.
+- Captured lobby, 2/6/10-player tables, reorder, raise and Tonight screenshots at all four viewport sizes under `/tmp/tablemate-qa` (temporary QA output, not part of the repository).
+- With VAPID missing, the push control is hidden. With mocked VAPID configuration and an iPhone user-agent outside standalone mode, the Your seat panel shows Add to Home Screen guidance and no permission button.
+- Manifest and service-worker routes return expected MIME types; the same-origin worker installs. No browser script errors occurred in these runs.
 
-- Lobby create form and server connection indicator.
-- Three-player table creation (guest seats driven by disposable Socket.IO clients).
-- Blind posting, visible turn, stack and call amount.
-- Call, half-pot quick bet with slider/number controls, check and all-in.
-- Progress through preflop, flop, turn and river with real-card instructions.
-- Refresh restored the host’s seat, stack (975) and current turn.
-- Showdown picked Avery as winner of 3,000 chips.
-- Host undo restored showdown; selecting Avery and June split it 1,500/1,500.
-- Host rebuy restored Miles from 0 to 1,000 chips.
-- No browser console errors or warnings during the completed main flow.
-- At 360px, lobby, active table and payout screen each reported `document.documentElement.scrollWidth === innerWidth === 360`.
-- At 768px, the expanded host controls reported matching page/viewport width of 768.
-- A 24-character unbroken name and a one-billion-chip stack also fit the 360px table without horizontal overflow.
-- Betting actions and quick controls use minimum 44px touch targets (main actions 48px). Focus styles and reduced-motion behavior are present.
+Real push delivery was mocked because no VAPID keys are configured here. The Render Blueprint declares the three values but they must be added in the service environment to enable notifications.
 
-The in-app screenshot capture did not consistently reflect the scaled mobile viewport; DOM geometry and interactive controls were used for the overflow measurements. Desktop screenshots were visually reviewed. No claim is made for physical-phone vibration hardware or a full cross-browser/device matrix.
+## Not verified on physical devices
 
-## Delivery status
+- Android vibration and the browser's native notification behavior.
+- iOS audio and silent-switch behavior, Home Screen push delivery/click handling, and real-world wake-lock behavior.
+- Push delivery against real FCM, Apple, Mozilla or Windows subscriptions and provider key rotation.
 
-Source is committed in a standalone Git repository on `main`, with commits for setup, engine, server, interface, deployment and final verification. The public GitHub repository is https://github.com/AkhilKarthik143/poker-chips. Publication uses the authenticated browser because the local Git credential lacks write permission to this repository. See the Render dashboard for current deployment status; the Blueprint passed local schema validation.
-
-Room persistence is intentionally in-memory. Refresh/drop recovery works while the server and room survive; restart/spin-down clears rooms, as documented in README.md.
+The prior project validation covered full hand play, reconnect, raise controls, showdown/undo, rebuy, and seat-order behavior. Rooms remain process-local: reconnect works only while the room survives, and a restart clears the room and its push subscriptions.

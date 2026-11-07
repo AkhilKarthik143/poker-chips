@@ -42,7 +42,7 @@ A successful response is `{"ok":true}`. Create a room and join it from a second 
 - Keep one instance. Room state is not shared across processes.
 - Free instances sleep. Rooms disappear on restart/spin-down, and cold starts can be slow. **Wake it up before game night**, then create your room.
 - For updates, commit and `git push`; the Blueprint uses the repository’s default branch.
-- No secrets or environment file are required.
+- Core gameplay needs no secrets or environment file. The optional Web Push feature requires the three VAPID values below.
 
 ## Optional turn notifications
 
