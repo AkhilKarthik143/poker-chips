@@ -54,7 +54,7 @@ button:hover:not(:disabled){background:var(--bg-table)}
 .actions,.lobby-actions{flex:1.5;gap:8px}.actions button,.lobby-actions button{font-size:14px;padding:8px}
 .actions [data-action=fold]{border-color:var(--status-folded);background:transparent;color:var(--text-primary)}
 .actions .all-in{background:var(--bg-panel)}
-.raise-panel{position:absolute;bottom:calc(100% + 12px);left:0;right:0;margin:0;padding:16px;background:var(--bg-panel);border:1px solid var(--border-action-bar-top);border-radius:12px;box-shadow:0 -8px 24px color-mix(in srgb,var(--bg-page) 80%,transparent);max-height:60dvh;overflow:auto}
+.raise-panel{position:absolute;bottom:calc(100% + 16px);left:0;right:0;margin:0;padding:16px;background:var(--bg-panel);border:1px solid var(--border-action-bar-top);border-radius:12px;box-shadow:0 -8px 24px color-mix(in srgb,var(--bg-page) 80%,transparent);max-height:60dvh;overflow:auto}
 .rail-drawer>summary{display:none}.rail-drawer:not([open])>.sidebar{display:block}
 input[type=checkbox]{width:44px;min-height:44px}
 @media(max-width:1199px){.rail-drawer>summary{display:block;min-height:48px;padding:14px;background:var(--bg-panel);border:1px solid var(--border-seat-empty);border-radius:8px;cursor:pointer}.rail-drawer:not([open])>.sidebar{display:none}.rail-drawer[open]>.sidebar{display:block;max-height:65dvh;overflow:auto;margin-top:12px}.dock-inner{gap:12px}.turn-label{display:none}}
