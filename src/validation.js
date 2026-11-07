@@ -8,6 +8,21 @@ const uuid = value => typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a
 const token = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
 const code = value => typeof value === 'string' && /^[A-HJ-NP-Z]{8}$/i.test(value);
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+const pushSubscription = value => {
+  if (!object(value) || Object.keys(value).some(key => !['endpoint','expirationTime','keys'].includes(key))) return false;
+  if (typeof value.endpoint !== 'string' || value.endpoint.length > 2048) return false;
+  try {
+    const endpoint = new URL(value.endpoint);
+    const hostAllowed = endpoint.hostname === 'fcm.googleapis.com' || endpoint.hostname === 'web.push.apple.com'
+      || endpoint.hostname === 'push.services.mozilla.com' || endpoint.hostname.endsWith('.push.services.mozilla.com')
+      || endpoint.hostname.endsWith('.notify.windows.com');
+    if (endpoint.protocol !== 'https:' || endpoint.port || endpoint.username || endpoint.password || !hostAllowed) return false;
+  }
+  catch { return false; }
+  if (value.expirationTime !== undefined && value.expirationTime !== null && !Number.isSafeInteger(value.expirationTime)) return false;
+  return object(value.keys) && Object.keys(value.keys).length === 2 && Object.hasOwn(value.keys, 'p256dh') && Object.hasOwn(value.keys, 'auth')
+    && [value.keys.p256dh, value.keys.auth].every(key => typeof key === 'string' && /^[A-Za-z0-9+/_=-]{16,256}$/.test(key));
+};
 const settingFields = {startingStack:integer(1e9,1),smallBlind:integer(1e9,1),bigBlind:integer(1e9,1),blindMinutes:integer(1440),centsPer1000Chips:integer(10_000_000)};
 const settings = value => object(value) && Object.entries(value).every(([key, n]) => Object.hasOwn(settingFields,key) && settingFields[key](n));
 const ids = value => Array.isArray(value) && value.length >= 1 && value.length <= 10 && value.every(uuid);
@@ -31,6 +46,9 @@ const schemas = {
   'rebuy:cancel': [{token},{revision:integer(Number.MAX_SAFE_INTEGER)}],
   'rebuy:deny': [{token,playerId:uuid},{revision:integer(Number.MAX_SAFE_INTEGER)}],
   'rebuy:approve': [{...auth,playerId:uuid},{amount:integer(1e9,1)}],
+  'push:subscribe': [{token,subscription:pushSubscription},{revision:integer(Number.MAX_SAFE_INTEGER)}],
+  'push:unsubscribe': [{token},{revision:integer(Number.MAX_SAFE_INTEGER)}],
+  presence: [{token,hidden:value=>typeof value==='boolean'},{revision:integer(Number.MAX_SAFE_INTEGER)}],
   'host-fold': [auth,{}],
   leave: [auth,{}],
   kick: [{...auth,playerId:uuid},{}]

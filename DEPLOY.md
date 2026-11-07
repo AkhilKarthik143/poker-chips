@@ -44,6 +44,18 @@ A successful response is `{"ok":true}`. Create a room and join it from a second 
 - For updates, commit and `git push`; the Blueprint uses the repository’s default branch.
 - No secrets or environment file are required.
 
+## Optional turn notifications
+
+Web Push is disabled until all three VAPID environment values are set. Generate a key pair once from the project directory:
+
+```sh
+npx web-push generate-vapid-keys
+```
+
+Set the printed public key as `VAPID_PUBLIC_KEY`, the private key as `VAPID_PRIVATE_KEY`, and a contact such as `mailto:you@example.com` as `VAPID_SUBJECT`. In Render, add these in the service environment settings; the Blueprint declares them as unsynced values so private keys never enter this repository. Keep the same pair across deployments. If any value is missing or invalid, the app continues to work and hides the turn-notification control.
+
+Push notifications require HTTPS in production. On iPhone/iPad, users must add the site to the Home Screen and open that installed app before the enable control appears. Permission is requested only after a seated player taps **Enable turn notifications**. Subscriptions and hidden/visible presence stay in process memory; a server restart clears subscriptions, so users can enable again. A reconnect on the same running server restores its existing subscription from the browser.
+
 
 ## Current service
 

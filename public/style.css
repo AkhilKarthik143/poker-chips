@@ -355,6 +355,9 @@ dialog.app-sheet :focus-visible { scroll-margin:20px; }
   .theme-choice[data-theme-choice="daylight"] .theme-swatch { background:var(--theme-swatch-daylight); }
   .theme-choice[data-theme-choice="system"] .theme-swatch { background:linear-gradient(135deg,var(--theme-swatch-felt) 0 50%,var(--theme-swatch-midnight) 50% 100%); }
   .theme-picker-section .helper { font-size:12px; }
+  .push-controls { margin:18px 0 10px; padding-top:14px; border-top:2px solid var(--dp-color-rule-muted); }
+  .push-controls h3 { margin-bottom:6px; font-size:14px; }
+  .push-controls button { width:100%; min-height:48px; }
   .how-it-works>div:nth-child(1)>span { color:var(--dp-color-accent-warm-ink); }
   .how-it-works>div:nth-child(2)>span,.tiny-chip { color:var(--dp-color-accent-secondary-ink); }
   .how-it-works>div:nth-child(3)>span,.small-note { color:var(--dp-color-accent-fresh-ink); }

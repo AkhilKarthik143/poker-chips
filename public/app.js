@@ -62,6 +62,51 @@ function applyThemePreference(choice) {
     button.tabIndex = selected ? 0 : -1;
   });
 }
+function pushControls() {
+  if (!state.push?.enabled) return '';
+  const ios = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  if (ios && !standalone) return '<section class="push-controls" aria-label="Turn notifications"><h3>Turn notifications</h3><p class="helper">On iPhone or iPad, add Tablemate to your Home Screen before enabling turn notifications.</p></section>';
+  return `<section class="push-controls" aria-label="Turn notifications"><h3>Turn notifications</h3><p class="helper" role="status">${state.push.subscribed ? 'Enabled on this device.' : 'Get a notification when it is your turn and Tablemate is in the background.'}</p><button type="button" id="toggle-push">${state.push.subscribed ? 'Disable turn notifications' : 'Enable turn notifications'}</button></section>`;
+}
+async function togglePushNotifications() {
+  if (!state.push?.enabled) return;
+  if (state.push.subscribed) {
+    const registration = await navigator.serviceWorker.getRegistration('/');
+    const subscription = await registration?.pushManager.getSubscription();
+    await request('push:unsubscribe');
+    if (subscription) await subscription.unsubscribe();
+    state.push.subscribed = false; render(); toast('Turn notifications disabled on this device.');
+    return;
+  }
+  if (!window.isSecureContext || !navigator.serviceWorker || !('PushManager' in window) || !window.Notification) throw new Error('Turn notifications are not supported in this browser.');
+  const permissionRequest = window.Notification.requestPermission();
+  const registrationRequest = navigator.serviceWorker.register('/sw.js');
+  const [permission, registration] = await Promise.all([permissionRequest, registrationRequest]);
+  if (permission !== 'granted') throw new Error('Allow notifications in your browser settings to enable turn alerts.');
+  const existing = await registration.pushManager.getSubscription();
+  const subscription = existing || await registration.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey: decodeApplicationKey(state.push.publicKey)
+  });
+  await request('push:subscribe', { subscription: subscription.toJSON() });
+  state.push.subscribed = true; render(); toast('Turn notifications enabled on this device.');
+}
+function decodeApplicationKey(value) {
+  const padded = value.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - value.length % 4) % 4);
+  return Uint8Array.from(window.atob(padded), character => character.charCodeAt(0));
+}
+function clearTurnNotifications() {
+  navigator.serviceWorker?.getRegistration('/').then(registration => registration?.getNotifications()).then(notifications => {
+    notifications?.filter(item => item.tag.startsWith('tablemate-')).forEach(item => item.close());
+  }).catch(() => {});
+}
+function reportPresence() {
+  if (socket.connected && state && identity) {
+    socket.emit('presence', { revision: state.revision, token: identity.token, hidden: document.hidden }, () => {});
+  }
+  if (!document.hidden) clearTurnNotifications();
+}
 function wireThemePicker(root) {
   const buttons = [...root.querySelectorAll('.theme-choice')];
   buttons.forEach(button => {
@@ -134,6 +179,7 @@ function receive(value) {
   if (lastTurn !== state.turn) raiseOpen = false;
   lastTurn = state.turn;
   render();
+  reportPresence();
   if ($('#rebuy-requests-dialog').open) renderRebuyRequests();
 }
 function reset(message) {
@@ -664,7 +710,7 @@ function render() {
       <details class="panel" id="players-panel" open><summary>Players <span>${state.players.length}/10</span></summary><ul class="players-list">${state.seatOrder.map(id => { const p = state.players.find(p => p.id === id); return `<li><strong>${escape(p.name)}${p.id === state.playerId ? ' · You' : ''}</strong><span>${p.sittingOut ? '⏸ Away' : p.connected ? '✓ Connected' : '⏸ Offline'}</span><span>Won ${p.handsWon} of ${p.handsPlayed} hands</span></li>`; }).join('')}</ul><div class="panel-content"><button id="donate-chips" ${playing || me.stack < 1 || state.players.length < 2 ? 'disabled' : ''}>Donate chips</button><button id="open-tonight-players">Tonight</button><p class="helper">${playing ? 'Available between hands.' : 'Give chips from your stack to another player.'}</p></div></details>
       <details class="panel" id="hand-log" ${railMedia.matches ? 'open' : ''}><summary>Hand log <span>Hand ${state.handNumber}</span></summary><ol class="log-list">${handLog()}</ol></details>
       ${host ? hostPanel(playing, actor) : ''}
-      <details class="panel" id="your-seat"><summary>Your seat</summary><div class="panel-content"><p class="helper">${playing ? 'Sit out applies from the next hand. Leave and rebuy between hands.' : 'Ask your host for a rebuy or add-on.'}</p><button id="sit-out">${me.sittingOut ? 'Play next hand' : 'Sit out next hand'}</button><button id="leave" class="quiet danger" ${playing ? 'disabled' : ''}>Leave table</button>${rebuyRequestControls()}${themePickerMarkup('seat')}${alertControls()}</div></details>
+      <details class="panel" id="your-seat"><summary>Your seat</summary><div class="panel-content"><p class="helper">${playing ? 'Sit out applies from the next hand. Leave and rebuy between hands.' : 'Ask your host for a rebuy or add-on.'}</p><button id="sit-out">${me.sittingOut ? 'Play next hand' : 'Sit out next hand'}</button><button id="leave" class="quiet danger" ${playing ? 'disabled' : ''}>Leave table</button>${rebuyRequestControls()}${themePickerMarkup('seat')}${pushControls()}${alertControls()}</div></details>
     </aside></details></div>
     <section class="dock" aria-label="Your betting controls"><div class="dock-inner"><div class="dock-summary"><div class="turn-label ${state.legal.active ? '' : 'waiting'}" role="status">${!ready ? 'RECONNECTING' : state.legal.active ? 'YOUR TURN' : state.street === 'showdown' ? 'SHOWDOWN' : actor ? `${escape(actor.name).toUpperCase()} TO ACT` : host ? 'HOST · TABLE CONTROLS' : 'WAITING FOR HOST'}</div><div class="balance"><span>Your stack</span><strong>${number(me.stack)}</strong></div><div class="balance"><span>To call</span><strong>${number(state.legal.toCall)}</strong></div></div>
       ${!playing ? `<div class="lobby-actions"><button id="invite-players">Invite players</button><button id="change-seat">Change seat</button><button id="set-buy-in">${host ? 'Set buy-in' : 'View buy-in'}</button><button id="open-tonight-dock">Tonight</button>${host ? `<button id="open-rebuy-requests-dock" ${requestCount ? '' : 'disabled'}>Rebuy requests (${requestCount})</button><button id="start-hand" class="primary" ${state.players.filter(p => p.stack > 0 && !p.sittingOut).length < 2 ? 'disabled' : ''}>${state.handNumber ? 'Start next hand' : 'Start game'} →</button>` : '<span class="helper">Your host starts the hand.</span>'}</div>` : ''}
@@ -714,6 +760,7 @@ function wireTable(me, pot) {
   $('#open-tonight-dock')?.addEventListener('click', openTonight);
   document.querySelectorAll('[data-alert-setting]').forEach(input => input.addEventListener('change', () => window.Alerts?.setPreference(input.dataset.alertSetting, input.checked)));
   $('#test-alert')?.addEventListener('click', () => window.Alerts?.test());
+  $('#toggle-push')?.addEventListener('click', () => togglePushNotifications().catch(error => toast(error.message)));
   document.querySelectorAll('[data-action]').forEach(el => el.addEventListener('click', () => run('action', { type: el.dataset.action })));
   $('#toggle-raise')?.addEventListener('click', () => { raiseOpen = !raiseOpen; render(); });
   $('#raise-amount')?.addEventListener('input', e => {
@@ -771,6 +818,8 @@ function updateKeyboardInset() {
 }
 window.visualViewport?.addEventListener('resize', updateKeyboardInset);
 window.visualViewport?.addEventListener('scroll', updateKeyboardInset);
+document.addEventListener('visibilitychange', reportPresence);
+window.addEventListener('focus', reportPresence);
 updateKeyboardInset();
 setInterval(updateClock, 1000);
 $('#lobby-theme-picker').innerHTML = themePickerMarkup('lobby');
