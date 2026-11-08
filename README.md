@@ -2,6 +2,8 @@
 
 Physical cards. Virtual chips. A mobile-first chip bank and authoritative betting engine for 2–10 people playing Texas Hold’em around the same table. The app never deals, displays, stores, or evaluates cards. No accounts, payments, or chat.
 
+**[Play Tablemate on Render](https://poker-chips-o7n9.onrender.com/)**
+
 ## Play with a real deck
 
 1. The host creates a table, chooses a starting stack and blinds, and optionally enables a blind timer.
