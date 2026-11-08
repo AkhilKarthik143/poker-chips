@@ -61,5 +61,25 @@ function resolveTheme(theme, prefersDark = false) {
   return selected === 'system' ? (prefersDark ? 'midnight' : 'felt') : selected;
 }
 
-globalThis.Tablemate = Object.freeze({ moveItem, reconcileOrder, dedupeAlert, alertTransition, loadPrefs, savePrefs, resolveTheme });
+function parseInviteCode(search) {
+  try {
+    const codes = new URLSearchParams(search).getAll('code');
+    if (!codes.length) return { status: 'missing', code: '' };
+    if (codes.length !== 1 || !/^[A-HJ-NP-Z]{8}$/i.test(codes[0])) return { status: 'invalid', code: '' };
+    return { status: 'valid', code: codes[0].toUpperCase() };
+  } catch { return { status: 'invalid', code: '' }; }
+}
+
+function roomInviteUrl(origin, code) {
+  if (typeof code !== 'string' || !/^[A-HJ-NP-Z]{8}$/i.test(code)) return null;
+  try {
+    const base = new URL(origin);
+    if (!['http:', 'https:'].includes(base.protocol)) return null;
+    const invite = new URL('/', base.origin);
+    invite.searchParams.set('code', code.toUpperCase());
+    return invite.href;
+  } catch { return null; }
+}
+
+globalThis.Tablemate = Object.freeze({ moveItem, reconcileOrder, dedupeAlert, alertTransition, loadPrefs, savePrefs, resolveTheme, parseInviteCode, roomInviteUrl });
 })();

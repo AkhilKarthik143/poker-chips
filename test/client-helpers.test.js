@@ -4,13 +4,25 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 
 const sandbox = {};
-runInNewContext(readFileSync(new URL('../public/helpers.js', import.meta.url), 'utf8'), { globalThis: sandbox });
+runInNewContext(readFileSync(new URL('../public/helpers.js', import.meta.url), 'utf8'), { globalThis: sandbox, URL, URLSearchParams });
 const helpers = sandbox.Tablemate;
 
 test('classic client helpers load without browser APIs and share one namespace', () => {
-  assert.deepEqual(Object.keys(helpers).sort(), ['alertTransition', 'dedupeAlert', 'loadPrefs', 'moveItem', 'reconcileOrder', 'resolveTheme', 'savePrefs'].sort());
+  assert.deepEqual(Object.keys(helpers).sort(), ['alertTransition', 'dedupeAlert', 'loadPrefs', 'moveItem', 'parseInviteCode', 'reconcileOrder', 'resolveTheme', 'roomInviteUrl', 'savePrefs'].sort());
   assert.deepEqual([...helpers.moveItem(['a', 'b', 'c'], 0, 2)], ['b', 'c', 'a']);
   assert.deepEqual([...helpers.reconcileOrder(['c', 'a', 'a', 'gone'], ['a', 'b', 'c'])], ['c', 'a', 'b']);
+});
+
+test('invite URLs use the active origin and query codes are validated without auto-joining', () => {
+  assert.equal(helpers.roomInviteUrl('https://tablemate.example', 'abcdefgh'), 'https://tablemate.example/?code=ABCDEFGH');
+  assert.equal(helpers.roomInviteUrl('http://localhost:3000', 'ABCDEFGH'), 'http://localhost:3000/?code=ABCDEFGH');
+  assert.equal(helpers.roomInviteUrl('javascript:alert(1)', 'ABCDEFGH'), null);
+  assert.deepEqual({ ...helpers.parseInviteCode('') }, { status: 'missing', code: '' });
+  assert.deepEqual({ ...helpers.parseInviteCode('?code=abcdefgh') }, { status: 'valid', code: 'ABCDEFGH' });
+  assert.deepEqual({ ...helpers.parseInviteCode('?code=%61BCDEFGH&from=qr') }, { status: 'valid', code: 'ABCDEFGH' });
+  for (const search of ['?code=', '?code=ABC12345', '?code=ABCDEFGI', '?code=ABCDEFGH&code=JKLMNPQR']) {
+    assert.deepEqual({ ...helpers.parseInviteCode(search) }, { status: 'invalid', code: '' });
+  }
 });
 
 test('alert transition announces a newly received turn only once and ignores stale revisions', () => {

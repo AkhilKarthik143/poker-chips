@@ -12,6 +12,10 @@ Physical cards. Virtual chips. A mobile-first chip bank and authoritative bettin
 6. At showdown, compare the real cards. The host selects every tied winner **for each pot**, then confirms. The app only offers eligible players. All payouts settle together once every pot is assigned. Split-pot odd chips go clockwise from the dealer, starting with the first winning player to the dealer’s left.
 7. Collect the cards and start the next hand. **Host controls** provide rebuys/add-ons, settings, kick and undo. **Your seat** provides sit-out and leave.
 
+## Share a room invite
+
+From the table’s **Invite** or **Invite players** control, share the QR code, copy the room code, copy the invite link, or use the device share sheet when available. The link uses the current service origin and includes only the public room code (`?code=ABCDEFGH`). Opening it fills the existing **Join a table** code field; the guest still chooses a name and confirms the normal join flow. The QR is generated locally with the vendored `qrcode-generator` browser library, so no invite data is sent to a QR service.
+
 ## Local run
 
 Node 20 is the requested deployment target. Node 20+ is supported; no frontend build step is required.
@@ -68,6 +72,7 @@ Reference: [Render Blueprint specification](https://render.com/docs/blueprint-sp
 - `src/game.js` — pure immutable state transitions, validation, pots, payouts and undo; no I/O.
 - `src/server.js` — Express, Socket.IO, private seat tokens, authorization, cleanup and public state projection.
 - `public/` — vanilla HTML/CSS/JS; responsive table, five themes, in-page alerts, optional service worker and local icons. All assets are local.
+- `public/vendor/qrcode.js` — local MIT-licensed `qrcode-generator` browser build used for room invite QR codes.
 - `test/game.test.js` — rule examples, split/side pots and randomized chip conservation.
 - `test/server.test.js` — real Socket.IO clients; full hand and access/reconnect/cleanup coverage.
 - `test/push.test.js` — mocked Web Push delivery, subscription privacy, hidden/disconnected presence and VAPID-off behavior.

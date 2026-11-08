@@ -1,9 +1,9 @@
 export default [{
-  ignores: ['node_modules/**'],
+  ignores: ['node_modules/**', 'public/vendor/**'],
 }, {
   files: ['**/*.js'],
   languageOptions: { ecmaVersion: 2022, sourceType: 'module',
-    globals: Object.fromEntries(['process', 'Buffer', 'URL', 'structuredClone', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'fetch'].map(name => [name, 'readonly'])) },
+    globals: Object.fromEntries(['process', 'Buffer', 'URL', 'URLSearchParams', 'structuredClone', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'fetch'].map(name => [name, 'readonly'])) },
   rules: {
     'no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
     'no-constant-condition': 'error',

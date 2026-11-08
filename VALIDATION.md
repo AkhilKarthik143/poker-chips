@@ -6,9 +6,9 @@ Validated locally on November 7, 2026 (America/Los_Angeles), on Node 24.20.0. Th
 
 | Check | Result |
 | --- | --- |
-| Clean lockfile install: `npm ci` | Pass; 192 packages installed. npm reports 2 audit findings (1 moderate, 1 high). |
+| Clean lockfile install: `npm ci` | Pass; 193 packages installed. npm reports 2 audit findings (1 moderate, 1 high), also recorded in the prior validation. |
 | `npm run lint` | Pass; zero errors or warnings. |
-| `npm test` | Pass; 63 tests, including game conservation, undo, settlement, strict socket validation, client helpers, contrast and mocked push. |
+| `npm test` | Pass; 64 tests, including invite URL parsing, game conservation, undo, settlement, strict socket validation, contrast and mocked push. |
 | `node scripts/check-contrast.js` | Pass for Felt, Midnight, Burgundy, Graphite and Daylight; thresholds cover text, disabled text, accent buttons/surfaces, settle-up net colors, borders and focus rings. |
 | `node scripts/simulate-four.js` | Pass: four players, two all-ins, every street; pots 200 + 150, final stacks 200/150/100/100, 550 chips conserved. |
 | `npm start` and `GET /healthz` | Pass; HTTP 200 with `{"ok":true}`. |
@@ -38,3 +38,27 @@ Real push delivery was mocked because no VAPID keys are configured here. The Ren
 - Push delivery against real FCM, Apple, Mozilla or Windows subscriptions and provider key rotation.
 
 The prior project validation covered full hand play, reconnect, raise controls, showdown/undo, rebuy, and seat-order behavior. Rooms remain process-local: reconnect works only while the room survives, and a restart clears the room and its push subscriptions.
+
+## Room invite acceptance
+
+Validated locally on November 7, 2026, against ephemeral servers using Playwright 1.65, bundled headless Chromium and installed Google Chrome. Desktop checks used 1280×900; mobile checks used 360×780 and 390×844. Guests used separate browser contexts.
+
+| Scenario | Result |
+| --- | --- |
+| Google Chrome desktop and mobile viewport | Pass; created a room, decoded the exact QR payload on desktop, prefetched and joined from a separate 390×844 context, and verified shared room state without horizontal overflow or browser errors. |
+| Create a room; generate the origin-based invite URL and QR | Pass; URL and room code matched the active origin and generated room code. |
+| Decode generated QR with Chromium `BarcodeDetector` | Pass; decoded payload exactly matched the invite URL; image was nonblank. |
+| Mobile QR sizing and overflow | Pass; QR rendered 264 CSS px wide at 360 px viewport width, with no horizontal overflow. |
+| Copy link and room code | Pass; clipboard contents and success feedback matched the expected values. |
+| Web Share supported, cancelled and failed | Pass; supported share received the exact URL, cancellation did not copy, and a share error fell back to clipboard. |
+| Clipboard API unavailable | Pass; legacy copy selected and copied the invite. When both copy methods were unavailable, selected text and clear manual-copy feedback remained. |
+| Fresh invite opened with URL-encoded code | Pass; Join tab and field were prefilled; joining still required name entry and explicit confirmation. |
+| Two guests open and join the same invite concurrently | Pass; both joined the same room. |
+| Rejoin after refresh and multiplayer state | Pass; the seat was restored, both clients saw both players, and both saw the completed hand. |
+| Manual code entry, leave flow and manual-entry preservation | Pass; manual join and leave worked, and a later same-page URL change did not overwrite an entered code. |
+| Invalid, malformed, empty, missing and nonexistent room codes | Pass; invalid values were rejected with useful feedback, missing query retained create mode, and a valid-shaped nonexistent code did not crash. |
+| Invite opened while already seated in a different room | Pass; the existing seat was restored and the invite code remained ready in the lobby after leaving. |
+| Ten-seat capacity and eleventh guest | Pass; the room reached ten players and rejected the next join with a useful message. |
+| Browser errors during share/manual-entry checks | Pass; no uncaught page errors. |
+
+Physical phone camera scanning and the deployed Render hostname were not available in this local run. QR decoding was verified in Chromium; production invite URLs use the active page origin and still need a deployed-site check.
