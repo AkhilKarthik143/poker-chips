@@ -1,17 +1,28 @@
 import { readFileSync } from 'node:fs';
 
 const source = readFileSync(new URL('../public/tokens.css', import.meta.url), 'utf8');
-const themes = new Map();
-for (const match of source.matchAll(/:root\[data-theme="([a-z]+)"\]\s*,\s*\[data-theme-preview="\1"\]\s*\{([^}]*)\}/g)) {
+const baseBlock = source.match(/^:root\s*\{([^}]*)\}/m)?.[1];
+if (!baseBlock) throw new Error('Missing base token block in public/tokens.css');
+
+function parseTokens(block) {
   const tokens = new Map();
-  for (const declaration of match[2].split(';')) {
-    const [name, value] = declaration.split(':').map(part => part.trim());
-    if (name?.startsWith('--') && value) tokens.set(name.slice(2), value);
+  for (const declaration of block.split(';')) {
+    const separator = declaration.indexOf(':');
+    if (separator < 0) continue;
+    const name = declaration.slice(0, separator).trim();
+    const value = declaration.slice(separator + 1).trim();
+    if (name.startsWith('--') && value) tokens.set(name.slice(2), value);
   }
-  themes.set(match[1], tokens);
+  return tokens;
 }
 
-function rgb(hex, theme, token) {
+const base = parseTokens(baseBlock);
+const themes = new Map();
+for (const match of source.matchAll(/:root\[data-theme="([a-z]+)"\]\s*,\s*\[data-theme-preview="\1"\]\s*\{([^}]*)\}/g)) {
+  themes.set(match[1], new Map([...base, ...parseTokens(match[2])]));
+}
+
+function rgb(theme, token) {
   const value = theme.get(token);
   const match = /^#([\da-f]{3}|[\da-f]{6})$/i.exec(value || '');
   if (!match) throw new Error(`${token} must be a 3- or 6-digit hex color (got ${value || 'missing'})`);
@@ -25,21 +36,23 @@ function luminance(color) {
 }
 
 function contrast(theme, first, second) {
-  const [light, dark] = [luminance(rgb(first, theme, first)), luminance(rgb(second, theme, second))].sort((a, b) => b - a);
+  const [light, dark] = [luminance(rgb(theme, first)), luminance(rgb(theme, second))].sort((a, b) => b - a);
   return (light + 0.05) / (dark + 0.05);
 }
 
+const themeNames = ['felt', 'midnight', 'burgundy', 'graphite', 'daylight'];
 const failures = [];
-const backgrounds = ['bg-page', 'bg-panel', 'bg-table', 'bg-seat-empty', 'bg-seat-occupied'];
-for (const name of ['felt', 'midnight', 'burgundy', 'graphite', 'daylight']) {
+for (const name of themeNames) {
   const theme = themes.get(name);
   if (!theme) { failures.push(`Missing theme block: ${name}`); continue; }
   const check = (first, second, minimum, label) => {
     const ratio = contrast(theme, first, second);
     if (ratio < minimum) failures.push(`${name}: ${label} ${ratio.toFixed(2)}:1 (needs ${minimum}:1)`);
   };
-  for (const background of backgrounds) check('text-primary', background, 4.5, `text-primary on ${background}`);
-  check('text-secondary', 'bg-panel', 4.5, 'text-secondary on bg-panel');
+
+  const surfaces = ['bg-page', 'bg-panel', 'bg-table', 'bg-seat-empty', 'bg-seat-occupied'];
+  for (const background of surfaces) check('text-primary', background, 4.5, `primary text on ${background}`);
+  check('text-secondary', 'bg-panel', 4.5, 'secondary text on bg-panel');
   check('text-disabled', 'bg-seat-empty', 4.5, 'disabled/open-seat text on bg-seat-empty');
   check('bg-panel', 'accent', 4.5, 'primary-button text on accent');
   check('bg-panel', 'accent-hover', 4.5, 'primary-button text on accent-hover');
@@ -51,8 +64,32 @@ for (const name of ['felt', 'midnight', 'burgundy', 'graphite', 'daylight']) {
   }
   check('net-up', 'bg-panel', 4.5, 'positive settlement text on bg-panel');
   check('net-down', 'bg-panel', 4.5, 'negative settlement text on bg-panel');
+
+  if (name === 'felt') continue;
+  const extendedSurfaces = ['bg-stage', 'bg-selected', 'bg-active-seat', 'bg-action-bar'];
+  for (const background of extendedSurfaces) check('text-primary', background, 4.5, `primary text on ${background}`);
+  for (const background of ['bg-stage', 'bg-seat-empty', 'bg-seat-occupied', 'bg-selected', 'bg-active-seat', 'bg-action-bar']) {
+    check('text-secondary', background, 4.5, `secondary text on ${background}`);
+  }
+  for (const feltSurface of ['bg-table', 'bg-felt-highlight']) {
+    check('text-on-felt', feltSurface, 4.5, `felt text on ${feltSurface}`);
+    check('text-on-felt-muted', feltSurface, 4.5, `muted felt text on ${feltSurface}`);
+  }
+  check('dp-color-accent-ink', 'accent', 4.5, 'primary button text on accent');
+  check('dp-color-accent-ink', 'accent-hover', 4.5, 'primary button text on accent-hover');
+  check('dp-color-danger-ink', 'status-allin', 4.5, 'text on all-in control');
+  check('status-allin', 'bg-panel', 4.5, 'danger text on panel');
+  check('dp-color-active-ink', 'status-active', 4.5, 'text on active-turn indicator');
+  for (const background of ['bg-panel', 'bg-action-bar', 'bg-selected']) check('status-active', background, 4.5, `active-turn label on ${background}`);
+  check('border-felt', 'bg-table', 3, 'felt rail against felt');
+  for (const border of ['dp-color-focus', 'border-seat-empty', 'border-your-seat', 'border-action-bar-top', 'accent', 'status-active']) {
+    for (const background of ['bg-page', 'bg-panel', 'bg-stage', 'bg-seat-occupied', 'bg-selected', 'bg-action-bar']) {
+      check(border, background, 3, `${border} against ${background}`);
+    }
+  }
 }
 
+if (themes.size !== themeNames.length) failures.push(`Expected ${themeNames.length} themes, found ${themes.size}`);
 if (failures.length) {
   process.stderr.write(`Contrast checks failed:\n${failures.map(item => `- ${item}`).join('\n')}\n`);
   process.exitCode = 1;
