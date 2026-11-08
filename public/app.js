@@ -43,8 +43,13 @@ function toast(message) {
   clearTimeout(toastTimer); toastTimer = setTimeout(() => { $('#toast').hidden = true; }, 5500);
 }
 function themePickerMarkup(scope) {
-  const labels = { felt: 'Felt', midnight: 'Midnight', burgundy: 'Burgundy', graphite: 'Graphite', daylight: 'Daylight', system: 'Match system' };
-  return `<section class="theme-picker-section" aria-label="Appearance"><h3>Color theme</h3><div class="theme-picker" role="radiogroup" aria-label="Color theme">${THEME_CHOICES.map(choice => `<button type="button" id="theme-${scope}-${choice}" class="theme-choice" role="radio" aria-checked="${themePreference === choice}" tabindex="${themePreference === choice ? '0' : '-1'}" data-theme-choice="${choice}"><span class="theme-swatch" aria-hidden="true"></span><span>${labels[choice]}</span></button>`).join('')}</div></section>`;
+  const labels = { felt: 'Felt', midnight: 'Midnight', burgundy: 'Burgundy', graphite: 'Graphite', daylight: 'Daylight', system: 'System' };
+  return `<section class="theme-picker-section" aria-label="Appearance"><h3>Color theme</h3><div class="theme-picker" role="radiogroup" aria-label="Color theme">${THEME_CHOICES.map(choice => `<button type="button" id="theme-${scope}-${choice}" class="theme-choice" role="radio" aria-checked="${themePreference === choice}" tabindex="${themePreference === choice ? '0' : '-1'}" data-theme-choice="${choice}">${themePreviewMarkup(choice)}<span class="theme-card-name">${labels[choice]}</span><span class="theme-check" aria-hidden="true">✓</span></button>`).join('')}</div></section>`;
+}
+function themePreviewMarkup(choice) {
+  const themes = choice === 'system' ? ['felt', 'midnight'] : [choice];
+  const preview = themes.map(theme => `<span class="theme-preview-theme" data-theme-preview="${theme}"><span class="theme-preview-table"></span><span class="theme-preview-panel"><span class="theme-preview-line"></span></span><span class="theme-preview-chip"></span></span>`).join('');
+  return `<span class="theme-preview${choice === 'system' ? ' theme-preview-system' : ''}" aria-hidden="true">${preview}</span>`;
 }
 function applyThemePreference(choice) {
   if (!THEME_CHOICES.includes(choice)) return;

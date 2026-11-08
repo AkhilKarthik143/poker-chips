@@ -12,12 +12,11 @@
   --dp-color-field-soft:var(--bg-table); --dp-color-selection:var(--bg-seat-occupied); --dp-color-rule-muted:#b8b6c5;
   --dp-color-ink-muted:var(--text-secondary); --dp-color-disabled-ink:var(--text-disabled); --dp-color-disabled-outline:var(--border-seat-empty);
   --dp-color-placeholder:var(--text-secondary); --dp-color-felt:var(--bg-table); --dp-color-disabled-surface:var(--bg-seat-occupied);
-  --theme-swatch-felt:#286546; --theme-swatch-midnight:#0b1424; --theme-swatch-burgundy:#6e3045; --theme-swatch-graphite:#343840; --theme-swatch-daylight:#dce6f5;
   --dp-typography-display:"PlayfulGeometricDisplay","Trebuchet MS",sans-serif;
   --dp-typography-reading:"PlayfulGeometricReading","Avenir Next",sans-serif;
 }
 
-:root[data-theme="felt"] {
+:root[data-theme="felt"], [data-theme-preview="felt"] {
   color-scheme:light;
   --bg-page:#fffdf5; --bg-panel:#ffffff; --bg-table:#e9fff5; --bg-seat-empty:#e9fff5; --bg-seat-occupied:#f1ebff; --bg-action-bar:#ffffff;
   --border-seat-empty:#252b3a; --border-your-seat:#6434df; --border-action-bar-top:#252b3a;
@@ -27,9 +26,8 @@
   --card-face-bg:#fbf8f1; --card-face-red:#c4453a; --card-face-black:#1a1a1a; --card-back-bg:#6434df;
   --dp-color-accent-secondary:#ff78c5; --dp-color-accent-secondary-ink:#253044;
   --dp-color-accent-warm:#ffd05b; --dp-color-accent-warm-ink:#253044; --dp-color-accent-fresh:#9bf1cd; --dp-color-accent-fresh-ink:#253044; --dp-color-rule-muted:#b8b6c5;
-  --theme-swatch-felt:#286546;
 }
-:root[data-theme="midnight"] {
+:root[data-theme="midnight"], [data-theme-preview="midnight"] {
   color-scheme:dark;
   --bg-page:#0b1424; --bg-panel:#16233a; --bg-table:#193b58; --bg-seat-empty:#193b58; --bg-seat-occupied:#21354e; --bg-action-bar:#16233a;
   --border-seat-empty:#85a9d2; --border-your-seat:#a9caff; --border-action-bar-top:#85a9d2;
@@ -39,9 +37,8 @@
   --card-face-bg:#fbf8f1; --card-face-red:#c4453a; --card-face-black:#1a1a1a; --card-back-bg:#536fe8;
   --dp-color-accent-secondary:#f39bc1; --dp-color-accent-secondary-ink:#101820;
   --dp-color-accent-warm:#ffd16e; --dp-color-accent-warm-ink:#101820; --dp-color-accent-fresh:#9be0bd; --dp-color-accent-fresh-ink:#101820; --dp-color-rule-muted:#6d7c93;
-  --theme-swatch-midnight:#0b1424;
 }
-:root[data-theme="burgundy"] {
+:root[data-theme="burgundy"], [data-theme-preview="burgundy"] {
   color-scheme:dark;
   --bg-page:#201018; --bg-panel:#321923; --bg-table:#4b2834; --bg-seat-empty:#4b2834; --bg-seat-occupied:#432330; --bg-action-bar:#321923;
   --border-seat-empty:#d8acb9; --border-your-seat:#ffc1d3; --border-action-bar-top:#d8acb9;
@@ -51,9 +48,8 @@
   --card-face-bg:#fffaf7; --card-face-red:#bf3247; --card-face-black:#1a1a1a; --card-back-bg:#873b57;
   --dp-color-accent-secondary:#ffb7c9; --dp-color-accent-secondary-ink:#241017;
   --dp-color-accent-warm:#ffd16e; --dp-color-accent-warm-ink:#241017; --dp-color-accent-fresh:#a1dfb8; --dp-color-accent-fresh-ink:#241017; --dp-color-rule-muted:#8c6674;
-  --theme-swatch-burgundy:#6e3045;
 }
-:root[data-theme="graphite"] {
+:root[data-theme="graphite"], [data-theme-preview="graphite"] {
   color-scheme:dark;
   --bg-page:#17191d; --bg-panel:#25282e; --bg-table:#343840; --bg-seat-empty:#343840; --bg-seat-occupied:#2d3036; --bg-action-bar:#25282e;
   --border-seat-empty:#c0c7d1; --border-your-seat:#f2f5fa; --border-action-bar-top:#c0c7d1;
@@ -63,9 +59,8 @@
   --card-face-bg:#fbf8f1; --card-face-red:#c4453a; --card-face-black:#1a1a1a; --card-back-bg:#818b9a;
   --dp-color-accent-secondary:#d9b8cb; --dp-color-accent-secondary-ink:#17191d;
   --dp-color-accent-warm:#f6d27b; --dp-color-accent-warm-ink:#17191d; --dp-color-accent-fresh:#a6d9bd; --dp-color-accent-fresh-ink:#17191d; --dp-color-rule-muted:#70757f;
-  --theme-swatch-graphite:#343840;
 }
-:root[data-theme="daylight"] {
+:root[data-theme="daylight"], [data-theme-preview="daylight"] {
   color-scheme:light;
   --bg-page:#f4f7fb; --bg-panel:#ffffff; --bg-table:#e4eaf3; --bg-seat-empty:#e4eaf3; --bg-seat-occupied:#f0f3f8; --bg-action-bar:#ffffff;
   --border-seat-empty:#293345; --border-your-seat:#2d58c7; --border-action-bar-top:#293345;
@@ -75,5 +70,4 @@
   --card-face-bg:#ffffff; --card-face-red:#b53535; --card-face-black:#1a1a1a; --card-back-bg:#2d58c7;
   --dp-color-accent-secondary:#efa5bd; --dp-color-accent-secondary-ink:#202b3c;
   --dp-color-accent-warm:#f2c25d; --dp-color-accent-warm-ink:#202b3c; --dp-color-accent-fresh:#89c9a8; --dp-color-accent-fresh-ink:#202b3c; --dp-color-rule-muted:#aab3c2;
-  --theme-swatch-daylight:#dce6f5;
 }

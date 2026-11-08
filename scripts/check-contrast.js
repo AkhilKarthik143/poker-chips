@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 
 const source = readFileSync(new URL('../public/tokens.css', import.meta.url), 'utf8');
 const themes = new Map();
-for (const match of source.matchAll(/:root\[data-theme="([a-z]+)"\]\s*\{([^}]*)\}/g)) {
+for (const match of source.matchAll(/:root\[data-theme="([a-z]+)"\]\s*,\s*\[data-theme-preview="\1"\]\s*\{([^}]*)\}/g)) {
   const tokens = new Map();
   for (const declaration of match[2].split(';')) {
     const [name, value] = declaration.split(':').map(part => part.trim());
