@@ -106,7 +106,7 @@ test('showdown awards and undo are atomic and conserve chips', () => {
 test('administration validates, changes chip ledger, and clears undo boundaries', () => {
   let s = table([100, 100]);
   s = rebuy(s, '0', 50); assert.equal(s.totalChips, 250);
-  s = configure(s, { startingStack: 300 }); assert.equal(s.totalChips, 600);
+  s = configure(s, { startingStack: 300 }); assert.equal(s.totalChips, 650);
   s = startHand(s);
   assert.throws(() => rebuy(s, '0', 1), /between/);
   assert.throws(() => removePlayer(s, '0'), /between/);
@@ -117,16 +117,57 @@ test('administration validates, changes chip ledger, and clears undo boundaries'
 test('night ledger tracks buy-in, rebuys, entrants and departed cash-out without affecting chips', () => {
   let s = createTable({ startingStack: 100 });
   s = addPlayer(s, 'a', 'Alex'); s = addPlayer(s, 'b', 'Blair'); s = addPlayer(s, 'c', 'Casey');
-  assert.deepEqual(s.players.map(p => [p.buyIn, p.handsPlayed, p.handsWon]), [[100, 0, 0], [100, 0, 0], [100, 0, 0]]);
+  assert.deepEqual(s.players.map(p => [p.initialBuyIn, p.rebuyCount, p.totalRebuyChips, p.buyIn, p.handsPlayed, p.handsWon]),
+    [[100, 0, 0, 100, 0, 0], [100, 0, 0, 100, 0, 0], [100, 0, 0, 100, 0, 0]]);
   s = rebuy(s, 'a', 50); assert.equal(s.players[0].buyIn, 150); assert.equal(s.players[0].stack, 150);
   s = configure(s, { startingStack: 200 });
-  assert.deepEqual(s.players.map(p => [p.buyIn, p.stack]), [[200, 200], [200, 200], [200, 200]]);
+  assert.deepEqual(s.players.map(p => [p.initialBuyIn, p.rebuyCount, p.totalRebuyChips, p.buyIn, p.stack]),
+    [[200, 1, 50, 250, 250], [200, 0, 0, 200, 200], [200, 0, 0, 200, 200]]);
   s = setSitOut(s, 'c', true); s = startHand(s);
   assert.deepEqual(s.players.map(p => p.handsPlayed), [1, 1, 0]);
   s = award(checkDown(s));
   s = removePlayer(s, 'c');
-  assert.deepEqual(s.departed, [{ id: 'c', name: 'Casey', buyIn: 200, cashOut: 200, handsWon: 0, handsPlayed: 0 }]);
-  assert.equal(s.totalChips, 400); assertConservation(s);
+  assert.deepEqual(s.departed, [{ id: 'c', name: 'Casey', initialBuyIn: 200, buyIn: 200, rebuyCount: 0, totalRebuyChips: 0,
+    rebuyHistory: [], cashOut: 200, handsWon: 0, handsPlayed: 0 }]);
+  assert.equal(s.totalChips, 450); assertConservation(s);
+});
+test('completed rebuys record their source and time once in the settlement tracker', () => {
+  let s = createTable({ startingStack: 100, centsPer1000Chips: 2500 });
+  s = addPlayer(s, 'a', 'Alex'); s = addPlayer(s, 'b', 'Blair');
+  assert.deepEqual([s.players[0].initialBuyIn, s.players[0].rebuyCount, s.players[0].totalRebuyChips, s.players[0].rebuyHistory], [100, 0, 0, []]);
+  s = rebuy(s, 'a', 50, { timestamp: 1000, source: 'host' });
+  s = rebuy(s, 'b', 25, { timestamp: 2000, source: 'host' });
+  s = rebuy(s, 'a', 75, { timestamp: 3000, source: 'request' });
+  assertConservation(s);
+  const alex = s.players.find(p => p.id === 'a');
+  assert.equal(alex.stack, 225); assert.equal(alex.initialBuyIn + alex.totalRebuyChips, alex.buyIn);
+  assert.equal(alex.rebuyCount, 2); assert.equal(alex.totalRebuyChips, 125);
+  assert.deepEqual(alex.rebuyHistory.map(({ playerId, name, amount, handNumber, timestamp, source }) => [playerId, name, amount, handNumber, timestamp, source]), [
+    ['a', 'Alex', 50, 0, 1000, 'host'], ['a', 'Alex', 75, 0, 3000, 'request']
+  ]);
+  const summary = settlement(s);
+  assert.deepEqual(summary.rows.map(row => [row.name, row.initialBuyIn, row.rebuyCount, row.totalRebuyChips, row.totalBuyIn, row.cashOut, row.net]), [
+    ['Alex', 100, 2, 125, 225, 225, 0], ['Blair', 100, 1, 25, 125, 125, 0]
+  ]);
+  assert.deepEqual(summary.rebuyTotals, { initialBuyIn: 200, rebuyCount: 3, totalRebuyChips: 150, totalPurchased: 350,
+    initialBuyInMoney: '+$5.00', totalRebuyChipsMoney: '+$3.75', totalPurchasedMoney: '+$8.75' });
+  const beforeDonate = structuredClone(summary.rebuyTotals);
+  s = donate(s, 'a', 'b', 50);
+  assert.deepEqual(settlement(s).rebuyTotals, beforeDonate);
+  assert.equal(settlement(s).rows.reduce((total, row) => total + row.net, 0), 0);
+  assertConservation(s);
+});
+test('pre-hand starting-stack changes retain completed rebuy history and purchased chips', () => {
+  let s = createTable({ startingStack: 100 });
+  s = addPlayer(s, 'a', 'Alex'); s = addPlayer(s, 'b', 'Blair');
+  s = rebuy(s, 'a', 50, { timestamp: 123, source: 'host' });
+  s = configure(s, { startingStack: 250 });
+  const alex = s.players.find(p => p.id === 'a');
+  assert.deepEqual([alex.initialBuyIn, alex.rebuyCount, alex.totalRebuyChips, alex.buyIn, alex.stack], [250, 1, 50, 300, 300]);
+  assert.equal(alex.rebuyHistory[0].timestamp, 123);
+  assert.equal(s.totalChips, 550);
+  assert.equal(settlement(s).rebuyTotals.totalPurchased, 550);
+  assertConservation(s);
 });
 test('hands won count once across split pots and undo restores the result ledger', () => {
   let s = startHand(table([50, 100, 200]));
@@ -159,10 +200,14 @@ test('settlement merges normalized names and emits deterministic transfers for e
 test('settlement includes and merges departed/rejoined names and rounds cash values to cents', () => {
   let s = createTable({ startingStack: 1000, centsPer1000Chips: 1000 });
   s = addPlayer(s, 'sam-old', 'Sam'); s = addPlayer(s, 'alex', 'Alex');
+  s = rebuy(s, 'sam-old', 500, { timestamp: 100, source: 'host' });
+  s = rebuy(s, 'sam-old', 250, { timestamp: 200, source: 'request' });
   s = donate(s, 'sam-old', 'alex', 100); s = removePlayer(s, 'sam-old'); s = addPlayer(s, 'sam-new', 'sAM');
   const summary = settlement(s);
   const sam = summary.rows.find(row => row.name.toLowerCase() === 'sam');
-  assert.equal(sam.buyIn, 2000); assert.equal(sam.cashOut, 1900); assert.equal(sam.net, -100);
+  assert.equal(sam.initialBuyIn, 2000); assert.equal(sam.rebuyCount, 2); assert.equal(sam.totalRebuyChips, 750);
+  assert.equal(sam.buyIn, 2750); assert.equal(sam.totalBuyIn, 2750); assert.equal(sam.cashOut, 2650); assert.equal(sam.net, -100);
+  assert.equal(sam.rebuyHistory.length, 2); assert.deepEqual(sam.rebuyHistory.map(item => item.playerId), ['sam-old', 'sam-old']);
   assert.equal(sam.netMoney, '-$1.00');
   assert.deepEqual(summary.transfers.map(item => [item.fromName.toLowerCase(), item.toName, item.chips]), [['sam', 'Alex', 100]]);
   let rounding = createTable({ startingStack: 1000, centsPer1000Chips: 501 });

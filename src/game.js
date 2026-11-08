@@ -66,12 +66,21 @@ export function settlement(state) {
   const add = (record, departed) => {
     const name = normalizedName(record.name);
     const key = name.toLowerCase();
-    const current = groups.get(key) || { id: String(record.id || ''), name, buyIn: 0, cashOut: 0, net: 0, handsWon: 0, handsPlayed: 0, active: false };
     const buyIn = record.buyIn || 0;
+    const history = Array.isArray(record.rebuyHistory) ? record.rebuyHistory : [];
+    const totalRebuyChips = record.totalRebuyChips ?? history.reduce((total, transaction) => total + (transaction.amount || 0), 0);
+    const rebuyCount = record.rebuyCount ?? history.length;
+    const initialBuyIn = record.initialBuyIn ?? Math.max(0, buyIn - totalRebuyChips);
+    const current = groups.get(key) || { id: String(record.id || ''), name, initialBuyIn: 0, rebuyCount: 0, totalRebuyChips: 0,
+      rebuyHistory: [], buyIn: 0, cashOut: 0, net: 0, handsWon: 0, handsPlayed: 0, active: false };
     const cashOut = departed ? record.cashOut : record.stack;
     current.id = [current.id, String(record.id || '')].sort(compareText)[0];
     if (!departed || !current.active) current.name = name;
     current.active ||= !departed;
+    current.initialBuyIn += initialBuyIn;
+    current.rebuyCount += rebuyCount;
+    current.totalRebuyChips += totalRebuyChips;
+    current.rebuyHistory.push(...history.map(transaction => ({ ...transaction })));
     current.buyIn += buyIn; current.cashOut += cashOut; current.net += cashOut - buyIn;
     current.handsWon += record.handsWon || 0; current.handsPlayed += record.handsPlayed || 0;
     groups.set(key, current);
@@ -80,8 +89,20 @@ export function settlement(state) {
   for (const player of state.departed || []) add(player, true);
   const rate = state.settings.centsPer1000Chips;
   const rows = [...groups.values()].map(({ active: _active, ...row }) => ({ ...row,
-    buyInMoney: money(row.buyIn, rate), cashOutMoney: money(row.cashOut, rate), netMoney: money(row.net, rate) }))
+    totalBuyIn: row.buyIn,
+    rebuyHistory: row.rebuyHistory.sort((a, b) => a.timestamp - b.timestamp || a.handNumber - b.handNumber || compareText(a.playerId, b.playerId)),
+    initialBuyInMoney: money(row.initialBuyIn, rate), totalRebuyChipsMoney: money(row.totalRebuyChips, rate),
+    buyInMoney: money(row.buyIn, rate), totalBuyInMoney: money(row.buyIn, rate), cashOutMoney: money(row.cashOut, rate), netMoney: money(row.net, rate) }))
     .sort((a, b) => b.net - a.net || comparePeople(a, b));
+  const rebuyTotals = rows.reduce((total, row) => ({
+    initialBuyIn: total.initialBuyIn + row.initialBuyIn,
+    rebuyCount: total.rebuyCount + row.rebuyCount,
+    totalRebuyChips: total.totalRebuyChips + row.totalRebuyChips,
+    totalPurchased: total.totalPurchased + row.totalBuyIn
+  }), { initialBuyIn: 0, rebuyCount: 0, totalRebuyChips: 0, totalPurchased: 0 });
+  rebuyTotals.initialBuyInMoney = money(rebuyTotals.initialBuyIn, rate);
+  rebuyTotals.totalRebuyChipsMoney = money(rebuyTotals.totalRebuyChips, rate);
+  rebuyTotals.totalPurchasedMoney = money(rebuyTotals.totalPurchased, rate);
   const debtors = rows.filter(row => row.net < 0).map(row => ({ ...row, remaining: -row.net }))
     .sort((a, b) => b.remaining - a.remaining || comparePeople(a, b));
   const creditors = rows.filter(row => row.net > 0).map(row => ({ ...row, remaining: row.net }))
@@ -97,7 +118,7 @@ export function settlement(state) {
     if (!from.remaining) debtor++;
     if (!to.remaining) creditor++;
   }
-  return { rows, transfers, centsPer1000Chips: rate || 0 };
+  return { rows, transfers, rebuyTotals, centsPer1000Chips: rate || 0 };
 }
 export function addPlayer(state, id, name) {
   check(!isPlaying(state), 'Join between hands.');
@@ -109,7 +130,8 @@ export function addPlayer(state, id, name) {
   check(!state.players.some(p => normalizedName(p.name).toLowerCase() === name.toLowerCase()), 'Name already taken in this room');
   return edit(state, s => {
     const seat = Array.from({ length: 10 }, (_, i) => i).find(i => !s.players.some(p => p.seat === i));
-    s.players.push({ id, name: name.trim(), seat, stack: s.settings.startingStack, buyIn: s.settings.startingStack, handsPlayed: 0, handsWon: 0, sittingOut: false,
+    s.players.push({ id, name: name.trim(), seat, stack: s.settings.startingStack, initialBuyIn: s.settings.startingStack, buyIn: s.settings.startingStack,
+      rebuyCount: 0, totalRebuyChips: 0, rebuyHistory: [], handsPlayed: 0, handsWon: 0, sittingOut: false,
       inHand: false, folded: false, streetBet: 0, contributed: 0, actedAt: null });
     s.totalChips += s.settings.startingStack;
     s.seatOrder = [...s.players].sort((a, b) => a.seat - b.seat).map(p => p.id);
@@ -124,20 +146,33 @@ export function configure(state, input) {
     s.blindDeadline = null;
     // Before the first deal the host's starting stack applies to every seat.
     if (s.handNumber === 0) {
-      s.players.forEach(p => { p.stack = value.startingStack; p.buyIn = value.startingStack; });
-      s.totalChips = s.players.length * value.startingStack;
+      const nextTotal = s.players.reduce((total, p) => total + value.startingStack + (p.totalRebuyChips || 0), 0);
+      check(nextTotal <= MAX_CHIPS, 'Table chip limit reached.');
+      s.players.forEach(p => {
+        p.initialBuyIn = value.startingStack;
+        p.buyIn = p.initialBuyIn + (p.totalRebuyChips || 0);
+        p.stack = p.buyIn;
+      });
+      s.totalChips = nextTotal;
     }
     log(s, 'Table settings updated.');
   });
 }
-export function rebuy(state, id, amount) {
+export function rebuy(state, id, amount, details = {}) {
   check(!isPlaying(state), 'Add chips between hands.');
   check(integer(amount, 1, MAX_SETTING) && state.totalChips + amount <= MAX_CHIPS, 'Invalid chip amount.');
+  const source = details.source ?? 'host';
+  const timestamp = details.timestamp ?? 0;
+  check(source === 'host' || source === 'request', 'Invalid rebuy source.');
+  check(Number.isSafeInteger(timestamp) && timestamp >= 0, 'Invalid rebuy timestamp.');
   player(state, id);
   return edit(state, s => {
     const p = player(s, id);
     p.stack += amount;
     p.buyIn += amount;
+    p.totalRebuyChips += amount;
+    p.rebuyCount++;
+    p.rebuyHistory.push({ playerId: p.id, name: p.name, amount, handNumber: s.handNumber, timestamp, source });
     s.totalChips += amount;
     log(s, `${p.name} added ${amount} chips.`);
   });
@@ -167,7 +202,8 @@ export function removePlayer(state, id) {
   check(!isPlaying(state), 'Leave or kick between hands. Sit out now to skip the next hand.');
   return edit(state, s => {
     const p = player(s, id);
-    s.departed.push({ id: p.id, name: p.name, buyIn: p.buyIn, cashOut: p.stack, handsWon: p.handsWon, handsPlayed: p.handsPlayed });
+    s.departed.push({ id: p.id, name: p.name, initialBuyIn: p.initialBuyIn, buyIn: p.buyIn, rebuyCount: p.rebuyCount,
+      totalRebuyChips: p.totalRebuyChips, rebuyHistory: structuredClone(p.rebuyHistory), cashOut: p.stack, handsWon: p.handsWon, handsPlayed: p.handsPlayed });
     s.totalChips -= p.stack;
     s.players = s.players.filter(p => p.id !== id);
     s.seatOrder = s.seatOrder.filter(playerId => playerId !== id);

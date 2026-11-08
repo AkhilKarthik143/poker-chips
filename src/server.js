@@ -220,7 +220,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     mutate('undo', room => game.undo(room.game), true);
     mutate('sit-out', (room, id, payload) => game.setSitOut(room.game, id, payload.value));
     mutate('donate', (room, id, payload) => game.donate(room.game, id, payload.recipientId, payload.amount));
-    mutate('rebuy', (room, _id, payload) => game.rebuy(room.game, payload.playerId, payload.amount), true);
+    mutate('rebuy', (room, _id, payload) => game.rebuy(room.game, payload.playerId, payload.amount, { source: 'host', timestamp: now() }), true);
     on('push:subscribe', payload => {
       const { room, id } = member(socket, payload);
       requireValue(pushEnabled, 'Turn notifications are not configured on this server.');
@@ -265,7 +265,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
       const requested = room.rebuyRequests.get(payload.playerId);
       requireValue(requested, 'That rebuy request is no longer pending.');
       const amount = payload.amount ?? requested.amount;
-      const nextState = game.rebuy(room.game, payload.playerId, amount);
+      const nextState = game.rebuy(room.game, payload.playerId, amount, { source: 'request', timestamp: now() });
       room.rebuyRequests.delete(payload.playerId); room.lastActive = now();
       const target = io.sockets.sockets.get(room.connections.get(payload.playerId));
       target?.emit('rebuy-result', { type: 'approved', amount });

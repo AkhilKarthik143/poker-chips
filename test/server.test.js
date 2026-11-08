@@ -46,8 +46,18 @@ test('three players complete all four streets, all-in, side pot and host showdow
   await ok(b, 'join', { code: created.roomCode, name: 'B' });
   await ok(c, 'join', { code: created.roomCode, name: 'C' });
   await barrier(server, [a, b, c]);
+  const playerB = b.state.players.find(p => p.id === b.state.playerId);
+  assert.deepEqual([playerB.initialBuyIn, playerB.rebuyCount], [100, 0]);
+  assert.equal((await emit(b, 'rebuy', { playerId: c.state.playerId, amount: 100 })).ok, false);
+  assert.equal((await emit(a, 'rebuy', { playerId: b.state.playerId, amount: 100, source: 'request' })).ok, false);
   await ok(a, 'rebuy', { playerId: b.state.playerId, amount: 100 });
   await ok(a, 'rebuy', { playerId: c.state.playerId, amount: 100 });
+  await barrier(server, [a, b, c]);
+  assert.deepEqual([b.state.players.find(p => p.id === b.state.playerId).initialBuyIn, b.state.players.find(p => p.id === b.state.playerId).rebuyCount,
+    b.state.players.find(p => p.id === b.state.playerId).totalRebuyChips, b.state.players.find(p => p.id === b.state.playerId).buyIn], [100, 1, 100, 200]);
+  assert.equal(b.state.players.find(p => p.id === b.state.playerId).rebuyHistory[0].source, 'host');
+  assert.deepEqual(a.state.settlement.rebuyTotals, { initialBuyIn: 300, rebuyCount: 2, totalRebuyChips: 200, totalPurchased: 500,
+    initialBuyInMoney: null, totalRebuyChipsMoney: null, totalPurchasedMoney: null });
   await ok(a, 'start-hand'); await barrier(server, [a, b, c]);
   await ok(a, 'action', { type: 'all-in' }); await barrier(server, [a, b, c]);
   await ok(b, 'action', { type: 'call' }); await barrier(server, [a, b, c]);
@@ -77,13 +87,17 @@ test('rejoin restores identity, stack and turn; token forgery and old socket are
   const { client, server } = await setup(t);
   const a = await client(); const b = await client();
   const identity = await ok(a, 'create', { name: 'Host' });
-  await ok(b, 'join', { code: identity.roomCode, name: 'Guest' }); await barrier(server, [a, b]);
+  const guest = await ok(b, 'join', { code: identity.roomCode, name: 'Guest' }); await barrier(server, [a, b]);
+  await ok(a, 'rebuy', { playerId: guest.playerId, amount: 125 }); await barrier(server, [a, b]);
   await ok(a, 'start-hand');
   const replacement = await client();
   assert.equal((await emit(replacement, 'rejoin', { code: identity.roomCode, playerId: identity.playerId, token: 'wrong' })).ok, false);
   await ok(replacement, 'rejoin', { code: identity.roomCode, playerId: identity.playerId, token: identity.token });
   assert.equal(replacement.state.turn, identity.playerId);
   assert.equal(replacement.state.players.find(p => p.id === identity.playerId).stack, 995);
+  const restoredGuest = replacement.state.players.find(p => p.id === guest.playerId);
+  assert.deepEqual([restoredGuest.initialBuyIn, restoredGuest.rebuyCount, restoredGuest.totalRebuyChips, restoredGuest.buyIn], [1000, 1, 125, 1125]);
+  assert.equal(restoredGuest.rebuyHistory[0].amount, 125);
   await barrier(server, [replacement, b]);
   assert.equal(a.connected, false);
   await ok(replacement, 'action', { type: 'call' });
@@ -221,6 +235,8 @@ test('rebuy requests are revision-stable, visible only to host and requester, an
   assert.equal(canceled.ok, true); await barrier(server, [host, other]);
   assert.equal(host.state.revision, revision); assert.deepEqual(host.state.rebuyRequests, []);
   assert.equal((await emit(other, 'rebuy:deny', { playerId: player.playerId })).ok, false);
+  assert.equal(host.state.settlement.rebuyTotals.rebuyCount, 0);
+  assert.deepEqual(host.state.players.map(item => [item.rebuyCount, item.totalRebuyChips]), [[0, 0], [0, 0], [0, 0]]);
 });
 
 test('rebuy approval uses the normal revision gate, rejects during a hand, and then adds chips and ledger buy-in', async t => {
@@ -236,14 +252,21 @@ test('rebuy approval uses the normal revision gate, rejects during a hand, and t
   const duringHandRevision = host.state.revision;
   const midHand = await emit(host, 'rebuy:approve', { playerId: player.playerId, amount: 150 });
   assert.equal(midHand.ok, false); assert.match(midHand.error, /between hands/);
+  assert.equal((await emit(host, 'rebuy', { playerId: player.playerId, amount: 100 })).ok, false);
   assert.equal(host.state.revision, duringHandRevision);
+  assert.equal(host.state.players.find(item => item.id === player.playerId).rebuyCount, 0);
   assert.equal(server.rooms.get(table.roomCode).rebuyRequests.has(player.playerId), true);
   await ok(host, 'action', { type: 'fold' }); await barrier(server, [host, requester]);
   const result = new Promise(resolve => requester.once('rebuy-result', resolve));
   const before = host.state.revision;
   await ok(host, 'rebuy:approve', { playerId: player.playerId, amount: 150 }); await barrier(server, [host, requester]);
   assert.equal(host.state.revision, before + 1);
-  assert.equal(host.state.players.find(item => item.id === player.playerId).buyIn, 250);
+  const reboughtPlayer = host.state.players.find(item => item.id === player.playerId);
+  assert.deepEqual([reboughtPlayer.initialBuyIn, reboughtPlayer.rebuyCount, reboughtPlayer.totalRebuyChips, reboughtPlayer.buyIn], [100, 1, 150, 250]);
+  assert.deepEqual(reboughtPlayer.rebuyHistory.map(item => [item.playerId, item.name, item.amount, item.source]), [[player.playerId, 'Player', 150, 'request']]);
+  assert.equal(requester.state.players.find(item => item.id === player.playerId).totalRebuyChips, 150);
+  assert.equal(host.state.settlement.rows.find(item => item.name === 'Player').buyIn, 250);
+  assert.equal(host.state.settlement.rebuyTotals.rebuyCount, 1);
   assert.equal(server.rooms.get(table.roomCode).rebuyRequests.has(player.playerId), false);
   assert.deepEqual(await result, { type: 'approved', amount: 150 });
   assert.ok(initialRevision < before);
@@ -255,10 +278,18 @@ test('leaving or kicking a requester clears its pending rebuy request', async t 
   const table = await ok(host, 'create', { name: 'Host' });
   const departed = await ok(leaving, 'join', { code: table.roomCode, name: 'Leaving' });
   const removed = await ok(kicked, 'join', { code: table.roomCode, name: 'Kicked' }); await barrier(server, [host, leaving, kicked]);
+  await ok(host, 'rebuy', { playerId: departed.playerId, amount: 40 });
+  await ok(host, 'rebuy', { playerId: departed.playerId, amount: 20 });
+  await ok(host, 'rebuy', { playerId: removed.playerId, amount: 25 }); await barrier(server, [host, leaving, kicked]);
   await ok(leaving, 'rebuy:request', {}); await ok(kicked, 'rebuy:request', {}); await barrier(server, [host, leaving, kicked]);
   await ok(leaving, 'leave'); await barrier(server, [host, kicked]);
   assert.equal(server.rooms.get(table.roomCode).rebuyRequests.has(departed.playerId), false);
+  const left = host.state.settlement.rows.find(row => row.name === 'Leaving');
+  assert.deepEqual([left.initialBuyIn, left.rebuyCount, left.totalRebuyChips, left.buyIn], [1000, 2, 60, 1060]);
+  assert.equal(left.rebuyHistory.length, 2);
   await ok(host, 'kick', { playerId: removed.playerId }); await barrier(server, [host]);
   assert.equal(server.rooms.get(table.roomCode).rebuyRequests.has(removed.playerId), false);
   assert.deepEqual(host.state.rebuyRequests, []);
+  const kickedRow = host.state.settlement.rows.find(row => row.name === 'Kicked');
+  assert.deepEqual([kickedRow.initialBuyIn, kickedRow.rebuyCount, kickedRow.totalRebuyChips, kickedRow.buyIn], [1000, 1, 25, 1025]);
 });

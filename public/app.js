@@ -474,12 +474,43 @@ function alertControls() {
 function rebuyRequestControls() {
   const pending = (state.rebuyRequests || []).find(item => item.id === state.playerId);
   if (pending) return `<section class="rebuy-request-controls"><h3>Rebuy request</h3><p role="status">Pending · ${number(pending.amount)} chips</p><button type="button" id="cancel-rebuy-request">Cancel request</button></section>`;
-  return `<form id="rebuy-request-form" class="rebuy-request-controls"><h3>Request rebuy</h3><label for="rebuy-request-amount">Amount · virtual chips</label><div class="amount-stepper"><button type="button" data-rebuy-step="-1" aria-label="Decrease rebuy amount">−</button><input id="rebuy-request-amount" type="number" inputmode="numeric" min="1" max="1000000000" step="${state.settings.smallBlind}" value="${state.settings.startingStack}" required><button type="button" data-rebuy-step="1" aria-label="Increase rebuy amount">+</button></div><p class="helper">The host approves requests between hands.</p><button type="submit">Send rebuy request</button></form>`;
+  return `<form id="rebuy-request-form" class="rebuy-request-controls"><h3>Request rebuy</h3><label for="rebuy-request-amount">Amount · virtual chips</label><div class="amount-stepper"><button type="button" data-rebuy-step="-1" aria-label="Decrease rebuy amount">−</button><input id="rebuy-request-amount" type="number" inputmode="numeric" min="1" max="1000000000" step="1" value="${state.settings.startingStack}" required><button type="button" data-rebuy-step="1" aria-label="Increase rebuy amount">+</button></div><p class="helper">The host approves requests between hands.</p><button type="submit">Send rebuy request</button></form>`;
 }
 function tonightText(summary) {
-  const players = summary.rows.map(row => `${row.name}: buy-in ${number(row.buyIn)}, cash-out ${number(row.cashOut)}, net ${row.net > 0 ? '+' : ''}${number(row.net)} chips${row.netMoney ? ` (${row.netMoney})` : ''}; won ${row.handsWon} of ${row.handsPlayed} hands.`);
+  const totals = summary.rebuyTotals || summary.rows.reduce((result, row) => ({
+    initialBuyIn: result.initialBuyIn + (row.initialBuyIn || 0),
+    rebuyCount: result.rebuyCount + (row.rebuyCount || 0),
+    totalRebuyChips: result.totalRebuyChips + (row.totalRebuyChips || 0),
+    totalPurchased: result.totalPurchased + (row.totalBuyIn ?? row.buyIn ?? 0)
+  }), { initialBuyIn: 0, rebuyCount: 0, totalRebuyChips: 0, totalPurchased: 0 });
+  const players = summary.rows.map(row => `${row.name}: initial buy-in ${number(row.initialBuyIn || 0)}, ${row.rebuyCount || 0} rebuys (${number(row.totalRebuyChips || 0)} chips), total in ${number(row.totalBuyIn ?? row.buyIn)} chips${row.totalBuyInMoney || row.buyInMoney ? ` (${row.totalBuyInMoney || row.buyInMoney})` : ''}, stack/cash-out ${number(row.cashOut)} chips${row.cashOutMoney ? ` (${row.cashOutMoney})` : ''}, net ${row.net > 0 ? '+' : ''}${number(row.net)} chips${row.netMoney ? ` (${row.netMoney})` : ''}; won ${row.handsWon} of ${row.handsPlayed} hands.`);
   const transfers = summary.transfers.map(item => `${item.fromName} pays ${item.toName} ${number(item.chips)} chips${item.money ? ` · ${item.money}` : ''}.`);
-  return [`Tonight · Table ${state.roomCode}`, ...players, 'Who pays whom:', ...(transfers.length ? transfers : ['No transfers needed.']), 'Informal tally for friends. This app doesn’t handle money.'].join('\n');
+  return [`Tonight · Table ${state.roomCode}`, ...players,
+    `Completed rebuys: ${totals.rebuyCount} · Rebuy chips: ${number(totals.totalRebuyChips)} · Total chips purchased: ${number(totals.totalPurchased)}${totals.totalPurchasedMoney ? ` (${totals.totalPurchasedMoney})` : ''}`,
+    'Who pays whom:', ...(transfers.length ? transfers : ['No transfers needed.']), 'Informal tally for friends. This app doesn’t handle money.'].join('\n');
+}
+function rebuyTrackerMarkup(summary) {
+  const totals = summary.rebuyTotals || { initialBuyIn: 0, rebuyCount: 0, totalRebuyChips: 0, totalPurchased: 0 };
+  const stats = [
+    ['Initial buy-ins', number(totals.initialBuyIn), 'chips', totals.initialBuyInMoney],
+    ['Completed rebuys', number(totals.rebuyCount), 'rebuys', ''],
+    ['Rebuy chips', number(totals.totalRebuyChips), 'chips', totals.totalRebuyChipsMoney],
+    ['Total chips purchased', number(totals.totalPurchased), 'chips', totals.totalPurchasedMoney]
+  ].map(([label, value, unit, moneyValue]) => `<article class="rebuy-stat"><span>${label}</span><strong>${value} <small>${unit}</small></strong>${moneyValue ? `<small>${escape(moneyValue)}</small>` : ''}</article>`).join('');
+  const rows = summary.rows.map((row, index) => {
+    const historyId = `rebuy-history-${index}`;
+    const transactions = (row.rebuyHistory || []).map((transaction, transactionIndex) => {
+      const hand = transaction.handNumber > 0 ? `After hand ${transaction.handNumber}` : 'Before hand 1';
+      const source = transaction.source === 'request' ? 'Request approved' : 'Added by host';
+      const timestamp = Number.isSafeInteger(transaction.timestamp) ? new Date(transaction.timestamp).toLocaleString() : '';
+      const sessionName = transaction.name && transaction.name !== row.name ? `${escape(transaction.name)} · ` : '';
+      return `<li><span><strong>Rebuy #${transactionIndex + 1}</strong> · +${number(transaction.amount)} chips</span><small>${sessionName}${hand} · ${source}${timestamp ? ` · ${escape(timestamp)}` : ''}</small></li>`;
+    }).join('');
+    const netSign = row.net > 0 ? '+' : row.net < 0 ? '−' : '';
+    const expandedHistory = `<tr class="rebuy-history-row" hidden><td colspan="7"><section id="${historyId}" class="rebuy-history" aria-label="${escape(row.name)} rebuy history"><h4>${escape(row.name)} — Rebuy history</h4><ul><li><span>Initial buy-in total</span><strong>${number(row.initialBuyIn)} chips${row.initialBuyInMoney ? ` · ${escape(row.initialBuyInMoney)}` : ''}</strong></li>${transactions || '<li><span>No completed rebuys</span></li>'}<li><span>Total invested</span><strong>${number(row.totalBuyIn ?? row.buyIn)} chips${row.totalBuyInMoney || row.buyInMoney ? ` · ${escape(row.totalBuyInMoney || row.buyInMoney)}` : ''}</strong></li></ul></section></td></tr>`;
+    return `<tr class="rebuy-data-row"><th scope="row"><button type="button" class="rebuy-player-toggle" aria-expanded="false" aria-controls="${historyId}" data-rebuy-history="${index}">${escape(row.name)}<span aria-hidden="true">⌄</span></button></th><td><span class="rebuy-cell-label">Initial</span><strong>${number(row.initialBuyIn)} chips</strong>${row.initialBuyInMoney ? `<small>${escape(row.initialBuyInMoney)}</small>` : ''}</td><td><span class="rebuy-cell-label">Rebuys</span><strong>${number(row.rebuyCount)}</strong></td><td><span class="rebuy-cell-label">Rebuy chips</span><strong>${number(row.totalRebuyChips)} chips</strong>${row.totalRebuyChipsMoney ? `<small>${escape(row.totalRebuyChipsMoney)}</small>` : ''}</td><td><span class="rebuy-cell-label">Total in</span><strong>${number(row.totalBuyIn ?? row.buyIn)} chips</strong>${row.totalBuyInMoney || row.buyInMoney ? `<small>${escape(row.totalBuyInMoney || row.buyInMoney)}</small>` : ''}</td><td><span class="rebuy-cell-label">Stack / cash-out</span><strong>${number(row.cashOut)} chips</strong>${row.cashOutMoney ? `<small>${escape(row.cashOutMoney)}</small>` : ''}</td><td class="settlement-net ${row.net > 0 ? 'positive' : row.net < 0 ? 'negative' : 'even'}"><span class="rebuy-cell-label">Net</span><strong>${netSign}${number(Math.abs(row.net))} chips</strong>${row.netMoney ? `<small>${escape(row.netMoney)}</small>` : ''}</td></tr>${expandedHistory}`;
+  }).join('');
+  return `<section class="rebuy-tracker" aria-labelledby="rebuy-tracker-title"><header class="rebuy-tracker-heading"><h3 id="rebuy-tracker-title">Rebuy tracker</h3><span>Completed rebuys only</span></header><div class="rebuy-stats" aria-label="Table rebuy totals">${stats}</div><div class="rebuy-table-scroll"><table class="rebuy-table"><thead><tr><th scope="col">Player</th><th scope="col">Initial</th><th scope="col">Rebuys</th><th scope="col">Rebuy chips</th><th scope="col">Total in</th><th scope="col">Stack / cash-out</th><th scope="col">Net</th></tr></thead><tbody>${rows || '<tr><td class="empty-ledger" colspan="7">No player totals yet.</td></tr>'}</tbody></table></div></section>`;
 }
 function openTonight() {
   const dialog = $('#tonight-dialog');
@@ -490,8 +521,14 @@ function openTonight() {
     return `<article class="settlement-row" role="row"><strong role="cell">${escape(row.name)}</strong><span role="cell"><small>Buy-in total</small>${number(row.buyIn)} chips${row.buyInMoney ? `<small>${escape(row.buyInMoney)}</small>` : ''}</span><span role="cell"><small>Stack / cash-out</small>${number(row.cashOut)} chips${row.cashOutMoney ? `<small>${escape(row.cashOutMoney)}</small>` : ''}</span><span role="cell" class="settlement-net ${row.net > 0 ? 'positive' : row.net < 0 ? 'negative' : 'even'}"><small>Net</small><b aria-label="${row.net > 0 ? 'Up' : row.net < 0 ? 'Down' : 'Even'}">${icon} ${sign}${number(Math.abs(row.net))} chips</b>${row.netMoney ? `<small>${escape(row.netMoney)}</small>` : ''}</span><span role="cell"><small>Hands won / played</small>${row.handsWon} / ${row.handsPlayed}</span></article>`;
   }).join('');
   const transfers = summary.transfers.map(item => `<li>${escape(item.fromName)} pays ${escape(item.toName)} <strong>${number(item.chips)} chips</strong>${item.money ? ` · ${escape(item.money)}` : ''}</li>`).join('');
-  dialog.innerHTML = `<section class="tonight-sheet"><header class="tonight-header"><div><p class="eyebrow">TABLE LEDGER</p><h2 id="tonight-title">Tonight</h2></div><button type="button" class="seat-sheet-close" data-close-tonight aria-label="Close Tonight sheet">×</button></header><p class="helper tonight-note">${escape(state.settlementNote || 'Current table totals.')}</p>${summary.centsPer1000Chips ? `<p class="cash-rate">Cash value per 1,000 chips: $${(summary.centsPer1000Chips / 100).toFixed(2)}</p>` : ''}<div class="settlement-table" role="table" aria-label="Tonight chip ledger"><div class="settlement-head" role="row"><span role="columnheader">Name</span><span role="columnheader">Buy-in total</span><span role="columnheader">Stack / cash-out</span><span role="columnheader">Net</span><span role="columnheader">Hands won / played</span></div>${rows || '<p class="empty-ledger">No player totals yet.</p>'}</div><section class="settlement-transfers"><h3>Who pays whom</h3><ul>${transfers || '<li>No transfers needed.</li>'}</ul></section><p class="informal-note">Informal tally for friends. This app doesn’t handle money.</p><textarea id="tonight-summary-copy" class="copy-fallback" readonly hidden aria-label="Tonight summary to copy"></textarea><footer class="tonight-footer"><button type="button" id="copy-tonight">Copy summary</button><button type="button" class="primary" data-close-tonight>Close</button></footer></section>`;
+  dialog.innerHTML = `<section class="tonight-sheet"><header class="tonight-header"><div><p class="eyebrow">TABLE LEDGER</p><h2 id="tonight-title">Tonight</h2></div><button type="button" class="seat-sheet-close" data-close-tonight aria-label="Close Tonight sheet">×</button></header><p class="helper tonight-note">${escape(state.settlementNote || 'Current table totals.')}</p>${summary.centsPer1000Chips ? `<p class="cash-rate">Cash value per 1,000 chips: $${(summary.centsPer1000Chips / 100).toFixed(2)}</p>` : ''}${rebuyTrackerMarkup(summary)}<div class="settlement-table" role="table" aria-label="Tonight chip ledger"><div class="settlement-head" role="row"><span role="columnheader">Name</span><span role="columnheader">Buy-in total</span><span role="columnheader">Stack / cash-out</span><span role="columnheader">Net</span><span role="columnheader">Hands won / played</span></div>${rows || '<p class="empty-ledger">No player totals yet.</p>'}</div><section class="settlement-transfers"><h3>Who pays whom</h3><ul>${transfers || '<li>No transfers needed.</li>'}</ul></section><p class="informal-note">Informal tally for friends. This app doesn’t handle money.</p><textarea id="tonight-summary-copy" class="copy-fallback" readonly hidden aria-label="Tonight summary to copy"></textarea><footer class="tonight-footer"><button type="button" id="copy-tonight">Copy summary</button><button type="button" class="primary" data-close-tonight>Close</button></footer></section>`;
   dialog.querySelectorAll('[data-close-tonight]').forEach(button => button.addEventListener('click', () => dialog.close()));
+  dialog.querySelectorAll('[data-rebuy-history]').forEach(button => button.addEventListener('click', () => {
+    const history = dialog.querySelector(`#${button.getAttribute('aria-controls')}`);
+    const expanded = button.getAttribute('aria-expanded') !== 'true';
+    button.setAttribute('aria-expanded', String(expanded));
+    history.closest('tr').hidden = !expanded;
+  }));
   dialog.querySelector('#copy-tonight').addEventListener('click', async () => {
     const text = tonightText(summary);
     try { await navigator.clipboard.writeText(text); toast('Tonight summary copied.'); }
@@ -876,7 +913,7 @@ function wireTable(me, pot) {
     amount.dispatchEvent(new Event('input', { bubbles: true }));
   }));
   document.querySelectorAll('[data-rebuy-step]').forEach(button => button.addEventListener('click', () => {
-    const amount = $('#rebuy-request-amount'); const step = Number(amount.step);
+    const amount = $('#rebuy-request-amount'); const step = state.settings.smallBlind;
     amount.value = Math.max(1, Math.min(1_000_000_000, Number(amount.value) + Number(button.dataset.rebuyStep) * step));
   }));
   document.querySelectorAll('[data-quick]').forEach(el => el.addEventListener('click', () => {
