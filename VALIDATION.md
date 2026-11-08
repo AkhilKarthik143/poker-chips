@@ -46,6 +46,9 @@ Validated locally on November 7, 2026, against ephemeral servers using Playwrigh
 | Scenario | Result |
 | --- | --- |
 | Google Chrome desktop and mobile viewport | Pass; created a room, decoded the exact QR payload on desktop, prefetched and joined from a separate 390×844 context, and verified shared room state without horizontal overflow or browser errors. |
+| Invite dialog visual hierarchy and actions | Pass; QR and room code lead, invite URL is subdued, the section label no longer competes with the dialog title, hosts see **Save buy-in**, and guests see **Done**. Host buy-in changes still persist. |
+| Copy-button feedback | Pass; link and code buttons show their copied labels and restore the original labels after 1.8 seconds. Clipboard values matched. |
+| Narrow mobile layout | Pass at 320×740 and 390×844; all eight room-code characters remain visible, the QR remains 224px and 280px respectively, and there is no horizontal overflow. |
 | Create a room; generate the origin-based invite URL and QR | Pass; URL and room code matched the active origin and generated room code. |
 | Decode generated QR with Chromium `BarcodeDetector` | Pass; decoded payload exactly matched the invite URL; image was nonblank. |
 | Mobile QR sizing and overflow | Pass; QR rendered 264 CSS px wide at 360 px viewport width, with no horizontal overflow. |

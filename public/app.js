@@ -319,12 +319,41 @@ function inviteDialog() {
   const host = state.hostId === state.playerId;
   const inviteUrl = window.Tablemate.roomInviteUrl(window.location.origin, state.roomCode);
   if (!inviteUrl) return toast('Could not create an invite link for this room.');
-  showDialog(`Invite to table ${state.roomCode}`, `<section class="room-invite" aria-labelledby="invite-share-title"><div class="room-invite-heading"><h3 id="invite-share-title">Invite friends</h3><p class="helper">Scan the code or share this link to join your table.</p></div><div class="room-invite-content"><figure class="invite-qr-card"><img id="invite-qr" width="280" height="280" alt="QR code that opens the invite for room ${escape(state.roomCode)}"><figcaption>Scan to open this room invite</figcaption><p id="invite-qr-error" class="helper" hidden>QR could not be generated. Copy the invite link instead.</p></figure><div class="invite-share-fields"><label for="invite-room-code">Room code</label><div class="invite-copy-row"><input id="invite-room-code" value="${escape(state.roomCode)}" readonly><button type="button" id="copy-invite-code">Copy room code</button></div><label for="invite-link-value">Invite link</label><input id="invite-link-value" value="${escape(inviteUrl)}" readonly><div class="invite-share-actions"><button type="button" id="copy-invite-link">Copy invite link</button>${typeof navigator.share === 'function' ? '<button type="button" id="share-invite">Share invite</button>' : ''}</div></div></div></section><label for="invite-buy-in">Buy-in · virtual chips</label><input id="invite-buy-in" type="number" min="1" max="1000000000" value="${state.settings.startingStack}" ${host ? '' : 'readonly'}><p class="helper">${host ? 'Before the first hand, changing the buy-in updates every seated player. Later, it applies to new players only.' : 'The host sets the buy-in. Friends enter the code using Join a table.'}</p>`, async () => {
+  showDialog(`Invite to table ${state.roomCode}`, `<section class="room-invite" aria-label="Invite friends">
+    <p class="room-invite-kicker">Invite friends</p>
+    <p class="room-invite-intro">Scan the QR code or share the room code to join this table.</p>
+    <div class="room-invite-content">
+      <figure class="invite-qr-card">
+        <img id="invite-qr" width="280" height="280" alt="QR code that opens the invite for room ${escape(state.roomCode)}">
+        <figcaption>Scan to open this room invite</figcaption>
+        <p id="invite-qr-error" class="helper" hidden>QR could not be generated. Copy the invite link instead.</p>
+      </figure>
+      <div class="invite-share-fields">
+        <div class="invite-code-panel">
+          <label for="invite-room-code">Room code</label>
+          <div class="invite-copy-row invite-code-row">
+            <input id="invite-room-code" value="${escape(state.roomCode)}" readonly>
+            <button type="button" id="copy-invite-code" class="primary" aria-live="polite">Copy room code</button>
+          </div>
+        </div>
+        <div class="invite-link-panel">
+          <label for="invite-link-value">Invite link</label>
+          <input id="invite-link-value" value="${escape(inviteUrl)}" readonly>
+          <div class="invite-share-actions">
+            <button type="button" id="copy-invite-link" class="quiet" aria-live="polite">Copy invite link</button>
+            ${typeof navigator.share === 'function' ? '<button type="button" id="share-invite" class="quiet">Share invite</button>' : ''}
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+  <label for="invite-buy-in">Buy-in · virtual chips</label>
+  <input id="invite-buy-in" type="number" min="1" max="1000000000" value="${state.settings.startingStack}" ${host ? '' : 'readonly'}>
+  <p class="helper">${host ? 'Before the first hand, changing the buy-in updates every seated player. Later, it applies to new players only.' : 'The host sets the buy-in. Friends enter the code using Join a table.'}</p>`, async () => {
     if (host && Number($('#invite-buy-in').value) !== state.settings.startingStack) {
       const result = await request('host-settings', { settings: { startingStack: Number($('#invite-buy-in').value) } }); receive(result.state);
     }
-    await copyInviteText(state.roomCode, $('#invite-room-code'), 'Room code copied.', $('#copy-invite-code'));
-  }, host ? 'Confirm & copy code' : 'Copy code');
+  }, host ? 'Save buy-in' : 'Done');
   const qr = $('#invite-qr');
   try {
     const code = window.qrcode(0, 'H');
@@ -335,21 +364,22 @@ function inviteDialog() {
     qr.hidden = true;
     $('#invite-qr-error').hidden = false;
   }
-  $('#copy-invite-link').addEventListener('click', event => copyInviteText(inviteUrl, $('#invite-link-value'), 'Invite link copied.', event.currentTarget));
-  $('#copy-invite-code').addEventListener('click', event => copyInviteText(state.roomCode, $('#invite-room-code'), 'Room code copied.', event.currentTarget));
+  $('#copy-invite-link').addEventListener('click', event => copyInviteText(inviteUrl, $('#invite-link-value'), 'Invite link copied.', event.currentTarget, 'Link copied ✓'));
+  $('#copy-invite-code').addEventListener('click', event => copyInviteText(state.roomCode, $('#invite-room-code'), 'Room code copied.', event.currentTarget, 'Code copied ✓'));
   $('#share-invite')?.addEventListener('click', async event => {
     try {
       await navigator.share({ title: 'Join my Tablemate poker table', text: `Join room ${state.roomCode} on Tablemate`, url: inviteUrl });
       toast('Invite shared.');
     } catch (error) {
-      if (error.name !== 'AbortError') await copyInviteText(inviteUrl, $('#invite-link-value'), 'Invite link copied.', event.currentTarget);
+      if (error.name !== 'AbortError') await copyInviteText(inviteUrl, $('#invite-link-value'), 'Invite link copied.', event.currentTarget, 'Link copied ✓');
     }
   });
 }
-async function copyInviteText(value, fallbackField, successMessage, trigger) {
+async function copyInviteText(value, fallbackField, successMessage, trigger, copiedLabel) {
   try {
     if (navigator.clipboard?.writeText) {
       await navigator.clipboard.writeText(value);
+      showCopyFeedback(trigger, copiedLabel);
       toast(successMessage);
       return;
     }
@@ -357,8 +387,17 @@ async function copyInviteText(value, fallbackField, successMessage, trigger) {
   fallbackField.focus(); fallbackField.select();
   let copied = false;
   try { copied = document.execCommand('copy'); } catch { /* Clipboard fallback is unavailable. */ }
-  if (copied) { trigger.focus({ preventScroll: true }); toast(successMessage); }
+  if (copied) { trigger.focus({ preventScroll: true }); showCopyFeedback(trigger, copiedLabel); toast(successMessage); }
   else toast('Copy is unavailable here. The selected text is ready to copy manually.');
+}
+function showCopyFeedback(trigger, copiedLabel) {
+  if (!trigger || !copiedLabel) return;
+  clearTimeout(trigger.copyFeedbackTimer);
+  trigger.dataset.copyDefaultLabel ||= trigger.textContent;
+  trigger.textContent = copiedLabel;
+  trigger.copyFeedbackTimer = setTimeout(() => {
+    if (trigger.isConnected) trigger.textContent = trigger.dataset.copyDefaultLabel;
+  }, 1800);
 }
 function applyInviteCodeFromQuery() {
   const invite = window.Tablemate.parseInviteCode(window.location.search);
