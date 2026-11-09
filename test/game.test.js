@@ -81,6 +81,8 @@ test('fold-out pays instantly; undo restores chips and current turn', () => {
   const previous = s; s = play(s, 'fold');
   assert.equal(s.street, 'complete'); assert.deepEqual(s.players.map(p => p.stack), [1000, 995, 1005]);
   assert.deepEqual(s.players.map(p => p.handsWon), [0, 0, 1]);
+  assert.deepEqual(s.players.map(p => p.handsPlayed), [0, 0, 1], 'preflop folders are excluded from hands played');
+  assert.deepEqual(Object.fromEntries(settlement(s).rows.map(row => [row.id, row.handsPlayed])), { '0': 0, '1': 0, '2': 1 });
   s = undo(s); assert.deepEqual(s.players, previous.players); assert.equal(s.turn, '1');
 });
 test('short blind and lone funded player do not invent a side pot', () => {
@@ -92,6 +94,7 @@ test('short blind and lone funded player do not invent a side pot', () => {
 test('folded contributions count in pots but folded players are ineligible', () => {
   let s = startHand(table()); s = play(s, 'call'); s = play(s, 'call'); s = play(s, 'check');
   s = play(s, 'raise', 20); s = play(s, 'fold'); s = play(s, 'call'); s = checkDown(s);
+  assert.deepEqual(s.players.map(p => p.handsPlayed), [1, 1, 1], 'a postflop fold still counts as a played hand');
   assert.deepEqual(s.pots.map(p => p.amount), [30, 40]);
   assert.deepEqual(s.pots[0].eligible, ['0', '1']);
   assert.throws(() => pickWinners(s, 0, ['2']), /eligible/);
@@ -128,7 +131,7 @@ test('night ledger tracks buy-in, rebuys, entrants and departed cash-out without
   s = award(checkDown(s));
   s = removePlayer(s, 'c');
   assert.deepEqual(s.departed, [{ id: 'c', name: 'Casey', initialBuyIn: 200, buyIn: 200, rebuyCount: 0, totalRebuyChips: 0,
-    rebuyHistory: [], cashOut: 200, handsWon: 0, handsPlayed: 0 }]);
+    rebuyHistory: [], cashOut: 200, handsWon: 0, handsPlayed: 0, handsDealt: 0 }]);
   assert.equal(s.totalChips, 450); assertConservation(s);
 });
 test('completed rebuys record their source and time once in the settlement tracker', () => {

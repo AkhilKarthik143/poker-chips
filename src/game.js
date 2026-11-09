@@ -72,7 +72,7 @@ export function settlement(state) {
     const rebuyCount = record.rebuyCount ?? history.length;
     const initialBuyIn = record.initialBuyIn ?? Math.max(0, buyIn - totalRebuyChips);
     const current = groups.get(key) || { id: String(record.id || ''), name, initialBuyIn: 0, rebuyCount: 0, totalRebuyChips: 0,
-      rebuyHistory: [], buyIn: 0, cashOut: 0, net: 0, handsWon: 0, handsPlayed: 0, active: false };
+      rebuyHistory: [], buyIn: 0, cashOut: 0, net: 0, handsWon: 0, handsPlayed: 0, handsDealt: 0, active: false };
     const cashOut = departed ? record.cashOut : record.stack;
     current.id = [current.id, String(record.id || '')].sort(compareText)[0];
     if (!departed || !current.active) current.name = name;
@@ -82,7 +82,7 @@ export function settlement(state) {
     current.totalRebuyChips += totalRebuyChips;
     current.rebuyHistory.push(...history.map(transaction => ({ ...transaction })));
     current.buyIn += buyIn; current.cashOut += cashOut; current.net += cashOut - buyIn;
-    current.handsWon += record.handsWon || 0; current.handsPlayed += record.handsPlayed || 0;
+    current.handsWon += record.handsWon || 0; current.handsPlayed += record.handsPlayed || 0; current.handsDealt += record.handsDealt || 0;
     groups.set(key, current);
   };
   for (const player of state.players) add(player, false);
@@ -131,7 +131,7 @@ export function addPlayer(state, id, name) {
   return edit(state, s => {
     const seat = Array.from({ length: 10 }, (_, i) => i).find(i => !s.players.some(p => p.seat === i));
     s.players.push({ id, name: name.trim(), seat, stack: s.settings.startingStack, initialBuyIn: s.settings.startingStack, buyIn: s.settings.startingStack,
-      rebuyCount: 0, totalRebuyChips: 0, rebuyHistory: [], handsPlayed: 0, handsWon: 0, sittingOut: false,
+      rebuyCount: 0, totalRebuyChips: 0, rebuyHistory: [], handsPlayed: 0, handsDealt: 0, handsWon: 0, sittingOut: false,
       inHand: false, folded: false, streetBet: 0, contributed: 0, actedAt: null });
     s.totalChips += s.settings.startingStack;
     s.seatOrder = [...s.players].sort((a, b) => a.seat - b.seat).map(p => p.id);
@@ -203,7 +203,8 @@ export function removePlayer(state, id) {
   return edit(state, s => {
     const p = player(s, id);
     s.departed.push({ id: p.id, name: p.name, initialBuyIn: p.initialBuyIn, buyIn: p.buyIn, rebuyCount: p.rebuyCount,
-      totalRebuyChips: p.totalRebuyChips, rebuyHistory: structuredClone(p.rebuyHistory), cashOut: p.stack, handsWon: p.handsWon, handsPlayed: p.handsPlayed });
+      totalRebuyChips: p.totalRebuyChips, rebuyHistory: structuredClone(p.rebuyHistory), cashOut: p.stack, handsWon: p.handsWon,
+      handsPlayed: p.handsPlayed, handsDealt: p.handsDealt });
     s.totalChips -= p.stack;
     s.players = s.players.filter(p => p.id !== id);
     s.seatOrder = s.seatOrder.filter(playerId => playerId !== id);
@@ -247,7 +248,10 @@ export function startHand(state, now = 0) {
     }
     s.players.forEach(p => {
       p.inHand = !p.sittingOut && p.stack > 0;
-      if (p.inHand) p.handsPlayed++;
+      if (p.inHand) {
+        p.handsPlayed++;
+        p.handsDealt++;
+      }
       Object.assign(p, { folded: false, streetBet: 0, contributed: 0, actedAt: null });
     });
     const entrants = live(s);
@@ -353,6 +357,8 @@ export function act(state, id, intent) {
     const type = intent.type;
     if (type === 'fold') {
       p.folded = true;
+      // A hand counts as played only once the player stays past preflop.
+      if (s.street === 'preflop') p.handsPlayed--;
       log(s, `${p.name} folds.`);
     } else if (type === 'check') {
       check(legal.canCheck, 'You must call or fold.');
