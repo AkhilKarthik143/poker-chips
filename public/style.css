@@ -774,6 +774,7 @@ dialog.app-sheet :focus-visible { scroll-margin:20px; }
 
 @layer design {
   .wordmark { min-height:44px; }
+  .profile-back-link { display:inline-flex;align-items:center;min-height:44px;padding:0 4px; }
   #header-invite { min-width:44px; }
   button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible, a:focus-visible,
   .seat-sort-list [data-seat-row]:focus-visible { outline-color:var(--dp-color-accent); }
