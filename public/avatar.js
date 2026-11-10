@@ -10,12 +10,27 @@ const defaults = Object.freeze({ shape: 'circle', icon: 'chip', bg: 'c1', accent
 const ns = 'http://www.w3.org/2000/svg';
 const valid = spec => spec && typeof spec === 'object' && !Array.isArray(spec) && Object.keys(spec).length === 6 &&
   Object.entries(enums).every(([part, options]) => Object.hasOwn(spec, part) && options.includes(spec[part]));
+function validV2(spec) {
+  const catalog = window.TablemateAvatarParts;
+  if (!catalog || !spec || typeof spec !== 'object' || Array.isArray(spec) || spec.v !== 2) return false;
+  const fields = ['v', 'skin', 'hair', 'hairColor', 'eyes', 'mouth', 'facialHair', 'facialHairColor',
+    'hat', 'glasses', 'outfit', 'outfitColor', 'bg', 'frame'];
+  if (Object.keys(spec).length !== fields.length || !fields.every(key => Object.hasOwn(spec, key))) return false;
+  try { if (JSON.stringify(spec).length > 600) return false; } catch { return false; }
+  return Object.hasOwn(catalog.skinTones, spec.skin) && catalog.parts.hairFront.includes(spec.hair) &&
+    catalog.parts.hairBack.includes(spec.hair) && catalog.parts.eyes.includes(spec.eyes) &&
+    catalog.parts.mouth.includes(spec.mouth) && catalog.parts.facialHair.includes(spec.facialHair) &&
+    catalog.parts.hat.includes(spec.hat) && catalog.parts.glasses.includes(spec.glasses) &&
+    catalog.parts.outfit.includes(spec.outfit) && catalog.parts.frame.includes(spec.frame) &&
+    ['hairColor', 'facialHairColor', 'outfitColor', 'bg'].every(key => Object.hasOwn(catalog.palette, spec[key]));
+}
 function svgNode(tag, attributes) {
   const node = document.createElementNS(ns, tag);
   for (const [key, value] of Object.entries(attributes)) node.setAttribute(key, String(value));
   return node;
 }
 function renderAvatar(input, size = 40, name = 'player') {
+  if (validV2(input) && window.AvatarV2) return window.AvatarV2.render(input, size, name);
   const spec = valid(input) ? input : defaults;
   const pixels = Number.isInteger(size) && size >= 16 && size <= 160 ? size : 40;
   const svg = svgNode('svg', { viewBox: '0 0 64 64', width: pixels, height: pixels, role: 'img',
@@ -91,5 +106,5 @@ function mountBuilder(container, initial, name, onSave) {
   container.replaceChildren(heading, preview, controls, actions, status); update();
   return { getSpec: () => ({ ...spec }) };
 }
-window.TablemateAvatar = Object.freeze({ enums, defaults, valid, renderAvatar, mountBuilder });
+window.TablemateAvatar = Object.freeze({ enums, defaults, valid: spec => valid(spec) || validV2(spec), validV2, renderAvatar, mountBuilder });
 })();

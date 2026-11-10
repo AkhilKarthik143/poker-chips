@@ -42,6 +42,7 @@ const escape = value => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', 
 const avatarIcon = id => `<svg class="seat-avatar" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><use href="/avatars.svg#${escape(id || 'chip')}"></use></svg>`;
 const tableAvatar = (id, cosmetic, name, size = 20) => {
   const spec = state.identities?.[id]?.avatar;
+  if (spec?.v === 2 && window.TablemateAvatar?.valid(spec) && window.AvatarV2) return window.AvatarV2.markup(spec, size, name);
   return spec && window.TablemateAvatar?.valid(spec) ? window.TablemateAvatar.renderAvatar(spec, size, name).outerHTML : avatarIcon(cosmetic.avatar);
 };
 const tableUsername = id => state.identities?.[id]?.username ? `<span class="identity-username">@${escape(state.identities[id].username)}</span>` : '';
@@ -1009,6 +1010,7 @@ function render() {
       })() : ''}
     </div></section>`;
   restoreRegion(tableRoot, uiState);
+  window.AvatarV2?.hydrate(tableRoot);
   document.querySelectorAll('#table .theme-picker-section').forEach(wireThemePicker);
   wireTable(me, total); updateClock(); setButtons(); renderSeatReorder();
   ellipseObserver.disconnect();
