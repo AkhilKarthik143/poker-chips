@@ -1,4 +1,4 @@
-/* global document, fetch, localStorage, window, Blob, URL */
+/* global document, fetch, localStorage, window, navigator, Blob, URL */
 (() => {
 const $ = selector => document.querySelector(selector);
 const number = value => Number(value).toLocaleString();
@@ -9,6 +9,7 @@ let profileAccount;
 function renderAvatarPreview() {
   if (!profileAccount) return;
   $('#profile-avatar-preview').replaceChildren(window.TablemateAvatar.renderAvatar(profileAccount.avatar, 72, profileAccount.displayName));
+  $('#avatar-description').textContent = window.TablemateAvatar.describe(profileAccount.avatar);
 }
 function renderProfileForm() {
   if (!profileAccount) return;
@@ -23,10 +24,18 @@ function renderProfileForm() {
     : '3–20 letters, numbers or underscores. Start with a letter. Changes are limited to once every 30 days.';
 }
 async function load() {
-  const [accountResponse, statsResponse] = await Promise.all([fetch('/api/me'), fetch(`/api/me/stats?page=${page}`)]);
+  const [accountResponse, statsResponse, configResponse] = await Promise.all([fetch('/api/me'), fetch(`/api/me/stats?page=${page}`), fetch('/api/config')]);
   if (accountResponse.status === 401) { window.location.assign('/login.html'); return; }
   if (!accountResponse.ok || !statsResponse.ok) { $('#nights-list').textContent = 'Could not load stats. Try again later.'; return; }
   const account = await accountResponse.json();
+  const config = configResponse.ok ? await configResponse.json() : {};
+  if (config.avatarCreator) {
+    const lowMemory = Number(navigator.deviceMemory) > 0 && Number(navigator.deviceMemory) < 4;
+    $('#character-creator-link').hidden = false;
+    $('#character-creator-link').textContent = lowMemory ? 'Use full creator' : 'Customize character';
+    $('#character-creator-note').hidden = !lowMemory;
+    if (lowMemory) $('#character-creator-note').textContent = 'The full creator uses more memory. The simple builder works on this device.';
+  }
   profileAccount = account; renderAvatarPreview(); renderProfileForm();
   const data = await statsResponse.json();
   $('#profile-name').textContent = account.displayName;
@@ -66,6 +75,7 @@ $('#profile-form').addEventListener('submit', async event => {
 $('#preview-profile').addEventListener('click', () => {
   const body = $('#profile-preview-body'); body.replaceChildren();
   body.append(window.TablemateAvatar.renderAvatar(profileAccount.avatar, 72, profileAccount.displayName));
+  const avatarDescription = document.createElement('p'); avatarDescription.textContent = window.TablemateAvatar.describe(profileAccount.avatar); body.append(avatarDescription);
   const name = document.createElement('h3'); name.textContent = profileAccount.displayName; body.append(name);
   const username = document.createElement('p'); username.textContent = profileAccount.username ? `@${profileAccount.username}` : 'No username yet'; body.append(username);
   const visibility = document.createElement('p'); visibility.textContent = profileAccount.privacy.profileVisibility === 'leagues'

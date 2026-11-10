@@ -1,4 +1,4 @@
-/* global document, fetch, window, setTimeout, clearTimeout */
+/* global document, fetch, window, navigator, setTimeout, clearTimeout */
 (() => {
 const $ = selector => document.querySelector(selector);
 let account; let timer; let checkSequence = 0;
@@ -65,17 +65,25 @@ $('#welcome-skip').addEventListener('click', async () => {
 });
 async function load() {
   try {
-    const response = await fetch('/api/me');
+    const [response, configResponse] = await Promise.all([fetch('/api/me'), fetch('/api/config')]);
     if (response.status === 401) { window.location.assign('/login.html'); return; }
     if (!response.ok) { window.location.assign('/'); return; }
     account = await response.json();
-    if (account.username) { window.location.assign('/me.html'); return; }
+    const resumeAvatar = new URLSearchParams(window.location.search).get('avatar') === '1';
+    if (account.username && !resumeAvatar) { window.location.assign('/me.html'); return; }
+    const config = configResponse.ok ? await configResponse.json() : {};
+    if (config.avatarCreator) {
+      const lowMemory = Number(navigator.deviceMemory) > 0 && Number(navigator.deviceMemory) < 4;
+      $('#welcome-character-link').hidden = false;
+      $('#welcome-character-link').textContent = lowMemory ? 'Use full creator' : 'Customize character';
+    }
+    $('#welcome-character-note').hidden = !(resumeAvatar && account.avatar?.v === 2);
     document.querySelector('main').hidden = false;
     $('#welcome-name').value = account.displayName;
     $('#welcome-visibility').value = account.privacy.profileVisibility;
     $('#welcome-username-tables').checked = account.privacy.showUsernameAtTables;
     $('#welcome-avatar-tables').checked = account.privacy.showAvatarAtTables;
-    step(1);
+    step(resumeAvatar ? 3 : 1);
     const suggestions = await fetch('/api/username/suggestions');
     if (!suggestions.ok) return;
     const data = await suggestions.json(); const list = $('#username-suggestions');

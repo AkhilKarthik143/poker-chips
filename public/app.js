@@ -43,7 +43,7 @@ const avatarIcon = id => `<svg class="seat-avatar" viewBox="0 0 32 32" aria-hidd
 const tableAvatar = (id, cosmetic, name, size = 20) => {
   const spec = state.identities?.[id]?.avatar;
   if (spec?.v === 2 && window.TablemateAvatar?.valid(spec) && window.AvatarV2) return window.AvatarV2.markup(spec, size, name);
-  return spec && window.TablemateAvatar?.valid(spec) ? window.TablemateAvatar.renderAvatar(spec, size, name).outerHTML : avatarIcon(cosmetic.avatar);
+  return spec && window.TablemateAvatar?.valid(spec) ? window.TablemateAvatar.renderAvatar(spec, Math.min(size, 24), name).outerHTML : avatarIcon(cosmetic.avatar);
 };
 const tableUsername = id => state.identities?.[id]?.username ? `<span class="identity-username">@${escape(state.identities[id].username)}</span>` : '';
 try { identity = JSON.parse(localStorage.getItem(STORAGE_KEY)); } catch { identity = null; }
@@ -885,18 +885,19 @@ function seatOval(order) {
     const status = playing && p.folded ? '× Folded' : playing && p.inHand && p.stack === 0 ? '⚡ All-in' : p.sittingOut ? '⏸ Away' : !p.connected ? '⏸ Offline' : p.id === state.turn ? '▶ To act' : playing ? '● In hand' : '✓ Ready';
     const statusKind = playing && p.folded ? 'folded' : playing && p.inHand && p.stack === 0 ? 'allin' : p.sittingOut || !p.connected ? 'away' : p.id === state.turn ? 'active' : 'ready';
     const cosmetic = state.cosmetics?.[id] || { avatar: 'chip', color: 'c1' };
-    return `<article class="oval-seat slot-${index} seat-color-${escape(cosmetic.color)} ${p.id === state.turn ? 'acting' : ''} ${p.id === state.playerId ? 'my-seat' : ''} ${playing && p.folded ? 'folded-seat' : ''}"><div class="oval-name"><small>${index + 1}</small>${tableAvatar(id, cosmetic, p.name, 20)}<strong title="${escape(p.name)}">${escape(p.name)}</strong>${tableUsername(id)}</div><span class="seat-owner">${p.id === state.playerId ? `You • Seat ${index + 1}` : `Seat ${index + 1}`}</span><div class="seat-roles">${Object.entries(roles).filter(([, id]) => id === p.id).map(([role]) => `<span class="role-${role}" title="${role === 'D' ? 'Dealer' : role === 'SB' ? 'Small blind' : 'Big blind'}">${role}</span>`).join('')}</div><strong class="oval-stack" title="${number(p.stack)} chips" aria-label="${number(p.stack)} chips">${compactStack(p.stack)}</strong><small>Bet ${number(p.streetBet)}</small><span class="oval-status status-${statusKind} ${!playing && p.connected && !p.sittingOut ? 'ready-pill' : ''}">${status}</span></article>`;
+    return `<article class="oval-seat slot-${index} seat-color-${escape(cosmetic.color)} ${state.identities?.[id]?.avatar?.v === 2 ? 'character-seat' : ''} ${p.id === state.turn ? 'acting' : ''} ${p.id === state.playerId ? 'my-seat' : ''} ${playing && p.folded ? 'folded-seat' : ''}"><div class="oval-name"><small>${index + 1}</small>${tableAvatar(id, cosmetic, p.name, 64)}<strong title="${escape(p.name)}">${escape(p.name)}</strong>${tableUsername(id)}</div><span class="seat-owner">${p.id === state.playerId ? `You • Seat ${index + 1}` : `Seat ${index + 1}`}</span><div class="seat-roles">${Object.entries(roles).filter(([, id]) => id === p.id).map(([role]) => `<span class="role-${role}" title="${role === 'D' ? 'Dealer' : role === 'SB' ? 'Small blind' : 'Big blind'}">${role}</span>`).join('')}</div><strong class="oval-stack" title="${number(p.stack)} chips" aria-label="${number(p.stack)} chips">${compactStack(p.stack)}</strong><small>Bet ${number(p.streetBet)}</small><span class="oval-status status-${statusKind} ${!playing && p.connected && !p.sittingOut ? 'ready-pill' : ''}">${status}</span></article>`;
   }).join('')}</div>`;
 }
 function positionSeats() {
   document.querySelectorAll('.seat-oval').forEach(oval => {
     const width = oval.clientWidth;
     const occupied = oval.querySelectorAll('.oval-seat').length;
+    const hasCharacters = Boolean(oval.querySelector('.character-seat'));
     const seatsPerWidth = occupied <= 2 ? 2 : occupied === 3 ? 3.5 : occupied === 4 ? 3 : occupied <= 6 ? 4 : 4.5;
     const cardWidth = Math.min(140, Math.floor((width - 24) / seatsPerWidth));
-    const height = occupied <= 2 ? 380 : occupied <= 4 ? 440 : occupied === 9 ? 580 : 540;
+    const height = hasCharacters && occupied >= 7 ? 650 : occupied <= 2 ? 380 : occupied <= 4 ? 440 : occupied === 9 ? 580 : 540;
     const rx = (width - cardWidth - 12) / 2;
-    const ry = (height - 112) / 2;
+    const ry = (height - (hasCharacters ? 144 : 112)) / 2;
     oval.style.height = `${height}px`;
     const mine = oval.querySelector('.my-seat');
     const ownSlot = mine ? Number([...mine.classList].find(c => c.startsWith('slot-')).slice(5)) : 0;

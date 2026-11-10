@@ -56,6 +56,13 @@ function renderAvatar(input, size = 40, name = 'player') {
   }
   return svg;
 }
+function describe(spec) {
+  if (validV2(spec)) return `Character with ${spec.skin.replace('s', 'skin tone ')}, ${spec.hair} hair, ${spec.eyes} eyes, ` +
+    `${spec.mouth} mouth, ${spec.outfit} outfit, ${spec.bg.replace('c', 'background color ')}${spec.hat === 'none' ? '' : `, ${spec.hat} hat`}` +
+    `${spec.glasses === 'none' ? '' : `, ${spec.glasses} glasses`}${spec.facialHair === 'none' ? '' : `, ${spec.facialHair} facial hair`}.`;
+  const old = valid(spec) ? spec : defaults;
+  return `${old.icon} icon on ${old.bg.replace('c', 'color ')} with a ${old.frame} frame.`;
+}
 function mountBuilder(container, initial, name, onSave) {
   let spec = { ...(valid(initial) ? initial : defaults) };
   const heading = document.createElement('p'); heading.className = 'helper'; heading.textContent = 'Build your own icon. No photo upload.';
@@ -106,5 +113,6 @@ function mountBuilder(container, initial, name, onSave) {
   container.replaceChildren(heading, preview, controls, actions, status); update();
   return { getSpec: () => ({ ...spec }) };
 }
-window.TablemateAvatar = Object.freeze({ enums, defaults, valid: spec => valid(spec) || validV2(spec), validV2, renderAvatar, mountBuilder });
+window.TablemateAvatar = Object.freeze({ enums, defaults, valid: spec => valid(spec) || validV2(spec), validV2,
+  renderAvatar, describe, mountBuilder });
 })();

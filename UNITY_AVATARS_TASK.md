@@ -104,7 +104,7 @@ Required: accounts with sessions, `PUT /api/me/profile` and `avatar_json` (ident
 - [x] U3: web compositor, dispatch, caching, tests. Gate: lint + test, commit
 - [x] U4: Unity project sources, editor scripts, build script, source checker. Gate: `node scripts/check-unity-sources.js`, lint, test, commit (plus a real Unity build if the Editor exists)
 - [x] U5: template, static middleware, scoped CSP, config flag, install script, tests. Gate: lint + test, commit
-- [ ] U6: integration UI and fallbacks. Gate: lint + test, commit
+- [x] U6: integration UI and fallbacks. Gate: lint + test, commit
 - [ ] U7: CI workflow, docs. Gate: lint + test, commit
 - [ ] Add defensive checks for edge cases (missing layer PNG, manifest and enums out of sync, spec from a newer manifest version, slow network while layers load, creator opened while signed out, save failing mid-request, a 10-seat table with 10 distinct v2 avatars)
 
@@ -152,6 +152,7 @@ Agent: log progress, assumptions, and blockers here.
 - U3: Browser compositor now loads 11 z-ordered layers in parallel, tints grayscale slots, caches images and completed specs, and hydrates table markup after each state update. Existing v1 rendering remains. Chromium pixel check produced distinct character images, identical pixels for a repeated spec and zero additional compositions. Lint and 109 tests pass.
 - U4: Added code-driven Unity 6.3 LTS project: runtime camera, 11 SpriteRenderers, manifest/Resources loader, idle animation, uGUI editor, WebGL bridge, import postprocessor and batch build script. `check-unity-sources.js` validates balanced C# source, conditional blocks, generated enum parity and all 42 Resources paths. It passes, as do lint and 109 tests. No Unity Editor or C# compiler is installed, so a real build and compile remain unverified.
 - U5: Added CSP-safe WebGL template and page bridge, build installer, scoped static middleware with wasm/data/framework MIME and gzip/Brotli headers, cache policy and `avatarCreator` capability flag. Without a real build, the route stays 404 and the flag stays false. Tests verify strict CSP elsewhere, scoped wasm allowance, headers and return-path rejection. Lint and 111 tests pass.
+- U6: Account profile and onboarding show the full creator only when its build is installed, while retaining the simple builder and a low-memory opt-in. A v2 character has a text description on the profile. Ten distinct 64-pixel seat canvases rendered at 360 and 390 CSS pixels in Chromium with no card intersections, horizontal overflow or page errors. Lint and 111 tests pass.
 
 ### Assumption log
 - Target Unity 6.3 LTS (6000.3); no Editor is installed. Unity's own documentation identifies 6.3 as the latest LTS. Exact patch will be pinned to a known published release until an Editor build verifies it. (Investigation/U4)
