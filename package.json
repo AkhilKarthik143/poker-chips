@@ -11,7 +11,10 @@
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "lint": "eslint . --max-warnings 0",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "avatars:build": "node scripts/avatar-assets.js",
+    "avatars:check": "node scripts/avatar-assets.js --check && node scripts/gen-avatar-enums.js --check",
+    "unity:check": "node scripts/check-unity-sources.js"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",

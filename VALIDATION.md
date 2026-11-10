@@ -1,5 +1,13 @@
 # Validation record
 
+## Layered character avatars local work (November 10, 2026)
+
+- Branch `feature/unity-avatars` builds on `feature/account-identity`; all commits remain local. Unity Editor and a C# compiler were unavailable, so Unity import, compilation and a real WebGL build were not verified.
+- The manifest defines 42 SVG layers across 11 slots. Playwright/Chromium generated matching 256×256 RGBA PNGs for web and Unity Resources (169 KB total). `npm run avatars:check` byte-compares both copies, checks dimensions and grayscale tintable layers, and verifies generated server/browser/C# enum parity.
+- Strict v1/v2 profile validation, version rejection, v2 room projection, compositor caching and pixel differences, scoped WebGL CSP, asset headers, build detection and safe return paths have automated coverage. With no build, the creator route returns 404 and `/api/config.avatarCreator` is false.
+- Chromium rendered ten distinct v2 avatars at 360×740 and 390×844: all ten 64×64 canvases had opaque center pixels, no seat cards intersected, there was no horizontal overflow, and no page errors occurred. The table screenshots are in ignored `artifacts/qa/avatar-table-360.png` and `artifacts/qa/avatar-table-390.png`.
+- The full creator link remains hidden without a real build. Its Unity canvas cannot supply an accessible part picker; the profile text description and simple builder remain available. Physical mobile devices, real Unity WebGL behavior and screen-reader use are still untested.
+
 ## Accounts follow-up acceptance (November 10, 2026)
 
 - Current descendant branch `feature/customization` retains the `feature/accounts-stats` stage commits. `npm ci`, lint, 96 tests, four-player chip-conservation simulation, `git diff --check`, and `/healthz` passed. Node 24.20.0 used `node:sqlite`.

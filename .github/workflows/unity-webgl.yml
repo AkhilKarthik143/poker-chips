@@ -1,0 +1,59 @@
+name: Avatar Creator WebGL
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'unity/**'
+      - 'avatar-art/**'
+      - 'public/avatar-layers/**'
+      - 'scripts/avatar-assets.js'
+      - 'scripts/gen-avatar-enums.js'
+      - '.github/workflows/unity-webgl.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run avatars:check
+      - run: npm run unity:check
+      - name: Check Unity license availability
+        id: licensing
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        run: |
+          if [[ -n "$UNITY_LICENSE" && -n "$UNITY_EMAIL" && -n "$UNITY_PASSWORD" ]]; then
+            echo 'ready=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'Unity license secrets are absent; source checks passed and WebGL build is skipped.'
+          fi
+      - name: Build Unity WebGL creator
+        if: steps.licensing.outputs.ready == 'true'
+        uses: game-ci/unity-builder@v6.0.0
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          projectPath: unity/AvatarCreator
+          unityVersion: auto
+          targetPlatform: WebGL
+          buildMethod: BuildScript.BuildWebGL
+      - name: Upload WebGL build
+        if: steps.licensing.outputs.ready == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tablemate-avatar-creator-webgl
+          path: unity/AvatarCreator/Builds/WebGL/
+          if-no-files-found: error

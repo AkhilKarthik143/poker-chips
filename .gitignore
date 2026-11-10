@@ -4,3 +4,5 @@ node_modules/
 coverage/
 data/
 artifacts/qa/
+/unity-build.log
+/unity/AvatarCreator/Assets/Scenes/
