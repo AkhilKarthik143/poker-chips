@@ -83,3 +83,31 @@ test('league roster caps at 30 active members and guest mode hides league routes
     }
   } finally { await guestServer.close(); }
 });
+
+test('deleting a sole commissioner archives their empty league', async () => {
+  const store = new SqliteStore(':memory:');
+  try {
+    const owner = await store.createAccount(randomUUID(), 'only@example.com', 'Only', Date.now());
+    const roster = new LeagueStore(store.db);
+    const leagueId = randomUUID();
+    roster.create({ id: leagueId, name: 'Solo League', inviteCode: 'HJKLMNPQ',
+      settings: { startingStack: 1000, smallBlind: 5, bigBlind: 10, blindMinutes: 0, centsPer1000Chips: 0 },
+      account: owner, memberId: randomUUID(), time: Date.now() });
+    await store.deleteAccount(owner.id);
+    assert.equal(roster.get(leagueId), null);
+    assert.equal(store.db.prepare('SELECT COUNT(*) AS n FROM accounts').get().n, 0);
+  } finally { await store.close(); }
+});
+
+test('closing a season with no nights stores no champion', async () => {
+  const f = await fixture();
+  try {
+    const path = `/api/leagues/${f.id}/seasons`;
+    const headers = { Cookie: f.cookies.commissioner, 'Content-Type': 'application/json' };
+    const request = (url, body) => fetch(f.base + url, { method: 'POST', headers, body: JSON.stringify(body) });
+    const created = await (await request(path, { name: 'Empty Season', scoring: { type: 'points', table: [10, 7] } })).json();
+    assert.equal((await request(`${path}/${created.id}/activate`, {})).status, 200);
+    const closed = await (await request(`${path}/${created.id}/close`, {})).json();
+    assert.equal(closed.championMemberId, null);
+  } finally { await f.server.close(); }
+});
