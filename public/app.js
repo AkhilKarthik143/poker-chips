@@ -973,6 +973,21 @@ document.addEventListener('visibilitychange', reportPresence);
 window.addEventListener('focus', reportPresence);
 updateKeyboardInset();
 setInterval(updateClock, 1000);
+fetch('/api/config').then(response => response.json()).then(async config => {
+  if (!config.accounts) return;
+  const response = await fetch('/api/me');
+  const link = $('#account-link');
+  link.hidden = false;
+  if (!response.ok) return;
+  const account = await response.json();
+  link.textContent = `${account.displayName} · My stats`;
+  link.href = '/me.html';
+  $('#account-logout').hidden = false;
+}).catch(() => {});
+$('#account-logout').addEventListener('click', async () => {
+  await fetch('/api/auth/logout', { method: 'POST' });
+  window.location.assign('/');
+});
 $('#lobby-theme-picker').innerHTML = themePickerMarkup('lobby');
 wireThemePicker($('#lobby-theme-picker'));
 applyInviteCodeFromQuery();

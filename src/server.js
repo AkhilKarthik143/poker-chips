@@ -7,19 +7,23 @@ import { resolve } from 'node:path';
 import { Server } from 'socket.io';
 const webPush = createRequire(import.meta.url)('web-push');
 import * as game from './game.js';
-import { RequestError, requireValue, validatePayload, entryEvents } from './validation.js';
+import { RequestError, requireValue, validatePayload, entryEvents, normalizedName, validName } from './validation.js';
 import { createStore } from './store/index.js';
+import { createMailer } from './mail.js';
+import { createAuth, normalizeEmail } from './auth.js';
 
 const SIX_HOURS = 6 * 60 * 60 * 1000;
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
 const safeTokenEqual = (a, b) => typeof a === 'string' && typeof b === 'string' && a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
 const hashToken = value => createHash('sha256').update(value).digest('hex');
 
-export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupIntervalMs = 60_000, allowedOrigins = process.env.NODE_ENV === 'production' ? [process.env.RENDER_EXTERNAL_URL || 'https://poker-chips-o7n9.onrender.com'] : null, trustProxy = process.env.RENDER === 'true', logError = error => process.stderr.write(`${error.stack}\n`), pushTransport = webPush, vapid = { publicKey: process.env.VAPID_PUBLIC_KEY, privateKey: process.env.VAPID_PRIVATE_KEY, subject: process.env.VAPID_SUBJECT }, store = createStore() } = {}) {
+export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupIntervalMs = 60_000, allowedOrigins = process.env.NODE_ENV === 'production' ? [process.env.RENDER_EXTERNAL_URL || 'https://poker-chips-o7n9.onrender.com'] : null, trustProxy = process.env.RENDER === 'true', logError = error => process.stderr.write(`${error.stack}\n`), pushTransport = webPush, vapid = { publicKey: process.env.VAPID_PUBLIC_KEY, privateKey: process.env.VAPID_PRIVATE_KEY, subject: process.env.VAPID_SUBJECT }, store = createStore(), mailer = createMailer() } = {}) {
   const app = express();
   const httpServer = createHttpServer(app);
   const originAllowed = (origin, requestHost) => allowedOrigins ? allowedOrigins.includes(origin)
     : !origin || origin === `http://${requestHost}` || origin === `https://${requestHost}`;
+  const accountsEnabled = store.enabled && mailer.enabled;
+  const auth = accountsEnabled ? createAuth({ store, mailer, now }) : null;
   const io = new Server(httpServer, { maxHttpBufferSize: 16_384,
     cors: { origin: (origin, cb) => cb(null, allowedOrigins ? allowedOrigins.includes(origin) : true) },
     allowRequest: (req, cb) => {
@@ -73,6 +77,67 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     next();
   });
   app.get('/healthz', (_req, res) => res.status(200).json({ ok: true }));
+  app.get('/api/config', (_req, res) => res.json({ accounts: accountsEnabled }));
+  app.use('/api', express.json({ limit: '4kb' }));
+  const authLimits = new Map();
+  function apiOrigin(req, res, next) {
+    if (req.get('Sec-Fetch-Site') === 'cross-site' || !originAllowed(req.get('Origin'), req.get('Host'))) {
+      res.status(403).json({ error: 'Origin not allowed.' }); return;
+    }
+    next();
+  }
+  function requireAccount(req, res, next) {
+    if (!accountsEnabled) { res.sendStatus(404); return; }
+    auth.accountFromCookie(req.headers.cookie).then(account => {
+      if (!account) { res.status(401).json({ error: 'Sign in to continue.' }); return; }
+      req.account = account; next();
+    }).catch(error => { logError(error); res.sendStatus(503); });
+  }
+  function allowLinkRequest(req, email) {
+    const forwarded = req.headers['x-forwarded-for'];
+    const ip = trustProxy && typeof forwarded === 'string' ? forwarded.split(',').at(-1).trim() : req.ip;
+    const keys = [`ip:${ip}`, `email:${email}`];
+    for (const key of keys) {
+      const bucket = authLimits.get(key);
+      if (bucket && now() - bucket.start < 3_600_000 && bucket.count >= (key.startsWith('ip:') ? 10 : 3)) return false;
+    }
+    for (const key of keys) {
+      const bucket = authLimits.get(key);
+      if (!bucket || now() - bucket.start >= 3_600_000) authLimits.set(key, { start: now(), count: 1 });
+      else bucket.count++;
+    }
+    return true;
+  }
+  app.use('/api/auth', (req, res, next) => { if (!accountsEnabled) res.sendStatus(404); else next(); });
+  app.post('/api/auth/request', apiOrigin, async (req, res) => {
+    const email = normalizeEmail(req.body?.email);
+    if (email && allowLinkRequest(req, email)) {
+      try {
+        const origin = req.get('Origin') || `${req.protocol}://${req.get('Host')}`;
+        await auth.request(email, origin);
+      } catch (error) { logError(error); }
+    }
+    res.json({ message: 'If that address can receive mail, a sign-in link is on its way.' });
+  });
+  app.post('/api/auth/verify', apiOrigin, async (req, res) => {
+    const verified = await auth.verify(req.body?.token);
+    if (!verified) { res.status(400).json({ error: 'This link has expired or was already used.' }); return; }
+    res.setHeader('Set-Cookie', `tm_session=${verified.sessionToken}; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000${process.env.NODE_ENV === 'production' ? '; Secure' : ''}`);
+    res.json({ displayName: verified.account.display_name });
+  });
+  app.post('/api/auth/logout', apiOrigin, async (req, res) => {
+    await auth.logout(req.headers.cookie);
+    res.setHeader('Set-Cookie', 'tm_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0');
+    res.json({ ok: true });
+  });
+  app.get('/api/me', requireAccount, (req, res) => res.json({ displayName: req.account.display_name, email: req.account.email }));
+  app.patch('/api/me', apiOrigin, requireAccount, async (req, res) => {
+    if (!req.body || Object.keys(req.body).length !== 1 || !validName(req.body.displayName)) {
+      res.status(400).json({ error: 'Display name must be 1–20 safe characters.' }); return;
+    }
+    const account = await store.updateAccount(req.account.id, normalizedName(req.body.displayName));
+    res.json({ displayName: account.display_name });
+  });
   app.use(express.static(fileURLToPath(new URL('../public', import.meta.url))));
 
   function view(room, id) {
@@ -80,6 +145,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     delete state.history;
     const handInProgress = game.isPlaying(room.game);
     return { ...state, roomCode: room.code, nightId: room.nightId, hostId: room.hostId, playerId: id, revision: room.revision,
+      signedIn: room.accounts.has(id),
       canUndo: room.game.history.length > 0, serverTime: now(),
       settlement: structuredClone(room.lastSettlement || game.settlement(room.game)),
       settlementNote: handInProgress ? 'Hand in progress. Showing totals from before this hand.' : '',
@@ -112,6 +178,9 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     });
   }
   function bind(socket, room, id) {
+    if (socket.data.accountId && !room.accounts.has(id) && ![...room.accounts.values()].includes(socket.data.accountId)) {
+      room.accounts.set(id, socket.data.accountId);
+    }
     const previousId = room.connections.get(id);
     if (previousId && previousId !== socket.id) {
       const previous = io.sockets.sockets.get(previousId);
@@ -158,6 +227,14 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
   }
   const cleanup = setInterval(sweep, cleanupIntervalMs);
   cleanup.unref();
+
+  io.use(async (socket, next) => {
+    if (accountsEnabled) {
+      try { socket.data.accountId = (await auth.accountFromCookie(socket.handshake.headers.cookie))?.id ?? null; }
+      catch (error) { logError(error); socket.data.accountId = null; }
+    }
+    next();
+  });
 
   io.on('connection', socket => {
     let windowStart = now();

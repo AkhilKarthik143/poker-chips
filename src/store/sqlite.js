@@ -22,6 +22,14 @@ const migration = `
   CREATE INDEX IF NOT EXISTS night_players_account ON night_players(account_id);
   CREATE INDEX IF NOT EXISTS nights_group_ended ON nights(group_id, ended_at);
 `;
+const accountsMigration = `
+  CREATE TABLE accounts (id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE,
+    display_name TEXT NOT NULL, created_at INTEGER NOT NULL);
+  CREATE TABLE sessions (token_hash TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    expires_at INTEGER NOT NULL);
+  CREATE INDEX sessions_account ON sessions(account_id);
+  CREATE TABLE magic_links (token_hash TEXT PRIMARY KEY, email TEXT NOT NULL, expires_at INTEGER NOT NULL);
+`;
 
 export class SqliteStore {
   constructor(path) {
@@ -44,6 +52,14 @@ export class SqliteStore {
       try {
         this.db.exec(migration);
         this.db.prepare('UPDATE schema_version SET version = 1').run();
+        this.db.exec('COMMIT');
+      } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+    }
+    if (version < 2) {
+      this.db.exec('BEGIN');
+      try {
+        this.db.exec(accountsMigration);
+        this.db.prepare('UPDATE schema_version SET version = 2').run();
         this.db.exec('COMMIT');
       } catch (error) { this.db.exec('ROLLBACK'); throw error; }
     }
@@ -79,5 +95,31 @@ export class SqliteStore {
     if (!night) return null;
     return { ...night, players: this.db.prepare('SELECT * FROM night_players WHERE night_id = ? ORDER BY seat_id').all(nightId) };
   }
+  async saveMagicLink(tokenHash, email, expiresAt) {
+    this.db.prepare('INSERT INTO magic_links (token_hash,email,expires_at) VALUES (?,?,?)').run(tokenHash, email, expiresAt);
+  }
+  async consumeMagicLink(tokenHash, time) {
+    const row = this.db.prepare('DELETE FROM magic_links WHERE token_hash = ? RETURNING email, expires_at').get(tokenHash);
+    return row && row.expires_at > time ? row.email : null;
+  }
+  async getAccountByEmail(email) { return this.db.prepare('SELECT * FROM accounts WHERE email = ?').get(email) ?? null; }
+  async getAccount(id) { return this.db.prepare('SELECT * FROM accounts WHERE id = ?').get(id) ?? null; }
+  async createAccount(id, email, displayName, time) {
+    this.db.prepare('INSERT INTO accounts (id,email,display_name,created_at) VALUES (?,?,?,?) ON CONFLICT(email) DO NOTHING')
+      .run(id, email, displayName, time);
+    return this.getAccountByEmail(email);
+  }
+  async updateAccount(id, displayName) {
+    this.db.prepare('UPDATE accounts SET display_name = ? WHERE id = ?').run(displayName, id);
+    return this.getAccount(id);
+  }
+  async saveSession(tokenHash, accountId, expiresAt) {
+    this.db.prepare('INSERT INTO sessions (token_hash,account_id,expires_at) VALUES (?,?,?)').run(tokenHash, accountId, expiresAt);
+  }
+  async getSession(tokenHash, time) {
+    const row = this.db.prepare('SELECT account_id FROM sessions WHERE token_hash = ? AND expires_at > ?').get(tokenHash, time);
+    return row?.account_id ?? null;
+  }
+  async deleteSession(tokenHash) { this.db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(tokenHash); }
   async close() { this.db.close(); }
 }
