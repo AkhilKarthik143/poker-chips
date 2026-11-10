@@ -43,3 +43,34 @@ test('points ties average occupied places, qualification and records ignore void
   assert.equal(records.biggestNight.net, 60);
   assert.equal(records.longestStreak.longestStreak, 1);
 });
+
+test('capped net and ROI use buy-ins, and drop-worst retains one counted night', () => {
+  const extreme = [
+    { nightId: 'one', endedAt: 1, memberId: 'a', displayName: 'Alex', rank: 1, net: 1000, buyIn: 100 },
+    { nightId: 'one', endedAt: 1, memberId: 'b', displayName: 'Blair', rank: 2, net: -1000, buyIn: 100 },
+    { nightId: 'two', endedAt: 2, memberId: 'a', displayName: 'Alex', rank: 2, net: -50, buyIn: 100 },
+    { nightId: 'two', endedAt: 2, memberId: 'b', displayName: 'Blair', rank: 1, net: 50, buyIn: 0 }
+  ];
+  const capped = computeStandings({ scoring: { type: 'capped_net', capMultiple: 5 } }, extreme, members);
+  assert.equal(capped.find(row => row.memberId === 'a').score, 45_000);
+  assert.equal(capped.find(row => row.memberId === 'b').score, -50_000, 'zero buy-in caps that night at zero');
+  const roi = computeStandings({ scoring: { type: 'roi' } }, extreme, members);
+  assert.equal(roi.find(row => row.memberId === 'a').score, 47_500);
+  assert.equal(roi.find(row => row.memberId === 'c').score, 0, 'no buy-in has no division error');
+  const dropped = computeStandings({ scoring: { type: 'points', table: [10, 7], dropWorst: 3 } }, extreme, members);
+  assert.equal(dropped.find(row => row.memberId === 'a').score, 1000, 'at least one night remains');
+  assert.throws(() => validateScoring({ type: 'roi', dropWorst: 0 }), /Invalid/);
+});
+
+test('all-tied standings use stable name ordering and attendance qualification', () => {
+  const tied = [
+    { nightId: 'tie', endedAt: 1, memberId: 'c', displayName: 'Casey', rank: 1, net: 0, buyIn: 100 },
+    { nightId: 'tie', endedAt: 1, memberId: 'a', displayName: 'Alex', rank: 1, net: 0, buyIn: 100 },
+    { nightId: 'tie', endedAt: 1, memberId: 'b', displayName: 'Blair', rank: 1, net: 0, buyIn: 100 }
+  ];
+  const standings = computeStandings({ scoring: { type: 'points', table: [10, 7, 5], minNightsPct: 100 } }, tied, members);
+  assert.deepEqual(standings.map(row => [row.memberId, row.score, row.qualified]),
+    [['a', 733, true], ['b', 733, true], ['c', 733, true]]);
+  assert.deepEqual(computeStandings({ scoring: { type: 'net', minNightsPct: 60 } }, [], members)
+    .map(row => row.qualified), [false, false, false]);
+});
