@@ -1,19 +1,21 @@
 import express from 'express';
 import { createServer as createHttpServer } from 'node:http';
 import { createRequire } from 'node:module';
-import { randomBytes, randomInt, randomUUID, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, randomInt, randomUUID, timingSafeEqual } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { Server } from 'socket.io';
 const webPush = createRequire(import.meta.url)('web-push');
 import * as game from './game.js';
 import { RequestError, requireValue, validatePayload, entryEvents } from './validation.js';
+import { createStore } from './store/index.js';
 
 const SIX_HOURS = 6 * 60 * 60 * 1000;
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
 const safeTokenEqual = (a, b) => typeof a === 'string' && typeof b === 'string' && a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
+const hashToken = value => createHash('sha256').update(value).digest('hex');
 
-export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupIntervalMs = 60_000, allowedOrigins = process.env.NODE_ENV === 'production' ? [process.env.RENDER_EXTERNAL_URL || 'https://poker-chips-o7n9.onrender.com'] : null, trustProxy = process.env.RENDER === 'true', logError = error => process.stderr.write(`${error.stack}\n`), pushTransport = webPush, vapid = { publicKey: process.env.VAPID_PUBLIC_KEY, privateKey: process.env.VAPID_PRIVATE_KEY, subject: process.env.VAPID_SUBJECT } } = {}) {
+export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupIntervalMs = 60_000, allowedOrigins = process.env.NODE_ENV === 'production' ? [process.env.RENDER_EXTERNAL_URL || 'https://poker-chips-o7n9.onrender.com'] : null, trustProxy = process.env.RENDER === 'true', logError = error => process.stderr.write(`${error.stack}\n`), pushTransport = webPush, vapid = { publicKey: process.env.VAPID_PUBLIC_KEY, privateKey: process.env.VAPID_PRIVATE_KEY, subject: process.env.VAPID_SUBJECT }, store = createStore() } = {}) {
   const app = express();
   const httpServer = createHttpServer(app);
   const originAllowed = (origin, requestHost) => allowedOrigins ? allowedOrigins.includes(origin)
@@ -41,6 +43,23 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     requireValue(++bucket.count <= (event === 'create' ? 12 : 30), 'Too many requests. Try again in a moment.');
   }
   const rooms = new Map();
+  function persist(room, finalize = false) {
+    if (!store.enabled || room.game.handNumber === 0) return;
+    try {
+      if (finalize && !room.endedAt) room.endedAt = now();
+      const players = [...room.game.players.map(p => ({ ...p, cashOut: p.stack })), ...room.game.departed].map(p => ({
+        id: p.id, name: p.name, accountId: room.accounts.get(p.id) ?? null,
+        claimHash: room.tokenHashes.get(p.id), buyIn: p.buyIn, cashOut: p.cashOut,
+        net: p.cashOut - p.buyIn, handsPlayed: p.handsPlayed, handsWon: p.handsWon,
+        ...Object.fromEntries(game.STAT_FIELDS.map(field => [field, p[field] ?? 0]))
+      }));
+      const snapshot = { nightId: room.nightId, roomCode: room.code, groupId: null,
+        startedAt: room.startedAt, updatedAt: now(), endedAt: room.endedAt ?? null,
+        hands: room.game.handNumber, settings: room.game.settings,
+        settlement: game.settlement(room.game), players };
+      Promise.resolve().then(() => store.saveNight(snapshot)).catch(logError);
+    } catch (error) { logError(error); }
+  }
   let pushEnabled = false;
   if (vapid.publicKey && vapid.privateKey && vapid.subject) {
     try { pushTransport.setVapidDetails(vapid.subject, vapid.publicKey, vapid.privateKey); pushEnabled = true; }
@@ -60,7 +79,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     const state = structuredClone(room.game);
     delete state.history;
     const handInProgress = game.isPlaying(room.game);
-    return { ...state, roomCode: room.code, hostId: room.hostId, playerId: id, revision: room.revision,
+    return { ...state, roomCode: room.code, nightId: room.nightId, hostId: room.hostId, playerId: id, revision: room.revision,
       canUndo: room.game.history.length > 0, serverTime: now(),
       settlement: structuredClone(room.lastSettlement || game.settlement(room.game)),
       settlementNote: handInProgress ? 'Hand in progress. Showing totals from before this hand.' : '',
@@ -131,6 +150,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     for (const [key, bucket] of attempts) if (now() - bucket.start >= 60_000) attempts.delete(key);
     for (const [code, room] of rooms) {
       if (now() - room.lastActive >= idleMs) {
+        persist(room, true);
         for (const id of [...room.connections.keys()]) detach(room, id, 'Room expired after six hours of inactivity.');
         rooms.delete(code);
       }
@@ -168,7 +188,10 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
       let code;
       do { code = Array.from({ length: 8 }, () => ALPHABET[randomInt(ALPHABET.length)]).join(''); } while (rooms.has(code));
       const token = randomBytes(32).toString('hex');
-      const room = { code, hostId: id, game: state, tokens: new Map([[id, token]]), connections: new Map(), rebuyRequests: new Map(), pushSubscriptions: new Map(), presence: new Map(), lastActive: now(), revision: 0, lastSettlement: null };
+      const room = { code, nightId: randomUUID(), startedAt: now(), endedAt: null, hostId: id, game: state,
+        tokens: new Map([[id, token]]), tokenHashes: new Map([[id, hashToken(token)]]), accounts: new Map(),
+        connections: new Map(), rebuyRequests: new Map(), pushSubscriptions: new Map(), presence: new Map(),
+        lastActive: now(), revision: 0, lastSettlement: null };
       rooms.set(code, room); bind(socket, room, id); broadcast(room);
       return { token, playerId: id, roomCode: code, state: view(room, id) };
     });
@@ -187,7 +210,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
       const id = randomUUID();
       room.game = game.addPlayer(room.game, id, payload.name);
       const token = randomBytes(32).toString('hex');
-      room.tokens.set(id, token); room.revision++;
+      room.tokens.set(id, token); room.tokenHashes.set(id, hashToken(token)); room.revision++;
       bind(socket, room, id); broadcast(room);
       return { token, playerId: id, roomCode: room.code, state: view(room, id) };
     });
@@ -207,6 +230,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
         const previousTurn = room.game.turn;
         const nextState = fn(room, id, payload);
         room.game = nextState; room.revision++; room.lastActive = now();
+        if (nextState.street === 'complete' && !game.isPlaying(nextState)) persist(room);
         broadcast(room);
         sendTurnPush(room, previousTurn);
         return { state: view(room, id) };
@@ -217,6 +241,13 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     mutate('showdown-pick', (room, _id, payload) => game.pickWinners(room.game, payload.potId, payload.winnerIds), true);
     mutate('host-settings', (room, _id, payload) => game.configure(room.game, payload.settings), true);
     mutate('host:reorderSeats', (room, _id, payload) => game.reorderSeats(room.game, payload.order), true);
+    on('host:endNight', payload => {
+      const { room, id } = member(socket, payload); host(room, id);
+      requireValue(payload.revision === undefined || payload.revision === room.revision, 'Table changed. Please try again.');
+      requireValue(!game.isPlaying(room.game) && room.game.handNumber > 0, 'Finish a hand before ending the night.');
+      persist(room, true);
+      return {};
+    });
     mutate('undo', room => game.undo(room.game), true);
     mutate('sit-out', (room, id, payload) => game.setSitOut(room.game, id, payload.value));
     mutate('donate', (room, id, payload) => game.donate(room.game, id, payload.recipientId, payload.amount));
@@ -280,7 +311,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
       requireValue(payload.revision === room.revision, 'Table changed. Please try again.');
       room.game = game.removePlayer(room.game, id);
       detach(room, id, 'You left the table.'); room.revision++; room.lastActive = now();
-      if (!room.game.players.length) rooms.delete(room.code);
+      if (!room.game.players.length) { persist(room, true); rooms.delete(room.code); }
       else {
         if (room.hostId === id) room.hostId = room.game.players[0].id;
         broadcast(room);
@@ -304,7 +335,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
   });
   return { app, httpServer, io, rooms, sweep,
     listen: (port = 0, host = '127.0.0.1') => new Promise(resolve => httpServer.listen(port, host, () => resolve(httpServer.address()))),
-    close: () => new Promise(resolve => { clearInterval(cleanup); io.close(() => resolve()); }) };
+    close: () => new Promise(resolve => { clearInterval(cleanup); io.close(async () => { await store.close?.(); resolve(); }); }) };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

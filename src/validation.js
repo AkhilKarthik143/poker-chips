@@ -38,6 +38,7 @@ const schemas = {
   'showdown-pick': [{...auth,potId:integer(9),winnerIds:ids},{}],
   'host-settings': [{...auth,settings:value=>settings(value)&&Object.keys(value).length>0},{}],
   'host:reorderSeats': [{...auth,order:ids},{}],
+  'host:endNight': [{token},{revision:integer(Number.MAX_SAFE_INTEGER)}],
   undo: [auth,{}],
   'sit-out': [{...auth,value:value=>typeof value==='boolean'},{}],
   donate: [{...auth,recipientId:uuid,amount:integer(1e12,1)},{}],
