@@ -1,5 +1,15 @@
 # Decisions and progress
 
+## Accounts spec follow-up audit (2026-11-10)
+
+- The pasted A1–A9 task was originally implemented on the existing `feature/accounts-stats` branch, which starts from `feature/ux-overhaul`. The active `feature/customization` branch descends from it and contains the later league replacement for A6. I kept that branch structure and did not recreate the old standalone groups schema or push changes.
+- Baseline on the active branch: Node 24.20.0 with `node:sqlite`, `npm ci` passed, lint clean, 95 tests passing, and the four-player simulation passed. The settle-up prerequisite fields are already present. A1–A5, A8 and A9 are implemented; A6 was superseded by the user's league direction. A7 remains optional and skipped because no Postgres server is available to test it.
+- A3 follow-up: default display names now receive a numeric suffix if another account already uses the same name. The suffix is bounded to the 20-character display-name limit; email and Google creation paths share the rule. The existing account for a returning email is reused.
+- A5 browser acceptance: Playwright Chromium captured empty and populated `me.html` at 360×740 and populated at 390×844 under `/tmp/tablemate-account-qa`. There were no browser errors or horizontal scrollbars. The Back to table link was only 25px tall; it now has a 44px tap target at both widths. Other visible profile controls met the 44px target in the recorded checks.
+- A2–A5 file-backed smoke: a real temporary SQLite file passed magic-link request/verify, `/healthz`, `/api/me`, `/api/me/stats`, a two-seat completed hand, saved zero-sum night rows, and updated lifetime stats. The temporary database was removed. Final gate after the fixes: lint with zero warnings, 96 tests passing, four-player simulation passed, `git diff --check` clean.
+- Assumption: the user's later league specification replaces A6's simple group leaderboard, so no separate `/api/groups` routes should be added. Assumption: numeric suffixes apply to defaults on creation; members may still choose the same nickname later.
+- Untested for real: Resend delivery, Google sign-in against a live Google client, Node 20 fallback on Node 20, physical phone browsers, Render persistent disk, and Postgres. `DATABASE_URL` is documented as unsupported in this local build. No blockers for the required stages under the league replacement.
+
 ## Leagues on the correct checkout (2026-11-10)
 
 - Branch `feature/leagues` starts from passing `feature/accounts-stats`. SQLite migration v3 adds league, roster, season, night-result and audit tables; no legacy groups existed to migrate.

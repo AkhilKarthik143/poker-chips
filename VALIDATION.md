@@ -1,5 +1,12 @@
 # Validation record
 
+## Accounts follow-up acceptance (November 10, 2026)
+
+- Current descendant branch `feature/customization` retains the `feature/accounts-stats` stage commits. `npm ci`, lint, 96 tests, four-player chip-conservation simulation, `git diff --check`, and `/healthz` passed. Node 24.20.0 used `node:sqlite`.
+- File-backed SQLite smoke passed magic-link request/verify, private account and stats routes, a two-seat completed hand, zero-sum saved rows and updated personal stats. The temporary database was removed.
+- Playwright Chromium captured `me.html` empty at 360×740 and populated at 360×740 and 390×844. No page errors or horizontal overflow. A 25px Back to table link was repaired to 44px and rechecked at both widths; the other visible controls were at least 44px.
+- The old A6 group leaderboard was replaced by the later league feature. The optional Postgres adapter is absent; real email, Google, Node 20, physical-device and Render-disk behavior remain untested.
+
 ## Optional accounts and history local work (November 10, 2026)
 
 - Node 24.20.0; SQLite `:memory:` smoke and upsert test pass. The Node 20 `better-sqlite3` path is installed but has not been run under Node 20 locally.

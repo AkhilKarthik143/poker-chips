@@ -44,6 +44,8 @@ The service binds `0.0.0.0` and reads `process.env.PORT`, defaulting to 3000. `G
 
 Guest play stays available with no setup. Set `TABLEMATE_DB_PATH=./data/tablemate.db` to enable SQLite night history, personal stats and accounts. Node 22.5+ uses `node:sqlite`; Node 20 uses `better-sqlite3`. Leave the variable unset to disable these features and keep the existing guest behavior. For email sign-in in production, configure `RESEND_API_KEY` and `MAIL_FROM`. For Google sign-in, configure `GOOGLE_CLIENT_ID` with a Google OAuth **Web application** client ID and add the app's origin to its authorized JavaScript origins in Google Cloud. For this local demo, authorize `http://127.0.0.1:3101`; for deployment, authorize the exact HTTPS origin. Google sign-in uses Google's own button and server-side ID-token verification; it does not need a client secret or redirect URI. Accounts are available when either sign-in method is configured with SQLite. `GET /api/config` reports which methods are available.
 
+`DATABASE_URL` is not supported by this local build; the optional Postgres adapter remains unimplemented. New accounts receive a safe default display name; if that name is already in use, Tablemate adds a short number.
+
 With accounts enabled, the home panel and header show **Sign in**. For a local browser demo without email delivery, run `TABLEMATE_DB_PATH=./data/tablemate.db TABLEMATE_DEV_LOGIN=1 npm start` and open the site through `localhost` or `127.0.0.1`. After entering an email, the sign-in page shows a one-time link you can open there. The link is returned only for loopback requests using the development console mailer; do not use this switch on a shared server. Normal development still prints links to the terminal, and production email sign-in requires delivery.
 
 The sign-in page shows **Continue with Google**. It becomes active when `GOOGLE_CLIENT_ID` is configured; otherwise it remains disabled with a clear message. Google identities are linked by Google's stable subject ID. Verified Gmail or Workspace accounts can join an existing Tablemate account with the same email. For other email domains, use the email link if that Tablemate account already exists. The Google identity is included in account export and removed on account deletion.
@@ -62,11 +64,15 @@ Signed-in friends can create a league, join with an eight-letter invite code, an
 | --- | --- | --- | --- | --- |
 | Read standings, nights, roster and rules | Yes | Yes | Yes | No |
 | Open tonight's league table | Yes | Yes | No | No |
+| Run hands, resolve showdowns, edit live settings and approve rebuys | Yes | Yes | No | No |
+| Undo actions, add chips directly and remove seats | Yes | No | No | No |
 | Rotate invite code and review active-season nights | Yes | Yes | No | No |
 | Edit table rules, seasons and member roles | Yes | No | No | No |
 | Transfer commissioner | Yes | No | No | No |
 
-Ending a league night saves its final results, clears its live table code and lets a commissioner open the next night. If the save fails, the table stays open so the host can retry. Leaving or deleting an account keeps already recorded night results under the stable league member ID; deleted accounts display as **Former member**.
+Live league controls follow the signed-in roster role, even if someone else opened the room. A co-commissioner can start hands, assign showdown winners, change live table settings and seat order, approve or deny rebuy requests, fold a disconnected current player, and end the night. Direct chip additions, undo and seat removal stay with the commissioner. Losing the role or signing out removes these controls immediately; a seat token alone never grants them. For a table outside a league, the original host rules still apply.
+
+Ending a league night saves its final results, clears its live table code and lets a commissioner open the next night. If the save fails, the table stays open so the manager can retry. Leaving or deleting an account keeps already recorded night results under the stable league member ID; deleted accounts display as **Former member**.
 
 The commissioner chooses a scoring format for each season: total net chips, per-night points (default table 10/7/5/3/2/1), net chips capped by a buy-in multiple, or ROI. Drop-worst (up to three nights, retaining at least one) and minimum attendance are optional except that ROI cannot drop nights. Scores are stored as integer hundredths; ROI uses integer basis points. For example, a first place night worth 10 and a second place night worth 7 produces 17.00 points. Ties split the occupied place points. Scoring rules lock on activation; only one season can be active. Closing a season stores its qualified champion and makes its results immutable.
 
@@ -130,31 +136,33 @@ Reference: [Render Blueprint specification](https://render.com/docs/blueprint-sp
 
 Every request includes a payload object and receives `{ok:true, ...}` or `{ok:false, error}` through its acknowledgement. Seated clients receive personalized `state` events. **Every mutating table request requires its private `token` and `revision` equal to the latest state revision**; the server rejects duplicate or stale intents. Authorization comes from the socket’s bound seat, never a supplied actor ID.
 
+In the access column, **manager** means the host on a normal table or a signed-in commissioner/co-commissioner on a league table. **Owner** means the host on a normal table or the signed-in league commissioner.
+
 | Event | Payload (in addition to revision where required) | Access |
 | --- | --- | --- |
 | `create` | `name`, optional `settings`, `leagueId`, `rebuyPolicy` | Unseated socket |
 | `join` | `code`, `name`, optional confirmed `expectedBuyIn` | Unseated; between hands |
 | `table-preview` | `code` | Unseated; read-only |
 | `rejoin` | `code`, `playerId`, `token` | Valid private seat token |
-| `start-hand` | — | Host |
-| `host:endNight` | optional `revision` | Host, between hands after at least one hand |
+| `start-hand` | — | Manager |
+| `host:endNight` | optional `revision` | Manager, between hands after at least one hand |
 | `action` | `type`: fold/check/call/raise/all-in; `amount` for raise-to | Current player |
-| `showdown-pick` | `potId`, `winnerIds` | Host |
-| `host-settings` | `settings`: startingStack/smallBlind/bigBlind/blindMinutes/optional centsPer1000Chips | Host, between hands |
-| `host:reorderSeats` | Full `order` array of player IDs | Host, between hands |
-| `host:rebuyPolicy` | `mode`: host/auto; `cap` and optional `maxPerPlayer` in auto mode | Host; authenticated, no revision bump |
+| `showdown-pick` | `potId`, `winnerIds` | Manager |
+| `host-settings` | `settings`: startingStack/smallBlind/bigBlind/blindMinutes/optional centsPer1000Chips | Manager, between hands |
+| `host:reorderSeats` | Full `order` array of player IDs | Manager, between hands |
+| `host:rebuyPolicy` | `mode`: host/auto; `cap` and optional `maxPerPlayer` in auto mode | Manager; authenticated, no revision bump |
 | `seat:cosmetics` | optional `avatar`, `color`, `note` (at least one) | Own seat; authenticated, no revision bump |
-| `rebuy` | `playerId`, `amount` | Host, between hands |
+| `rebuy` | `playerId`, `amount` | Owner, between hands |
 | `sit-out` | `value`: boolean | Own seat |
 | `donate` | `recipientId`, `amount` | Own seat, between hands |
 | `leave` | — | Own seat, between hands |
-| `kick` | `playerId` | Host, between hands |
-| `host-fold` | — | Host, disconnected current player only |
-| `undo` | — | Host |
+| `kick` | `playerId` | Owner, between hands |
+| `host-fold` | — | Manager, disconnected current player only |
+| `undo` | — | Owner |
 | `rebuy:request` | optional `amount` | Own seat; any time, defaults to starting stack |
 | `rebuy:cancel` | — | Own seat with a pending request |
-| `rebuy:deny` | `playerId` | Host |
-| `rebuy:approve` | `playerId`, optional `amount` | Host, between hands |
+| `rebuy:deny` | `playerId` | Manager |
+| `rebuy:approve` | `playerId`, optional `amount` | Manager, between hands |
 | `push:subscribe` | `subscription` | Own seat; requires server VAPID configuration |
 | `push:unsubscribe` | — | Own seat |
 | `presence` | `hidden`: boolean | Own seat; reports page visibility |
