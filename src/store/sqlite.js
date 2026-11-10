@@ -121,5 +121,29 @@ export class SqliteStore {
     return row?.account_id ?? null;
   }
   async deleteSession(tokenHash) { this.db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(tokenHash); }
+  async claimNight(nightId, tokenHash, accountId) {
+    const result = this.db.prepare(`UPDATE night_players SET account_id = ?
+      WHERE night_id = ? AND claim_hash = ? AND account_id IS NULL`).run(accountId, nightId, tokenHash);
+    return result.changes;
+  }
+  async listAccountNights(accountId) {
+    return this.db.prepare(`SELECT n.id AS night_id,n.room_code,n.started_at,n.ended_at,
+      p.buy_in,p.cash_out,p.net,p.hands_played,p.hands_won,p.vpip_hands,p.pfr_hands,
+      p.raises,p.calls,p.checks,p.folds,p.all_ins,p.showdowns,p.showdown_wins
+      FROM night_players p JOIN nights n ON n.id = p.night_id
+      WHERE p.account_id = ? AND n.ended_at IS NOT NULL
+      ORDER BY n.ended_at DESC,n.id DESC`).all(accountId);
+  }
+  async exportAccount(accountId) {
+    return { account: await this.getAccount(accountId), nights: await this.listAccountNights(accountId) };
+  }
+  async deleteAccount(accountId) {
+    this.db.exec('BEGIN');
+    try {
+      this.db.prepare('UPDATE night_players SET account_id = NULL WHERE account_id = ?').run(accountId);
+      this.db.prepare('DELETE FROM accounts WHERE id = ?').run(accountId);
+      this.db.exec('COMMIT');
+    } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+  }
   async close() { this.db.close(); }
 }

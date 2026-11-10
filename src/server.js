@@ -11,6 +11,7 @@ import { RequestError, requireValue, validatePayload, entryEvents, normalizedNam
 import { createStore } from './store/index.js';
 import { createMailer } from './mail.js';
 import { createAuth, normalizeEmail } from './auth.js';
+import { aggregateStats, paginateNights } from './stats.js';
 
 const SIX_HOURS = 6 * 60 * 60 * 1000;
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -137,6 +138,39 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     }
     const account = await store.updateAccount(req.account.id, normalizedName(req.body.displayName));
     res.json({ displayName: account.display_name });
+  });
+  app.post('/api/nights/claim', apiOrigin, requireAccount, async (req, res) => {
+    const claims = req.body?.claims;
+    if (!Array.isArray(claims) || claims.length > 20 || claims.some(claim =>
+      !claim || Object.keys(claim).length !== 2 || typeof claim.nightId !== 'string' ||
+      !/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(claim.nightId) || typeof claim.token !== 'string' || !/^[a-f0-9]{64}$/.test(claim.token))) {
+      res.status(400).json({ error: 'Invalid night claims.' }); return;
+    }
+    let claimed = 0;
+    for (const claim of claims) claimed += await store.claimNight(claim.nightId, hashToken(claim.token), req.account.id);
+    res.json({ claimed, skipped: claims.length - claimed });
+  });
+  app.get('/api/me/stats', requireAccount, async (req, res) => {
+    const rows = await store.listAccountNights(req.account.id);
+    const page = Number(req.query.page || 1);
+    if (!Number.isSafeInteger(page) || page < 1) { res.status(400).json({ error: 'Invalid page.' }); return; }
+    let running = 0;
+    const trend = [...rows].reverse().map(row => ({ endedAt: row.ended_at, net: (running += row.net) }));
+    res.json({ lifetime: aggregateStats(rows), trend, ...paginateNights(rows, page) });
+  });
+  app.get('/api/me/export', requireAccount, async (req, res) => {
+    res.json(await store.exportAccount(req.account.id));
+  });
+  app.delete('/api/me', apiOrigin, requireAccount, async (req, res) => {
+    if (req.body?.confirm !== 'DELETE' || Object.keys(req.body).length !== 1) {
+      res.status(400).json({ error: 'Confirm account deletion with DELETE.' }); return;
+    }
+    await store.deleteAccount(req.account.id);
+    for (const room of rooms.values()) {
+      for (const [playerId, accountId] of room.accounts) if (accountId === req.account.id) room.accounts.delete(playerId);
+    }
+    res.setHeader('Set-Cookie', 'tm_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0');
+    res.json({ deleted: true });
   });
   app.use(express.static(fileURLToPath(new URL('../public', import.meta.url))));
 

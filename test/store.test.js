@@ -24,6 +24,10 @@ test('SQLite night upsert is idempotent, retains departed seats and preserves ze
   assert.equal(saved.players.reduce((sum, player) => sum + player.net, 0), 0);
   assert.equal(saved.players.find(player => player.seat_id === 'departed').claim_hash, hash('departed'));
   assert.equal(saved.ended_at, 3);
+  assert.equal(await store.claimNight('night-1', hash('wrong'), 'me'), 0);
+  assert.equal(await store.claimNight('night-1', hash('departed'), 'me'), 1);
+  assert.equal(await store.claimNight('night-1', hash('departed'), 'other'), 0);
+  assert.equal((await store.getNight('night-1')).players.find(player => player.seat_id === 'departed').account_id, 'me');
 });
 
 test('no database configuration selects a no-op store', async () => {
