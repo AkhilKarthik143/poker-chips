@@ -18,7 +18,7 @@ import { validateScoring, computeStandings, recordsFromResults } from './league.
 import { DEFAULT_PREFS, PREF_ENUMS, normalizePrefs, validatePrefs } from './prefs-schema.js';
 import { MAX_PRESETS, normalizePreset, validPreset } from './preset-schema.js';
 import { normalizeRebuyPolicy, validRebuyPolicy } from './rebuy-policy.js';
-import { THIRTY_DAYS, usernameError, validAvatar, validPrivacy, avatarForAccount, privacyForAccount, defaultAvatar } from './identity.js';
+import { THIRTY_DAYS, usernameError, validAvatar, validPrivacy, avatarForAccount, privacyForAccount, defaultAvatarV2 } from './identity.js';
 
 const SIX_HOURS = 6 * 60 * 60 * 1000;
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -254,13 +254,13 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     if (!req.body || Object.keys(req.body).length) { res.status(400).json({ error: 'Invalid skip request.' }); return; }
     if (req.account.username) {
       const result = req.account.avatar_json ? { account: req.account }
-        : await store.updateProfile(req.account.id, { avatar: defaultAvatar(req.account.id) }, now(), THIRTY_DAYS);
+        : await store.updateProfile(req.account.id, { avatar: defaultAvatarV2(req.account.id) }, now(), THIRTY_DAYS);
       res.json(selfProfile(result.account)); return;
     }
     for (let tries = 0; tries < 100; tries++) {
       const suffix = Array.from({ length: 5 }, () => 'abcdefghijklmnopqrstuvwxyz0123456789'[randomInt(36)]).join('');
       const candidate = `player${suffix}`;
-      const result = await store.updateProfile(req.account.id, { username: candidate, avatar: defaultAvatar(req.account.id) }, now(), THIRTY_DAYS);
+      const result = await store.updateProfile(req.account.id, { username: candidate, avatar: defaultAvatarV2(req.account.id) }, now(), THIRTY_DAYS);
       if (!result.reason) { res.json(selfProfile(result.account)); return; }
       if (result.reason === 'cooldown') { res.status(409).json({ error: 'Choose your current username.' }); return; }
     }

@@ -100,7 +100,7 @@ Required: accounts with sessions, `PUT /api/me/profile` and `avatar_json` (ident
 
 ### Implementation
 - [x] U1: SVG art, manifest, `avatar-assets.js` with `--check`, generated PNGs. Gate: `node scripts/avatar-assets.js --check`, lint, test, commit
-- [ ] U2: spec v2, generated enums with `--check`, server validation, `view()`, tests. Gate: lint + test + `gen-avatar-enums.js --check`, commit
+- [x] U2: spec v2, generated enums with `--check`, server validation, `view()`, tests. Gate: lint + test + `gen-avatar-enums.js --check`, commit
 - [ ] U3: web compositor, dispatch, caching, tests. Gate: lint + test, commit
 - [ ] U4: Unity project sources, editor scripts, build script, source checker. Gate: `node scripts/check-unity-sources.js`, lint, test, commit (plus a real Unity build if the Editor exists)
 - [ ] U5: template, static middleware, scoped CSP, config flag, install script, tests. Gate: lint + test, commit
@@ -148,6 +148,7 @@ Agent: log progress, assumptions, and blockers here.
 ### Progress log
 - Investigation: `feature/account-identity` is the newest passing base; `npm ci`, lint and 105 tests passed before branching. Node 24.20.0 and Playwright 1.65 are installed. No Unity executable was found in PATH or `/opt`. The identity column, strict profile endpoint, room projection and v1 SVG renderer already exist. v2 will extend `validAvatar` while preserving v1; a creator-specific middleware will be mounted before `express.static`, leaving other CSP headers unchanged. Table avatar markup currently uses `outerHTML`, so the canvas path needs post-render hydration.
 - U1: Authored 42 transparent SVG layers for 11 z-ordered slots, 12 palette colors and eight skin tones. The Playwright export produced 256×256 RGBA PNGs for web and Unity Resources (169 KB total). `--check` rerenders and compares both copies, checks grayscale tintable layers, dimensions and limits. Lint and all 105 tests pass.
+- U2: Manifest-generated server, browser and Unity enums now pass drift checks. Strict v1/v2 validation rejects unknown fields, ids and oversized specs. Signed-in accounts without saved art use a deterministic v2 default; saved v1 art remains valid, and onboarding skip writes v2. A room integration test confirms v2 spec-only projection after profile update. Lint and 107 tests pass; enum check passes.
 
 ### Assumption log
 - Target Unity 6.3 LTS (6000.3); no Editor is installed. Unity's own documentation identifies 6.3 as the latest LTS. Exact patch will be pinned to a known published release until an Editor build verifies it. (Investigation/U4)

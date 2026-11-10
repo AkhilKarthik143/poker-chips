@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
-import { AVATAR_ENUMS, avatarForAccount, defaultAvatar, validAvatar } from '../src/identity.js';
+import { AVATAR_ENUMS, avatarForAccount, defaultAvatar, defaultAvatarV2, validAvatar } from '../src/identity.js';
 
 class Node {
   constructor(tag) { this.tag = tag; this.attributes = new Map(); this.children = []; }
@@ -26,7 +26,7 @@ test('server and client avatar enums agree; unknown fields and values fail close
   assert.equal(validAvatar({ ...base, extra: '<img>' }), false);
   assert.equal(avatar.valid({ ...base, icon: 'unknown' }), false);
   assert.deepEqual(defaultAvatar('account-id'), defaultAvatar('account-id'));
-  assert.deepEqual(avatarForAccount({ id: 'account-id', avatar_json: '{"icon":"retired-icon"}' }), base,
+  assert.deepEqual(avatarForAccount({ id: 'account-id', avatar_json: '{"icon":"retired-icon"}' }), defaultAvatarV2('account-id'),
     'an older avatar document falls back to the same deterministic default');
 });
 

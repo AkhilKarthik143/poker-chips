@@ -5,7 +5,7 @@ import { SqliteStore } from '../src/store/sqlite.js';
 import { createServer } from '../src/server.js';
 import { hashSecret } from '../src/auth.js';
 import { LeagueStore } from '../src/league-store.js';
-import { THIRTY_DAYS } from '../src/identity.js';
+import { THIRTY_DAYS, defaultAvatarV2 } from '../src/identity.js';
 
 test('profiles require shared league, hide private users uniformly, and update atomically', async t => {
   const store = new SqliteStore(':memory:');
@@ -78,9 +78,15 @@ test('table view exposes only opted-in username and enum avatar', async t => {
   const joined = await new Promise(resolve => guest.emit('join', { code: created.roomCode, name: 'Guest' }, resolve));
   assert.equal(joined.ok, true);
   const state = joined.state;
-  assert.ok(state.identities[created.playerId].avatar);
+  assert.deepEqual(state.identities[created.playerId].avatar, defaultAvatarV2('id-secret'));
   assert.equal('username' in state.identities[created.playerId], false);
   for (const secret of ['secret@example.com', 'id-secret', token, 'showUsernameAtTables']) assert.equal(JSON.stringify(state).includes(secret), false);
+  const changedAvatar = { ...defaultAvatarV2('id-secret'), hat: 'cowboy' };
+  const avatarState = new Promise(resolve => guest.once('state', resolve));
+  const avatarResponse = await fetch(root + '/api/me/profile', { method: 'PUT', headers: { Cookie: `tm_session=${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ avatar: changedAvatar }) });
+  assert.equal(avatarResponse.status, 200);
+  assert.deepEqual((await avatarState).identities[created.playerId].avatar, changedAvatar);
   const nextState = new Promise(resolve => guest.once('state', resolve));
   const response = await fetch(root + '/api/me/profile', { method: 'PUT', headers: { Cookie: `tm_session=${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ privacy: { profileVisibility: 'leagues', showUsernameAtTables: true, showAvatarAtTables: false } }) });
