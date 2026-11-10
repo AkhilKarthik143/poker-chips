@@ -6,8 +6,10 @@ import { SqliteStore } from '../src/store/sqlite.js';
 
 test('league roster, locked season, saved results, review trail and private room settings', async t => {
   const links = [];
+  const errors = [];
   const store = new SqliteStore(':memory:');
-  const server = createServer({ store, mailer: { enabled: true, send: async (_email, link) => links.push(link) } });
+  const server = createServer({ store, mailer: { enabled: true, send: async (_email, link) => links.push(link) },
+    logError: error => errors.push(error.message) });
   const address = await server.listen(); const base = `http://127.0.0.1:${address.port}`;
   const sockets = [];
   t.after(async () => { sockets.forEach(socket => socket.disconnect()); await server.close(); });
@@ -55,6 +57,9 @@ test('league roster, locked season, saved results, review trail and private room
   assert.equal((await emit(b, 'create', { name: 'Blair', leagueId })).ok, false);
   const secondStart = await emit(a, 'create', { name: 'Alex', leagueId });
   assert.equal(secondStart.ok, false, 'seated socket cannot start a duplicate room');
+  const anotherCommissionerTab = await socket(aCookie);
+  const existingStart = await emit(anotherCommissionerTab, 'create', { name: 'Alex', leagueId });
+  assert.equal(existingStart.roomCode, start.roomCode, 'an unseated commissioner tab reuses the open room');
   const joinedSeat = await emit(b, 'join', { name: 'Blair', code: start.roomCode });
   assert.equal(joinedSeat.ok, true);
   const subSeat = await emit(sub, 'join', { name: 'Guest', code: start.roomCode });
@@ -66,7 +71,18 @@ test('league roster, locked season, saved results, review trail and private room
   assert.equal(foldA.ok, true);
   const foldB = await emit(b, 'action', { token: joinedSeat.token, revision: foldA.state.revision, type: 'fold' });
   assert.equal(foldB.state.street, 'complete');
+  const saveNight = store.saveNight.bind(store);
+  store.saveNight = async () => { throw new Error('disk full'); };
+  const failedEnd = await emit(a, 'host:endNight', { token: start.token, revision: foldB.state.revision });
+  assert.equal(failedEnd.ok, false);
+  assert.equal((await api(`/api/leagues/${leagueId}/live`, 'GET', null, aCookie)).data.roomCode, start.roomCode);
+  store.saveNight = saveNight;
   assert.equal((await emit(a, 'host:endNight', { token: start.token, revision: foldB.state.revision })).ok, true);
+  assert.deepEqual(errors, ['disk full']);
+  assert.equal((await api(`/api/leagues/${leagueId}/live`, 'GET', null, aCookie)).data.roomCode, null);
+  const fresh = await emit(anotherCommissionerTab, 'create', { name: 'Alex', leagueId });
+  assert.equal(fresh.ok, true);
+  assert.notEqual(fresh.roomCode, start.roomCode);
   const standings = await api(`/api/leagues/${leagueId}/seasons/${seasonId}/standings`, 'GET', null, aCookie);
   assert.equal(standings.data.standings[0].nights, 1);
   assert.equal(standings.data.standings[0].score, 1000);

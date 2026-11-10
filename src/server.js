@@ -67,11 +67,12 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
         startedAt: room.startedAt, updatedAt: now(), endedAt: room.endedAt ?? null,
         hands: room.game.handNumber, settings: room.game.settings,
         settlement: game.settlement(room.game), players };
-      Promise.resolve().then(async () => {
+      return Promise.resolve().then(async () => {
         await store.saveNight(snapshot);
         if (snapshot.endedAt && room.leagueId) leagueStore.finalizeNight(room.nightId);
-      }).catch(logError);
-    } catch (error) { logError(error); }
+        return true;
+      }).catch(error => { logError(error); return false; });
+    } catch (error) { logError(error); return Promise.resolve(false); }
   }
   let pushEnabled = false;
   if (vapid.publicKey && vapid.privateKey && vapid.subject) {
@@ -367,6 +368,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     const identity = socket.data.identity;
     const room = rooms.get(identity?.code);
     requireValue(room && room.connections.get(identity.id) === socket.id, 'Rejoin the room to continue.');
+    requireValue(!room.closing, 'Night is ending. Please wait.');
     requireValue(safeTokenEqual(room.tokens.get(identity.id), payload.token), 'Seat token is invalid. Rejoin the room to continue.');
     return { room, id: identity.id };
   }
@@ -411,19 +413,21 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     function on(event, fn) {
       socket.on(event, (payload, acknowledgement) => {
         const ack = typeof acknowledgement === 'function' ? acknowledgement : () => {};
+        const fail = error => {
+          const message = error instanceof RequestError ? error.message : 'Something went wrong. Please try again.';
+          if (!(error instanceof RequestError)) logError(error);
+          socket.emit('request-error', { event, error: message });
+          ack({ ok: false, error: message });
+        };
         try {
           if (now() - windowStart >= 1000) { windowStart = now(); requests = 0; }
           requireValue(++requests <= 40, 'Too many requests. Try again in a moment.');
           if (entryEvents.has(event)) entryLimit(socket, event);
           validatePayload(event, payload);
           const response = fn(payload);
-          ack({ ok: true, ...response });
-        } catch (error) {
-          const message = error instanceof RequestError ? error.message : 'Something went wrong. Please try again.';
-          if (!(error instanceof RequestError)) logError(error);
-          socket.emit('request-error', { event, error: message });
-          ack({ ok: false, error: message });
-        }
+          if (response && typeof response.then === 'function') response.then(value => ack({ ok: true, ...value })).catch(fail);
+          else ack({ ok: true, ...response });
+        } catch (error) { fail(error); }
       });
     }
     on('create', payload => {
@@ -456,6 +460,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     on('table-preview', payload => {
       const room = rooms.get(payload.code.toUpperCase());
       requireValue(room, 'Room not found. Check the eight-letter code.');
+      requireValue(!room.closing, 'Night is ending. Please wait.');
       requireValue(!game.isPlaying(room.game), 'Join between hands.');
       requireValue(room.game.players.length < 10, 'This table has 10 players.');
       return { players: room.game.players.length, ...room.game.settings };
@@ -464,6 +469,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
       requireValue(!socket.data.identity, 'Leave your current table first.');
       const room = rooms.get(payload.code.toUpperCase());
       requireValue(room, 'Room not found. Check the eight-letter code.');
+      requireValue(!room.closing, 'Night is ending. Please wait.');
       requireValue(payload.expectedBuyIn === undefined || payload.expectedBuyIn === room.game.settings.startingStack, 'Buy-in changed. Review the table and confirm again.');
       const id = randomUUID();
       room.game = game.addPlayer(room.game, id, payload.name);
@@ -503,8 +509,18 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
       const { room, id } = member(socket, payload); host(room, id);
       requireValue(payload.revision === undefined || payload.revision === room.revision, 'Table changed. Please try again.');
       requireValue(!game.isPlaying(room.game) && room.game.handNumber > 0, 'Finish a hand before ending the night.');
-      persist(room, true);
-      return {};
+      if (!room.leagueId) { persist(room, true); return {}; }
+      room.closing = true;
+      return persist(room, true).then(saved => {
+        if (!saved) {
+          room.closing = false; room.endedAt = null;
+          throw new RequestError('Night could not be saved. The table is still open; try again.');
+        }
+        liveByLeague.delete(room.leagueId);
+        rooms.delete(room.code);
+        for (const playerId of [...room.connections.keys()]) detach(room, playerId, 'League night ended. Open the league to start another table.');
+        return {};
+      });
     });
     mutate('undo', room => game.undo(room.game), true);
     mutate('sit-out', (room, id, payload) => game.setSitOut(room.game, id, payload.value));
