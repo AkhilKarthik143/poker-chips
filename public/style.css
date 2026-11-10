@@ -1041,3 +1041,21 @@ dialog.app-sheet :focus-visible { scroll-margin:20px; }
 :root[data-contrast="high"] :is(button,input,select,textarea){border-color:var(--border-seat-empty)}
 :root[data-contrast="high"] :is(button,input,select,summary,a):focus-visible{outline:3px solid #ffe071;outline-offset:3px}
 :root[data-contrast="high"] .primary{color:#070d18}
+
+/* Seat color IDs resolve to theme tokens; avatars provide a second visual cue. */
+.seat-color-c1{--seat-color:var(--seat-c1)}.seat-color-c2{--seat-color:var(--seat-c2)}.seat-color-c3{--seat-color:var(--seat-c3)}
+.seat-color-c4{--seat-color:var(--seat-c4)}.seat-color-c5{--seat-color:var(--seat-c5)}.seat-color-c6{--seat-color:var(--seat-c6)}
+.seat-color-c7{--seat-color:var(--seat-c7)}.seat-color-c8{--seat-color:var(--seat-c8)}.seat-color-c9{--seat-color:var(--seat-c9)}
+.seat-color-c10{--seat-color:var(--seat-c10)}.seat-color-c11{--seat-color:var(--seat-c11)}.seat-color-c12{--seat-color:var(--seat-c12)}
+:root[data-contrast="high"]{--seat-c1:#ffb3c1;--seat-c2:#a2f5dd;--seat-c3:#ffe18e;--seat-c4:#bdb7ff;--seat-c5:#9ee6ff;--seat-c6:#ffc59c;--seat-c7:#d3f4a8;--seat-c8:#f4b9ed;--seat-c9:#b7d0ff;--seat-c10:#f7e6b5;--seat-c11:#a5f1f4;--seat-c12:#ffc9c9}
+.seat-avatar{display:inline-block;width:18px;height:18px;flex:none;vertical-align:middle;color:var(--seat-color);fill:none;stroke:currentColor;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round}
+.seat-oval .oval-seat[class*="seat-color-"]{border-left:5px solid var(--seat-color)}
+.players-list li[class*="seat-color-"]{border-left:4px solid var(--seat-color);padding-left:8px}
+.seat-note{font-size:12px;color:var(--text-secondary);overflow-wrap:anywhere}
+.cosmetics-picker{display:grid;gap:12px;margin-top:14px}.cosmetics-picker h4{margin:8px 0 0;font-size:13px}
+.avatar-grid,.color-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px}
+.avatar-grid button,.color-grid button{display:grid;place-items:center;min-width:0;min-height:44px;padding:4px;background:var(--bg-panel);border:2px solid var(--border-seat-empty)}
+.avatar-grid button[aria-checked="true"],.color-grid button[aria-checked="true"]{outline:3px solid var(--accent);outline-offset:1px}
+.avatar-grid .seat-avatar{width:24px;height:24px;color:var(--accent)}
+.color-grid button:before{content:"";display:block;width:23px;height:23px;border-radius:50%;background:var(--seat-color);border:1px solid var(--border-seat-empty)}
+@media(max-width:699px){.seat-oval .oval-seat[class*="seat-color-"]{border-left-width:4px}.seat-avatar{width:14px;height:14px}}

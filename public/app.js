@@ -37,6 +37,7 @@ const sliderAmount = (position, min, max, blind) => {
   return Math.min(max, Math.max(min, amount));
 };
 const escape = value => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+const avatarIcon = id => `<svg class="seat-avatar" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><use href="/avatars.svg#${escape(id || 'chip')}"></use></svg>`;
 try { identity = JSON.parse(localStorage.getItem(STORAGE_KEY)); } catch { identity = null; }
 function saveIdentity(value) {
   identity = value;
@@ -499,6 +500,39 @@ function personalControls(scope) {
   const select = (path, label, value, choices) => `<label class="personal-field">${label}<select data-pref="${path}">${choices.map(([id, text]) => `<option value="${id}" ${value === id ? 'selected' : ''}>${text}</option>`).join('')}</select></label>`;
   return `<details class="personal-settings" id="personal-${scope}"><summary>Personal settings</summary><div class="personal-settings-body"><p class="helper">Your preferences stay on this device in guest mode and sync when you sign in.</p><h4>Sound</h4>${check('sound.on', 'Turn and win sounds', prefs.sound.on)}${select('sound.pack', 'Sound pack', prefs.sound.pack, [['classic','Classic'],['soft','Soft'],['arcade','Arcade']])}<h4>Vibration</h4>${check('vibration.on', 'Vibrate for events', prefs.vibration.on)}${select('vibration.yourTurn','Your turn',prefs.vibration.yourTurn,[['off','Off'],['short','Short'],['double','Double tap'],['long','Long']])}${select('vibration.win','Win',prefs.vibration.win,[['off','Off'],['short','Short'],['double','Double tap'],['long','Long']])}<button type="button" data-pref-test>Test sound and vibration</button><h4>Display</h4>${select('motion','Motion',prefs.motion,[['auto','System'],['reduce','Reduced'],['full','Full']])}${select('contrast','Contrast',prefs.contrast,[['normal','Normal'],['high','High']])}${select('density','Layout',prefs.density,[['compact','Compact'],['comfortable','Comfortable'],['large','Large text']])}${check('leftHanded','Left-handed controls',prefs.leftHanded)}${check('wakeLock','Keep screen on at the table',prefs.wakeLock)}<h4>Seat defaults</h4>${select('defaultAvatar','Avatar',prefs.defaultAvatar,window.TablematePrefs.enums.avatar.map(id=>[id,id[0].toUpperCase()+id.slice(1)]))}${select('defaultSeatColor','Color',prefs.defaultSeatColor,window.TablematePrefs.enums.seatColor.map((id,i)=>[id,`Color ${i+1}`]))}<label class="personal-field">Nickname or pronunciation<input data-pref="note" maxlength="24" value="${escape(prefs.note)}" autocomplete="off"></label></div></details>`;
 }
+function openCosmetics() {
+  const dialog = $('#cosmetics-dialog');
+  const current = state.cosmetics?.[state.playerId] || { avatar: 'chip', color: 'c1', note: '' };
+  const avatarNames = window.TablematePrefs.enums.avatar;
+  const colorNames = window.TablematePrefs.enums.seatColor;
+  dialog.innerHTML = `<div class="cosmetics-picker"><h2 id="cosmetics-title">Your seat style</h2><p class="helper">Your avatar, color and note are visible to everyone at this table.</p><h4>Avatar</h4><div class="avatar-grid" role="radiogroup" aria-label="Seat avatar">${avatarNames.map(id => `<button type="button" role="radio" aria-label="${id}" aria-checked="${current.avatar === id}" data-avatar-choice="${id}">${avatarIcon(id)}</button>`).join('')}</div><h4>Seat color</h4><div class="color-grid" role="radiogroup" aria-label="Seat color">${colorNames.map((id, index) => `<button type="button" class="seat-color-${id}" role="radio" aria-label="Color ${index + 1}" aria-checked="${current.color === id}" data-color-choice="${id}"></button>`).join('')}</div><form id="cosmetics-note-form"><label for="cosmetics-note">Nickname or pronunciation · 24 characters max</label><input id="cosmetics-note" maxlength="24" value="${escape(current.note)}" autocomplete="off"><button type="submit">Save note</button></form><p id="cosmetics-error" role="alert"></p><button type="button" id="cosmetics-close">Done</button></div>`;
+  const update = async patch => {
+    try {
+      const result = await request('seat:cosmetics', patch);
+      receive(result.state);
+      dialog.querySelectorAll('[data-avatar-choice]').forEach(button => button.setAttribute('aria-checked', String(button.dataset.avatarChoice === result.state.cosmetics[result.state.playerId].avatar)));
+      dialog.querySelectorAll('[data-color-choice]').forEach(button => button.setAttribute('aria-checked', String(button.dataset.colorChoice === result.state.cosmetics[result.state.playerId].color)));
+      $('#cosmetics-error').textContent = '';
+    } catch (error) { $('#cosmetics-error').textContent = error.message; }
+  };
+  dialog.onclick = event => {
+    const avatar = event.target.closest('[data-avatar-choice]');
+    const color = event.target.closest('[data-color-choice]');
+    if (avatar) update({ avatar: avatar.dataset.avatarChoice });
+    if (color) update({ color: color.dataset.colorChoice });
+  };
+  dialog.onkeydown = event => {
+    const selected = event.target.closest('[role="radio"]');
+    if (!selected || !['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp'].includes(event.key)) return;
+    event.preventDefault();
+    const siblings = [...selected.parentElement.querySelectorAll('[role="radio"]')];
+    const direction = ['ArrowRight', 'ArrowDown'].includes(event.key) ? 1 : -1;
+    siblings[(siblings.indexOf(selected) + direction + siblings.length) % siblings.length].focus();
+  };
+  dialog.querySelector('#cosmetics-note-form').onsubmit = event => { event.preventDefault(); update({ note: $('#cosmetics-note').value.trim() }); };
+  dialog.querySelector('#cosmetics-close').onclick = () => dialog.close();
+  openSheet(dialog, { labelledBy: 'cosmetics-title' });
+}
 function rebuyRequestControls() {
   const pending = (state.rebuyRequests || []).find(item => item.id === state.playerId);
   if (pending) return `<section class="rebuy-request-controls"><h3>Rebuy request</h3><p role="status">Pending · ${number(pending.amount)} chips</p><button type="button" id="cancel-rebuy-request">Cancel request</button></section>`;
@@ -768,7 +802,8 @@ function seatOval(order) {
     const p = state.players.find(player => player.id === id);
     const status = playing && p.folded ? '× Folded' : playing && p.inHand && p.stack === 0 ? '⚡ All-in' : p.sittingOut ? '⏸ Away' : !p.connected ? '⏸ Offline' : p.id === state.turn ? '▶ To act' : playing ? '● In hand' : '✓ Ready';
     const statusKind = playing && p.folded ? 'folded' : playing && p.inHand && p.stack === 0 ? 'allin' : p.sittingOut || !p.connected ? 'away' : p.id === state.turn ? 'active' : 'ready';
-    return `<article class="oval-seat slot-${index} ${p.id === state.turn ? 'acting' : ''} ${p.id === state.playerId ? 'my-seat' : ''} ${playing && p.folded ? 'folded-seat' : ''}"><div class="oval-name"><small>${index + 1}</small><strong title="${escape(p.name)}">${escape(p.name)}</strong></div><span class="seat-owner">${p.id === state.playerId ? `You • Seat ${index + 1}` : `Seat ${index + 1}`}</span><div class="seat-roles">${Object.entries(roles).filter(([, id]) => id === p.id).map(([role]) => `<span class="role-${role}" title="${role === 'D' ? 'Dealer' : role === 'SB' ? 'Small blind' : 'Big blind'}">${role}</span>`).join('')}</div><strong class="oval-stack" title="${number(p.stack)} chips" aria-label="${number(p.stack)} chips">${compactStack(p.stack)}</strong><small>Bet ${number(p.streetBet)}</small><span class="oval-status status-${statusKind} ${!playing && p.connected && !p.sittingOut ? 'ready-pill' : ''}">${status}</span></article>`;
+    const cosmetic = state.cosmetics?.[id] || { avatar: 'chip', color: 'c1' };
+    return `<article class="oval-seat slot-${index} seat-color-${escape(cosmetic.color)} ${p.id === state.turn ? 'acting' : ''} ${p.id === state.playerId ? 'my-seat' : ''} ${playing && p.folded ? 'folded-seat' : ''}"><div class="oval-name"><small>${index + 1}</small>${avatarIcon(cosmetic.avatar)}<strong title="${escape(p.name)}">${escape(p.name)}</strong></div><span class="seat-owner">${p.id === state.playerId ? `You • Seat ${index + 1}` : `Seat ${index + 1}`}</span><div class="seat-roles">${Object.entries(roles).filter(([, id]) => id === p.id).map(([role]) => `<span class="role-${role}" title="${role === 'D' ? 'Dealer' : role === 'SB' ? 'Small blind' : 'Big blind'}">${role}</span>`).join('')}</div><strong class="oval-stack" title="${number(p.stack)} chips" aria-label="${number(p.stack)} chips">${compactStack(p.stack)}</strong><small>Bet ${number(p.streetBet)}</small><span class="oval-status status-${statusKind} ${!playing && p.connected && !p.sittingOut ? 'ready-pill' : ''}">${status}</span></article>`;
   }).join('')}</div>`;
 }
 function positionSeats() {
@@ -873,10 +908,10 @@ function render() {
       ${state.lastResult && state.street === 'complete' ? `<section class="result"><h2>That’s a hand.</h2>${state.lastResult.awards.map(a => `<p>${escape(state.players.find(p => p.id === a.id)?.name || 'Departed player')} <strong>+${number(a.amount)}</strong> · ${escape(a.label)}</p>`).join('')}${[...new Set(state.lastResult.awards.map(a => a.id))].map(id => { const winner = state.players.find(p => p.id === id); return winner ? `<p class="winner-record">${escape(winner.name)} has won ${winner.handsWon} of ${winner.handsPlayed} played hands; dealt ${winner.handsDealt} total tonight.</p>` : ''; }).join('')}</section>` : ''}
       ${state.street === 'showdown' ? `<section class="showdown"><h2>Who takes the pot?</h2><p class="helper">${host ? 'Select every tied winner for each pot. Chips settle after all pots are assigned; odd chips go left of the dealer.' : 'The host is selecting winners from the physical cards.'}</p>${state.pots.map((pot, index) => `<form class="winner-form" data-pot="${pot.id}"><h3>${index ? `Side pot ${index}` : 'Main pot'} · ${number(pot.amount)} chips</h3>${pot.winners ? `<p class="helper">Selected: ${pot.winners.map(id => escape(state.players.find(p => p.id === id).name)).join(' + ')}</p>` : pot.eligible.map(id => `<label for="winner-${pot.id}-${id}"><input id="winner-${pot.id}-${id}" type="checkbox" name="winner" value="${escape(id)}" ${!host ? 'disabled' : ''}>${escape(state.players.find(p => p.id === id).name)}</label>`).join('')}${host && !pot.winners ? '<button class="primary" type="submit">Confirm winner(s)</button>' : ''}</form>`).join('')}</section>` : ''}
     </section><details class="rail-drawer" id="table-rail" ${railMedia.matches ? 'open' : ''}><summary>Players, hand log & controls</summary><aside class="sidebar">
-      <details class="panel" id="players-panel" open><summary>Players <span>${state.players.length}/10</span></summary><ul class="players-list">${state.seatOrder.map(id => { const p = state.players.find(p => p.id === id); return `<li><strong>${escape(p.name)}${p.id === state.playerId ? ' · You' : ''}</strong><span>${p.sittingOut ? '⏸ Away' : p.connected ? '✓ Connected' : '⏸ Offline'}</span><span>Won ${p.handsWon} · Played ${p.handsPlayed} · Dealt ${p.handsDealt}</span></li>`; }).join('')}</ul><div class="panel-content"><button id="donate-chips" ${playing || me.stack < 1 || state.players.length < 2 ? 'disabled' : ''}>Donate chips</button><button id="open-tonight-players">Tonight</button><p class="helper">${playing ? 'Available between hands.' : 'Give chips from your stack to another player.'}</p></div></details>
+      <details class="panel" id="players-panel" open><summary>Players <span>${state.players.length}/10</span></summary><ul class="players-list">${state.seatOrder.map(id => { const p = state.players.find(p => p.id === id); const cosmetic = state.cosmetics?.[id] || { avatar:'chip',color:'c1',note:'' }; return `<li class="seat-color-${escape(cosmetic.color)}"><strong>${avatarIcon(cosmetic.avatar)} ${escape(p.name)}${p.id === state.playerId ? ' · You' : ''}</strong><span>${p.sittingOut ? '⏸ Away' : p.connected ? '✓ Connected' : '⏸ Offline'}</span>${cosmetic.note ? `<span class="seat-note">${escape(cosmetic.note)}</span>` : ''}<span>Won ${p.handsWon} · Played ${p.handsPlayed} · Dealt ${p.handsDealt}</span></li>`; }).join('')}</ul><div class="panel-content"><button id="donate-chips" ${playing || me.stack < 1 || state.players.length < 2 ? 'disabled' : ''}>Donate chips</button><button id="open-tonight-players">Tonight</button><p class="helper">${playing ? 'Available between hands.' : 'Give chips from your stack to another player.'}</p></div></details>
       <details class="panel" id="hand-log" ${railMedia.matches ? 'open' : ''}><summary>Hand log <span>Hand ${state.handNumber}</span></summary><ol class="log-list">${handLog()}</ol></details>
       ${host ? hostPanel(playing, actor) : ''}
-      <details class="panel" id="your-seat"><summary>Your seat</summary><div class="panel-content"><p class="helper">${playing ? 'Sit out applies from the next hand. Leave and rebuy between hands.' : 'Ask your host for a rebuy or add-on.'}</p><button id="sit-out">${me.sittingOut ? 'Play next hand' : 'Sit out next hand'}</button><button id="leave" class="quiet danger" ${playing ? 'disabled' : ''}>Leave table</button>${rebuyRequestControls()}${themePickerMarkup('seat')}${pushControls()}${alertControls()}</div></details>
+      <details class="panel" id="your-seat"><summary>Your seat</summary><div class="panel-content"><p class="helper">${playing ? 'Sit out applies from the next hand. Leave and rebuy between hands.' : 'Ask your host for a rebuy or add-on.'}</p><button id="sit-out">${me.sittingOut ? 'Play next hand' : 'Sit out next hand'}</button><button id="leave" class="quiet danger" ${playing ? 'disabled' : ''}>Leave table</button><button type="button" id="open-cosmetics">Avatar & seat color</button>${rebuyRequestControls()}${themePickerMarkup('seat')}${pushControls()}${alertControls()}</div></details>
     </aside></details></div>
     <section class="dock" aria-label="Your betting controls"><div class="dock-inner"><div class="dock-summary"><div class="turn-label ${state.legal.active ? '' : 'waiting'}${ready && !state.legal.active && actor ? ' other-turn' : ''}" role="status">${!ready ? 'RECONNECTING' : state.legal.active ? 'YOUR TURN' : state.street === 'showdown' ? 'SHOWDOWN' : actor ? `${escape(actor.name).toUpperCase()} TO ACT` : host ? 'HOST · TABLE CONTROLS' : 'WAITING FOR HOST'}</div><div class="balance"><span>Your stack</span><strong>${number(me.stack)}</strong></div><div class="balance"><span>To call</span><strong>${number(state.legal.toCall)}</strong></div></div>
       ${!playing ? `<div class="lobby-actions"><button id="invite-players">Invite players</button><button id="change-seat">Change seat</button><button id="set-buy-in">${host ? 'Set buy-in' : 'View buy-in'}</button><button id="open-tonight-dock">Tonight</button>${host ? `<button id="open-rebuy-requests-dock" ${requestCount ? '' : 'disabled'}>Rebuy requests (${requestCount})</button><button id="start-hand" class="primary" ${state.players.filter(p => p.stack > 0 && !p.sittingOut).length < 2 ? 'disabled' : ''}>${state.handNumber ? 'Start next hand' : 'Start game'} →</button>` : '<span class="helper">Your host starts the hand.</span>'}</div>` : ''}
@@ -926,6 +961,7 @@ function wireTable(me, pot) {
   $('#host-fold')?.addEventListener('click', () => run('host-fold'));
   $('#sit-out').addEventListener('click', () => run('sit-out', { value: !me.sittingOut }));
   $('#leave').addEventListener('click', leaveConfirmation);
+  $('#open-cosmetics').addEventListener('click', openCosmetics);
   $('#rebuy-request-form')?.addEventListener('submit', event => {
     event.preventDefault(); run('rebuy:request', { amount: Number($('#rebuy-request-amount').value) });
   });

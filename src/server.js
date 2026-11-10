@@ -14,7 +14,7 @@ import { createAuth, normalizeEmail } from './auth.js';
 import { aggregateStats, paginateNights } from './stats.js';
 import { LeagueStore } from './league-store.js';
 import { validateScoring, computeStandings, recordsFromResults } from './league.js';
-import { normalizePrefs, validatePrefs } from './prefs-schema.js';
+import { DEFAULT_PREFS, PREF_ENUMS, normalizePrefs, validatePrefs } from './prefs-schema.js';
 
 const SIX_HOURS = 6 * 60 * 60 * 1000;
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -329,6 +329,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     const handInProgress = game.isPlaying(room.game);
     return { ...state, roomCode: room.code, nightId: room.nightId, hostId: room.hostId, playerId: id, revision: room.revision,
       signedIn: room.accounts.has(id),
+      cosmetics: Object.fromEntries(room.cosmetics),
       canUndo: room.game.history.length > 0, serverTime: now(),
       settlement: structuredClone(room.lastSettlement || game.settlement(room.game)),
       settlementNote: handInProgress ? 'Hand in progress. Showing totals from before this hand.' : '',
@@ -378,6 +379,15 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     socket.data.identity = { code: room.code, id };
     room.lastActive = now();
   }
+  function seedCosmetics(socket, room, id) {
+    const preferred = socket.data.accountId ? socket.data.prefs || DEFAULT_PREFS : null;
+    const taken = new Set([...room.cosmetics.values()].map(value => value.color));
+    const start = preferred ? PREF_ENUMS.seatColor.indexOf(preferred.defaultSeatColor) : (room.game.players.length - 1) % PREF_ENUMS.seatColor.length;
+    const color = [...PREF_ENUMS.seatColor.slice(start), ...PREF_ENUMS.seatColor.slice(0, start)].find(candidate => !taken.has(candidate));
+    requireValue(color, 'Every seat color is taken.');
+    const avatar = preferred?.defaultAvatar || PREF_ENUMS.avatar[(room.game.players.length - 1) % PREF_ENUMS.avatar.length];
+    room.cosmetics.set(id, { avatar, color, note: preferred?.note || '' });
+  }
   function member(socket, payload) {
     const identity = socket.data.identity;
     const room = rooms.get(identity?.code);
@@ -395,6 +405,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     room.connections.delete(id);
     room.tokens.delete(id);
     room.rebuyRequests.delete(id);
+    room.cosmetics.delete(id);
     room.pushSubscriptions.delete(id);
     room.presence.delete(id);
   }
@@ -414,7 +425,10 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
 
   io.use(async (socket, next) => {
     if (accountsEnabled) {
-      try { socket.data.accountId = (await auth.accountFromCookie(socket.handshake.headers.cookie))?.id ?? null; }
+      try {
+        socket.data.accountId = (await auth.accountFromCookie(socket.handshake.headers.cookie))?.id ?? null;
+        if (socket.data.accountId) socket.data.prefs = await store.getSettings(socket.data.accountId);
+      }
       catch (error) { logError(error); socket.data.accountId = null; }
     }
     next();
@@ -462,10 +476,10 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
       const room = { code, nightId: randomUUID(), startedAt: now(), endedAt: null, hostId: id, game: state,
         leagueId: league?.id ?? null, seasonId: league ? leagueStore.activeSeason(league.id)?.id ?? null : null,
         tokens: new Map([[id, token]]), tokenHashes: new Map([[id, hashToken(token)]]), accounts: new Map(),
-        connections: new Map(), rebuyRequests: new Map(), pushSubscriptions: new Map(), presence: new Map(),
+        connections: new Map(), rebuyRequests: new Map(), cosmetics: new Map(), pushSubscriptions: new Map(), presence: new Map(),
         lastActive: now(), revision: 0, lastSettlement: null };
       rooms.set(code, room); if (league) liveByLeague.set(league.id, code);
-      bind(socket, room, id); broadcast(room);
+      seedCosmetics(socket, room, id); bind(socket, room, id); broadcast(room);
       return { token, playerId: id, roomCode: code, state: view(room, id) };
     });
     on('table-preview', payload => {
@@ -484,7 +498,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
       room.game = game.addPlayer(room.game, id, payload.name);
       const token = randomBytes(32).toString('hex');
       room.tokens.set(id, token); room.tokenHashes.set(id, hashToken(token)); room.revision++;
-      bind(socket, room, id); broadcast(room);
+      seedCosmetics(socket, room, id); bind(socket, room, id); broadcast(room);
       return { token, playerId: id, roomCode: room.code, state: view(room, id) };
     });
     on('rejoin', payload => {
@@ -492,6 +506,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
       const room = rooms.get(payload.code.toUpperCase());
       requireValue(room, 'Room no longer exists. Create a new table.');
       requireValue(safeTokenEqual(room.tokens.get(payload.playerId), payload.token), 'Seat token is invalid.');
+      if (!room.cosmetics.has(payload.playerId)) seedCosmetics(socket, room, payload.playerId);
       bind(socket, room, payload.playerId); broadcast(room);
       return { playerId: payload.playerId, roomCode: room.code, state: view(room, payload.playerId) };
     });
@@ -514,6 +529,14 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     mutate('showdown-pick', (room, _id, payload) => game.pickWinners(room.game, payload.potId, payload.winnerIds), true);
     mutate('host-settings', (room, _id, payload) => game.configure(room.game, payload.settings), true);
     mutate('host:reorderSeats', (room, _id, payload) => game.reorderSeats(room.game, payload.order), true);
+    on('seat:cosmetics', payload => {
+      const { room, id } = member(socket, payload);
+      requireValue(Object.keys(payload).some(key => ['avatar', 'color', 'note'].includes(key)), 'Choose a seat style first.');
+      const next = { ...room.cosmetics.get(id), ...Object.fromEntries(['avatar', 'color', 'note'].filter(key => Object.hasOwn(payload, key)).map(key => [key, payload[key]])) };
+      requireValue(![...room.cosmetics].some(([otherId, value]) => otherId !== id && value.color === next.color), 'That seat color is already in use.');
+      room.cosmetics.set(id, next); room.lastActive = now(); broadcast(room);
+      return { state: view(room, id) };
+    });
     on('host:endNight', payload => {
       const { room, id } = member(socket, payload); host(room, id);
       requireValue(payload.revision === undefined || payload.revision === room.revision, 'Table changed. Please try again.');

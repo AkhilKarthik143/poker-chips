@@ -1,4 +1,5 @@
 /** Only explicitly safe validation errors may cross the socket boundary. */
+import { PREF_ENUMS } from './prefs-schema.js';
 export class RequestError extends Error {}
 export const requireValue = (condition, message = 'Invalid request.') => { if (!condition) throw new RequestError(message); };
 export const validName = value => typeof value === 'string' && value.length <= 80 && value.normalize('NFKC').trim().length >= 1 && value.normalize('NFKC').trim().length <= 20 && !/[\p{Cc}\p{Cf}<>]/u.test(value);
@@ -6,6 +7,7 @@ export const normalizedName = value => value.normalize('NFKC').trim();
 const integer = (max, min = 0) => value => Number.isSafeInteger(value) && value >= min && value <= max;
 const uuid = value => typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value);
 const token = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
+const note = value => typeof value === 'string' && value.length <= 24 && !/[\p{Cc}\p{Cf}<>]/u.test(value);
 const code = value => typeof value === 'string' && /^[A-HJ-NP-Z]{8}$/i.test(value);
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const pushSubscription = value => {
@@ -38,6 +40,7 @@ const schemas = {
   'showdown-pick': [{...auth,potId:integer(9),winnerIds:ids},{}],
   'host-settings': [{...auth,settings:value=>settings(value)&&Object.keys(value).length>0},{}],
   'host:reorderSeats': [{...auth,order:ids},{}],
+  'seat:cosmetics': [{token},{revision:integer(Number.MAX_SAFE_INTEGER),avatar:value=>PREF_ENUMS.avatar.includes(value),color:value=>PREF_ENUMS.seatColor.includes(value),note}],
   'host:endNight': [{token},{revision:integer(Number.MAX_SAFE_INTEGER)}],
   undo: [auth,{}],
   'sit-out': [{...auth,value:value=>typeof value==='boolean'},{}],

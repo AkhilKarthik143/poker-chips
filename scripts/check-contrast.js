@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 
 const source = readFileSync(new URL('../public/tokens.css', import.meta.url), 'utf8');
+const styleSource = readFileSync(new URL('../public/style.css', import.meta.url), 'utf8');
 const baseBlock = source.match(/^:root\s*\{([^}]*)\}/m)?.[1];
 if (!baseBlock) throw new Error('Missing base token block in public/tokens.css');
 
@@ -20,6 +21,10 @@ const base = parseTokens(baseBlock);
 const themes = new Map();
 for (const match of source.matchAll(/:root\[data-theme="([a-z-]+)"\]\s*,\s*\[data-theme-preview="\1"\]\s*\{([^}]*)\}/g)) {
   themes.set(match[1], new Map([...base, ...parseTokens(match[2])]));
+}
+const highContrast = new Map(base);
+for (const match of styleSource.matchAll(/:root\[data-contrast="high"\]\s*\{([^}]*)\}/g)) {
+  for (const [key, value] of parseTokens(match[1])) highContrast.set(key, value);
 }
 
 function rgb(theme, token) {
@@ -64,6 +69,14 @@ for (const name of themeNames) {
   }
   check('net-up', 'bg-panel', 4.5, 'positive settlement text on bg-panel');
   check('net-down', 'bg-panel', 4.5, 'negative settlement text on bg-panel');
+  const colors = new Set();
+  for (let index = 1; index <= 12; index++) {
+    const token = `seat-c${index}`;
+    check(token, 'bg-seat-occupied', 3, `${token} against occupied seat`);
+    if (colors.has(theme.get(token))) failures.push(`${name}: duplicate seat color ${token}`);
+    colors.add(theme.get(token));
+    if (contrast(highContrast, token, 'bg-seat-occupied') < 4.5) failures.push(`high contrast: ${token} below 4.5:1`);
+  }
 
   if (name === 'felt') continue;
   const extendedSurfaces = ['bg-stage', 'bg-selected', 'bg-active-seat', 'bg-action-bar'];
