@@ -19,13 +19,14 @@ import { DEFAULT_PREFS, PREF_ENUMS, normalizePrefs, validatePrefs } from './pref
 import { MAX_PRESETS, normalizePreset, validPreset } from './preset-schema.js';
 import { normalizeRebuyPolicy, validRebuyPolicy } from './rebuy-policy.js';
 import { THIRTY_DAYS, usernameError, validAvatar, validPrivacy, avatarForAccount, privacyForAccount, defaultAvatarV2 } from './identity.js';
+import { hasUnityBuild, unityStatic } from './static-unity.js';
 
 const SIX_HOURS = 6 * 60 * 60 * 1000;
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
 const safeTokenEqual = (a, b) => typeof a === 'string' && typeof b === 'string' && a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
 const hashToken = value => createHash('sha256').update(value).digest('hex');
 
-export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupIntervalMs = 60_000, allowedOrigins = process.env.NODE_ENV === 'production' ? [process.env.RENDER_EXTERNAL_URL || 'https://poker-chips-o7n9.onrender.com'] : null, trustProxy = process.env.RENDER === 'true', devLogin = process.env.TABLEMATE_DEV_LOGIN === '1', googleClientId = process.env.GOOGLE_CLIENT_ID, verifyGoogleIdToken = null, logError = error => process.stderr.write(`${error.stack}\n`), pushTransport = webPush, vapid = { publicKey: process.env.VAPID_PUBLIC_KEY, privateKey: process.env.VAPID_PRIVATE_KEY, subject: process.env.VAPID_SUBJECT }, store = createStore(), mailer = createMailer() } = {}) {
+export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupIntervalMs = 60_000, allowedOrigins = process.env.NODE_ENV === 'production' ? [process.env.RENDER_EXTERNAL_URL || 'https://poker-chips-o7n9.onrender.com'] : null, trustProxy = process.env.RENDER === 'true', devLogin = process.env.TABLEMATE_DEV_LOGIN === '1', googleClientId = process.env.GOOGLE_CLIENT_ID, verifyGoogleIdToken = null, logError = error => process.stderr.write(`${error.stack}\n`), pushTransport = webPush, vapid = { publicKey: process.env.VAPID_PUBLIC_KEY, privateKey: process.env.VAPID_PRIVATE_KEY, subject: process.env.VAPID_SUBJECT }, store = createStore(), mailer = createMailer(), avatarCreatorRoot = fileURLToPath(new URL('../public/avatar-creator/', import.meta.url)) } = {}) {
   const app = express();
   const httpServer = createHttpServer(app);
   const originAllowed = (origin, requestHost) => allowedOrigins ? allowedOrigins.includes(origin)
@@ -33,6 +34,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
   const emailEnabled = store.enabled && mailer.enabled;
   const googleEnabled = store.enabled && typeof googleClientId === 'string' && /^[A-Za-z0-9_-]+\.apps\.googleusercontent\.com$/.test(googleClientId);
   const accountsEnabled = emailEnabled || googleEnabled;
+  const avatarCreator = accountsEnabled && hasUnityBuild(avatarCreatorRoot);
   const auth = accountsEnabled ? createAuth({ store, mailer, now }) : null;
   const activeSession = accountsEnabled ? store.db.prepare('SELECT 1 FROM sessions WHERE token_hash = ? AND account_id = ? AND expires_at > ?') : null;
   const googleClient = googleEnabled && !verifyGoogleIdToken ? new OAuth2Client(googleClientId) : null;
@@ -126,7 +128,8 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     next();
   });
   app.get('/healthz', (_req, res) => res.status(200).json({ ok: true }));
-  app.get('/api/config', (_req, res) => res.json({ accounts: accountsEnabled, email: emailEnabled, googleClientId: googleEnabled ? googleClientId : null }));
+  app.get('/api/config', (_req, res) => res.json({ accounts: accountsEnabled, email: emailEnabled,
+    googleClientId: googleEnabled ? googleClientId : null, avatarCreator }));
   app.use('/api', express.json({ limit: '4kb' }));
   const authLimits = new Map();
   function apiOrigin(req, res, next) {
@@ -515,6 +518,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     leagueStore.reviewNight(req.league.id, req.params.nightId, action === 'restore', req.leagueMember.id, reason.trim(), now(), randomUUID());
     res.json({ counts: action === 'restore' });
   });
+  app.use('/avatar-creator', unityStatic(avatarCreatorRoot, avatarCreator));
   app.use((error, _req, res, _next) => {
     if (error instanceof RequestError) { res.status(400).json({ error: error.message }); return; }
     logError(error); res.status(500).json({ error: 'Something went wrong.' });

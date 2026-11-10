@@ -32,7 +32,7 @@ test('magic link is single-use, session is private and logout invalidates it', a
   const sockets = [];
   t.after(async () => { sockets.forEach(socket => socket.disconnect()); await server.close(); });
   const post = (path, body, cookie) => fetch(url + path, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(cookie ? { Cookie: cookie } : {}) }, body: JSON.stringify(body) });
-  assert.deepEqual(await (await fetch(url + '/api/config')).json(), { accounts: true, email: true, googleClientId: null });
+  assert.deepEqual(await (await fetch(url + '/api/config')).json(), { accounts: true, email: true, googleClientId: null, avatarCreator: false });
   assert.equal((await fetch(url + '/api/auth/request', { method: 'POST', headers: { Origin: 'https://foreign.example', 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'alex@example.com' }) })).status, 403);
   const first = await post('/api/auth/request', { email: 'ALEX@example.com' });
   const second = await post('/api/auth/request', { email: 'unknown@example.com' });
@@ -74,7 +74,7 @@ test('no-database mode hides auth endpoints', async t => {
   const address = await server.listen();
   const url = `http://127.0.0.1:${address.port}`;
   t.after(() => server.close());
-  assert.deepEqual(await (await fetch(url + '/api/config')).json(), { accounts: false, email: false, googleClientId: null });
+  assert.deepEqual(await (await fetch(url + '/api/config')).json(), { accounts: false, email: false, googleClientId: null, avatarCreator: false });
   assert.equal((await fetch(url + '/api/auth/request', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status, 404);
   assert.equal((await fetch(url + '/api/auth/google', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status, 404);
   assert.equal((await fetch(url + '/api/me')).status, 404);
@@ -128,7 +128,7 @@ test('Google sign-in verifies a credential, links by subject and uses the normal
   t.after(() => server.close());
   const post = (path, body, headers = {}) => fetch(url + path, { method: 'POST',
     headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body) });
-  assert.deepEqual(await (await fetch(url + '/api/config')).json(), { accounts: true, email: true, googleClientId: clientId });
+  assert.deepEqual(await (await fetch(url + '/api/config')).json(), { accounts: true, email: true, googleClientId: clientId, avatarCreator: false });
   const loginPolicy = (await fetch(url + '/login.html')).headers.get('content-security-policy');
   assert.match(loginPolicy, /https:\/\/accounts\.google\.com\/gsi\/client/);
   assert.match(loginPolicy, /style-src 'self' 'unsafe-inline' https:\/\/accounts\.google\.com\/gsi\/style/,
@@ -171,7 +171,7 @@ test('Google-only accounts work without mail delivery', async t => {
   const url = `http://127.0.0.1:${port}`;
   t.after(() => server.close());
   assert.deepEqual(await (await fetch(url + '/api/config')).json(),
-    { accounts: true, email: false, googleClientId: '12345-test.apps.googleusercontent.com' });
+    { accounts: true, email: false, googleClientId: '12345-test.apps.googleusercontent.com', avatarCreator: false });
   const headers = { 'Content-Type': 'application/json' };
   assert.equal((await fetch(url + '/api/auth/request', { method: 'POST', headers, body: '{}' })).status, 404);
   assert.equal((await fetch(url + '/api/auth/google', { method: 'POST', headers,
