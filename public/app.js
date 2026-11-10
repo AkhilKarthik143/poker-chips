@@ -269,6 +269,7 @@ $('#entry-form').addEventListener('submit', async event => {
     const data = { name: $('#name').value.trim() };
     if (mode === 'create') {
       data.settings = { startingStack: Number($('#starting-stack').value), smallBlind: Number($('#small-blind').value), bigBlind: Number($('#big-blind').value), blindMinutes: Number($('#blind-minutes').value), centsPer1000Chips: Math.round(Number($('#cash-value').value) * 100) };
+      data.rebuyPolicy = policyFromForm();
       const leagueId = new URL(window.location.href).searchParams.get('league');
       if (leagueId) data.leagueId = leagueId;
     }
@@ -605,7 +606,7 @@ function openPresets(kind) {
 function rebuyRequestControls() {
   const pending = (state.rebuyRequests || []).find(item => item.id === state.playerId);
   if (pending) return `<section class="rebuy-request-controls"><h3>Rebuy request</h3><p role="status">Pending · ${number(pending.amount)} chips</p><button type="button" id="cancel-rebuy-request">Cancel request</button></section>`;
-  return `<form id="rebuy-request-form" class="rebuy-request-controls"><h3>Request rebuy</h3><label for="rebuy-request-amount">Amount · virtual chips</label><div class="amount-stepper"><button type="button" data-rebuy-step="-1" aria-label="Decrease rebuy amount">−</button><input id="rebuy-request-amount" type="number" inputmode="numeric" min="1" max="1000000000" step="1" value="${state.settings.startingStack}" required><button type="button" data-rebuy-step="1" aria-label="Increase rebuy amount">+</button></div><p class="helper">The host approves requests between hands.</p><button type="submit">Send rebuy request</button></form>`;
+  return `<form id="rebuy-request-form" class="rebuy-request-controls"><h3>Request rebuy</h3><label for="rebuy-request-amount">Amount · virtual chips</label><div class="amount-stepper"><button type="button" data-rebuy-step="-1" aria-label="Decrease rebuy amount">−</button><input id="rebuy-request-amount" type="number" inputmode="numeric" min="1" max="1000000000" step="1" value="${state.settings.startingStack}" required><button type="button" data-rebuy-step="1" aria-label="Increase rebuy amount">+</button></div><p class="helper">${state.rebuyPolicy?.mode === 'auto' ? `Requests up to ${number(state.rebuyPolicy.cap)} chips auto-approve between hands, up to ${state.rebuyPolicy.maxPerPlayer} times per player. The host reviews other requests.` : 'The host approves requests between hands.'}</p><button type="submit">Send rebuy request</button></form>`;
 }
 function tonightText(summary) {
   const totals = summary.rebuyTotals || summary.rows.reduce((result, row) => ({
@@ -1007,6 +1008,7 @@ function hostPanel(playing, actor) {
   const requestCount = (state.rebuyRequests || []).length;
   return `<details class="panel" id="host-menu"><summary tabindex="0">Host controls</summary><div class="panel-content"><button id="undo" ${!state.canUndo ? 'disabled' : ''}>Undo last action</button><button type="button" id="open-rebuy-requests-host" ${requestCount ? '' : 'disabled'}>Rebuy requests (${requestCount})</button>${actor && !actor.connected ? '<button id="host-fold" class="danger">Fold disconnected player</button>' : ''}<p class="helper">${playing ? 'Settings are available between hands.' : 'Changes to the starting stack apply to new seats. Before the first hand, they apply to everyone.'}</p>
     <form id="settings-form"><div class="form-grid"><div><label for="host-stack">Starting stack</label><input id="host-stack" type="number" min="1" max="1000000000" value="${state.settings.startingStack}" ${playing ? 'disabled' : ''} required></div><div><label for="host-timer">Timer (minutes)</label><input id="host-timer" type="number" min="0" max="1440" value="${state.settings.blindMinutes}" ${playing ? 'disabled' : ''} required></div><div><label for="host-sb">Small blind</label><input id="host-sb" type="number" min="1" value="${state.settings.smallBlind}" ${playing ? 'disabled' : ''} required></div><div><label for="host-bb">Big blind</label><input id="host-bb" type="number" min="1" value="${state.settings.bigBlind}" ${playing ? 'disabled' : ''} required></div><div><label for="host-cash-value">Cash value per 1,000 chips ($)</label><input id="host-cash-value" type="number" inputmode="decimal" min="0" max="100000" step="0.01" value="${(state.settings.centsPer1000Chips / 100).toFixed(2)}" ${playing ? 'disabled' : ''}></div></div><button type="submit" ${playing ? 'disabled' : ''}>Save table settings</button></form>
+    <form id="host-policy-form"><h3>Rebuy approval</h3><label for="host-policy-mode">Mode</label><select id="host-policy-mode"><option value="host" ${state.rebuyPolicy?.mode === 'host' ? 'selected' : ''}>Host approves</option><option value="auto" ${state.rebuyPolicy?.mode === 'auto' ? 'selected' : ''}>Auto-approve up to a cap</option></select><div id="host-policy-auto" ${state.rebuyPolicy?.mode === 'auto' ? '' : 'hidden'}><label for="host-policy-cap">Cap · chips</label><input id="host-policy-cap" type="number" min="1" max="1000000000" value="${state.rebuyPolicy?.cap ?? state.settings.startingStack}"><label for="host-policy-limit">Auto rebuys per player</label><input id="host-policy-limit" type="number" min="0" max="20" value="${state.rebuyPolicy?.maxPerPlayer ?? 3}"></div><button type="submit">Save rebuy policy</button></form>
     <form id="rebuy-form"><label for="rebuy-player">Rebuy / add-on</label><select id="rebuy-player" ${playing ? 'disabled' : ''}>${state.players.map(option).join('')}</select><label for="rebuy-amount">Chips to add</label><input id="rebuy-amount" type="number" min="1" max="1000000000" value="${state.settings.startingStack}" ${playing ? 'disabled' : ''} required><button type="submit" ${playing ? 'disabled' : ''}>Add chips</button></form>
     ${state.players.length > 1 ? `<form id="kick-form"><label for="kick-player">Remove a player</label><select id="kick-player" ${playing ? 'disabled' : ''}>${state.players.filter(p => p.id !== state.playerId).map(option).join('')}</select><button class="danger quiet" type="submit" ${playing ? 'disabled' : ''}>Remove selected player</button></form>` : ''}</div></details>`;
 }
@@ -1070,6 +1072,12 @@ function wireTable(me, pot) {
   $('#raise-form')?.addEventListener('submit', event => { event.preventDefault(); run('action', { type: 'raise', amount: Number($('#raise-amount').value) }); });
   $('#settings-form')?.addEventListener('submit', event => {
     event.preventDefault(); run('host-settings', { settings: { startingStack: Number($('#host-stack').value), smallBlind: Number($('#host-sb').value), bigBlind: Number($('#host-bb').value), blindMinutes: Number($('#host-timer').value), centsPer1000Chips: Math.round(Number($('#host-cash-value').value) * 100) } });
+  });
+  $('#host-policy-mode')?.addEventListener('change', () => { $('#host-policy-auto').hidden = $('#host-policy-mode').value !== 'auto'; });
+  $('#host-policy-form')?.addEventListener('submit', event => {
+    event.preventDefault();
+    const mode = $('#host-policy-mode').value;
+    run('host:rebuyPolicy', mode === 'auto' ? { mode, cap: Number($('#host-policy-cap').value), maxPerPlayer: Number($('#host-policy-limit').value) } : { mode });
   });
   $('#rebuy-form')?.addEventListener('submit', event => { event.preventDefault(); run('rebuy', { playerId: $('#rebuy-player').value, amount: Number($('#rebuy-amount').value) }); });
   $('#kick-form')?.addEventListener('submit', event => { event.preventDefault(); run('kick', { playerId: $('#kick-player').value }); });

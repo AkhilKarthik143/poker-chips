@@ -16,6 +16,7 @@ import { LeagueStore } from './league-store.js';
 import { validateScoring, computeStandings, recordsFromResults } from './league.js';
 import { DEFAULT_PREFS, PREF_ENUMS, normalizePrefs, validatePrefs } from './prefs-schema.js';
 import { MAX_PRESETS, normalizePreset, validPreset } from './preset-schema.js';
+import { normalizeRebuyPolicy, validRebuyPolicy } from './rebuy-policy.js';
 
 const SIX_HOURS = 6 * 60 * 60 * 1000;
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -352,6 +353,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     return { ...state, roomCode: room.code, nightId: room.nightId, hostId: room.hostId, playerId: id, revision: room.revision,
       signedIn: room.accounts.has(id),
       cosmetics: Object.fromEntries(room.cosmetics),
+      rebuyPolicy: room.rebuyPolicy,
       canUndo: room.game.history.length > 0, serverTime: now(),
       settlement: structuredClone(room.lastSettlement || game.settlement(room.game)),
       settlementNote: handInProgress ? 'Hand in progress. Showing totals from before this hand.' : '',
@@ -370,6 +372,25 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     room.game.log.forEach(item => { if (item.timestamp === undefined) item.timestamp = now(); });
     if (!game.isPlaying(room.game)) room.lastSettlement = game.settlement(room.game);
     for (const [id, socketId] of room.connections) io.sockets.sockets.get(socketId)?.emit('state', view(room, id));
+  }
+  function autoEligible(room, id, amount) {
+    return room.rebuyPolicy.mode === 'auto' && amount <= room.rebuyPolicy.cap
+      && (room.autoRebuys.get(id) || 0) < room.rebuyPolicy.maxPerPlayer
+      && room.game.players.some(player => player.id === id);
+  }
+  function approveAuto(room, id, amount) {
+    room.game = game.rebuy(room.game, id, amount, { source: 'request', timestamp: now() });
+    room.autoRebuys.set(id, (room.autoRebuys.get(id) || 0) + 1);
+    room.rebuyRequests.delete(id); room.revision++;
+    io.sockets.sockets.get(room.connections.get(id))?.emit('rebuy-result', { type: 'approved', amount });
+  }
+  function processAutoRebuys(room) {
+    if (game.isPlaying(room.game)) return;
+    for (const [id, request] of room.rebuyRequests) {
+      if (!autoEligible(room, id, request.amount)) continue;
+      try { approveAuto(room, id, request.amount); }
+      catch (error) { if (!(error instanceof RequestError)) logError(error); }
+    }
   }
   function sendTurnPush(room, previousTurn) {
     const playerId = room.game.turn;
@@ -427,6 +448,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     room.connections.delete(id);
     room.tokens.delete(id);
     room.rebuyRequests.delete(id);
+    room.autoRebuys.delete(id);
     room.cosmetics.delete(id);
     room.pushSubscriptions.delete(id);
     room.presence.delete(id);
@@ -498,7 +520,8 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
       const room = { code, nightId: randomUUID(), startedAt: now(), endedAt: null, hostId: id, game: state,
         leagueId: league?.id ?? null, seasonId: league ? leagueStore.activeSeason(league.id)?.id ?? null : null,
         tokens: new Map([[id, token]]), tokenHashes: new Map([[id, hashToken(token)]]), accounts: new Map(),
-        connections: new Map(), rebuyRequests: new Map(), cosmetics: new Map(), pushSubscriptions: new Map(), presence: new Map(),
+        connections: new Map(), rebuyRequests: new Map(), autoRebuys: new Map(), cosmetics: new Map(),
+        rebuyPolicy: normalizeRebuyPolicy(payload.rebuyPolicy), pushSubscriptions: new Map(), presence: new Map(),
         lastActive: now(), revision: 0, lastSettlement: null };
       rooms.set(code, room); if (league) liveByLeague.set(league.id, code);
       seedCosmetics(socket, room, id); bind(socket, room, id); broadcast(room);
@@ -538,9 +561,11 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
         if (hostOnly) host(room, id);
         requireValue(payload.revision === room.revision, 'Table changed. Please try again.');
         const previousTurn = room.game.turn;
+        const wasPlaying = game.isPlaying(room.game);
         const nextState = fn(room, id, payload);
         room.game = nextState; room.revision++; room.lastActive = now();
-        if (nextState.street === 'complete' && !game.isPlaying(nextState)) persist(room);
+        if (wasPlaying && nextState.street === 'complete') processAutoRebuys(room);
+        if (room.game.street === 'complete' && !game.isPlaying(room.game)) persist(room);
         broadcast(room);
         sendTurnPush(room, previousTurn);
         return { state: view(room, id) };
@@ -557,6 +582,15 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
       const next = { ...room.cosmetics.get(id), ...Object.fromEntries(['avatar', 'color', 'note'].filter(key => Object.hasOwn(payload, key)).map(key => [key, payload[key]])) };
       requireValue(![...room.cosmetics].some(([otherId, value]) => otherId !== id && value.color === next.color), 'That seat color is already in use.');
       room.cosmetics.set(id, next); room.lastActive = now(); broadcast(room);
+      return { state: view(room, id) };
+    });
+    on('host:rebuyPolicy', payload => {
+      const { room, id } = member(socket, payload); host(room, id);
+      const policy = { mode: payload.mode, ...(payload.cap === undefined ? {} : { cap: payload.cap }),
+        ...(payload.maxPerPlayer === undefined ? {} : { maxPerPlayer: payload.maxPerPlayer }) };
+      requireValue(validRebuyPolicy(policy), 'Invalid rebuy policy.');
+      room.rebuyPolicy = normalizeRebuyPolicy(policy); room.lastActive = now();
+      processAutoRebuys(room); broadcast(room);
       return { state: view(room, id) };
     });
     on('host:endNight', payload => {
@@ -591,6 +625,10 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
       requireValue(!room.rebuyRequests.has(id), 'You already have a pending rebuy request.');
       const amount = payload.amount ?? room.game.settings.startingStack;
       room.rebuyRequests.set(id, { amount, at: now() }); room.lastActive = now();
+      if (!game.isPlaying(room.game) && autoEligible(room, id, amount)) {
+        try { approveAuto(room, id, amount); }
+        catch (error) { if (!(error instanceof RequestError)) throw error; }
+      }
       broadcast(room);
       return {};
     });

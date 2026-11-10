@@ -1,5 +1,6 @@
 /** Only explicitly safe validation errors may cross the socket boundary. */
 import { PREF_ENUMS } from './prefs-schema.js';
+import { validRebuyPolicy } from './rebuy-policy.js';
 export class RequestError extends Error {}
 export const requireValue = (condition, message = 'Invalid request.') => { if (!condition) throw new RequestError(message); };
 export const validName = value => typeof value === 'string' && value.length <= 80 && value.normalize('NFKC').trim().length >= 1 && value.normalize('NFKC').trim().length <= 20 && !/[\p{Cc}\p{Cf}<>]/u.test(value);
@@ -31,7 +32,7 @@ const ids = value => Array.isArray(value) && value.length >= 1 && value.length <
 const auth = {token,revision:integer(Number.MAX_SAFE_INTEGER)};
 export const entryEvents = new Set(['create','join','table-preview','rejoin']);
 const schemas = {
-  create: [{name:validName},{settings,leagueId:uuid}],
+  create: [{name:validName},{settings,leagueId:uuid,rebuyPolicy:validRebuyPolicy}],
   join: [{name:validName,code},{expectedBuyIn:integer(1e9,1)}],
   'table-preview': [{code},{}],
   rejoin: [{code,playerId:uuid,token},{}],
@@ -41,6 +42,7 @@ const schemas = {
   'host-settings': [{...auth,settings:value=>settings(value)&&Object.keys(value).length>0},{}],
   'host:reorderSeats': [{...auth,order:ids},{}],
   'seat:cosmetics': [{token},{revision:integer(Number.MAX_SAFE_INTEGER),avatar:value=>PREF_ENUMS.avatar.includes(value),color:value=>PREF_ENUMS.seatColor.includes(value),note}],
+  'host:rebuyPolicy': [{token,mode:value=>['host','auto'].includes(value)},{revision:integer(Number.MAX_SAFE_INTEGER),cap:integer(1e9,1),maxPerPlayer:integer(20)}],
   'host:endNight': [{token},{revision:integer(Number.MAX_SAFE_INTEGER)}],
   undo: [auth,{}],
   'sit-out': [{...auth,value:value=>typeof value==='boolean'},{}],
