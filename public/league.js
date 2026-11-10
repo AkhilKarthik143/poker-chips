@@ -2,7 +2,7 @@
 (() => {
 const $ = selector => document.querySelector(selector);
 const id = new URL(window.location.href).searchParams.get('id');
-let league; let seasons = []; let currentStandings = [];
+let league; let seasons = []; let currentStandings = []; let currentScoring = null;
 const number = value => Number(value).toLocaleString();
 const netText = value => `${value > 0 ? '+' : ''}${number(value)} chips`;
 function status(message) { $('#league-status').textContent = message; }
@@ -71,6 +71,15 @@ function renderMembers() {
 function renderRules() {
   const form = $('#table-rules');
   for (const [key, value] of Object.entries(league.tableSettings)) if (form.elements.namedItem(key)) form.elements.namedItem(key).value = value;
+  const settings = league.tableSettings;
+  const summary = $('#rules-summary'); summary.replaceChildren();
+  for (const [label, value] of [
+    ['Starting stack', `${number(settings.startingStack)} chips`],
+    ['Blinds', `${number(settings.smallBlind)} / ${number(settings.bigBlind)}`],
+    ['Blind timer', settings.blindMinutes ? `Every ${settings.blindMinutes} minutes` : 'Off'],
+    ['Cash value', settings.centsPer1000Chips ? `$${(settings.centsPer1000Chips / 100).toFixed(2)} per 1,000 chips` : 'Off']
+  ]) summary.append(text('dt', label), text('dd', value));
+  summary.hidden = league.myRole === 'commissioner';
   form.hidden = league.myRole !== 'commissioner';
   $('#season-form').hidden = league.myRole !== 'commissioner';
 }
@@ -110,7 +119,7 @@ async function renderStandings() {
   const seasonId = $('#season-select').value;
   if (!seasonId) { list.textContent = 'No season yet. A commissioner can create a draft in Rules.'; currentStandings = []; return; }
   const { season, standings } = await api(`/seasons/${seasonId}/standings`);
-  currentStandings = standings;
+  currentStandings = standings; currentScoring = season.scoring;
   $('#champion-banner').hidden = !season.championMemberId;
   const champion = standings.find(row => row.memberId === season.championMemberId);
   $('#champion-banner').textContent = champion ? `${champion.displayName} · Season champion` : '';
@@ -130,8 +139,13 @@ async function renderNights() {
     const details = document.createElement('details'); details.className = 'league-night';
     const summary = text('summary', `${new Date(night.endedAt).toLocaleDateString()} · Table ${night.roomCode} · ${night.counts ? 'Counts' : 'Voided'}`);
     details.append(summary);
+    if (night.voidReason) details.append(text('p', `Review reason: ${night.voidReason}`, 'review-reason'));
     if (night.results.length < 2) details.append(text('p', 'Not enough league members for standings.'));
     for (const result of night.results) details.append(text('p', `${result.rank}. ${result.displayName} · ${netText(result.net)}`));
+    const seats = text('div', '', 'night-seats');
+    seats.append(text('strong', 'All seats, including subs'));
+    for (const participant of night.participants) seats.append(text('p', `${participant.name} · ${netText(participant.net)}`));
+    details.append(seats);
     if (['commissioner', 'co'].includes(league.myRole) && seasons.some(season => season.id === night.seasonId && season.status === 'active')) {
       details.append(button(night.counts ? 'Void night' : 'Restore night', () => openReview(night.id, night.counts ? 'void' : 'restore')));
     }
@@ -139,7 +153,7 @@ async function renderNights() {
   }
   if (!nightData.nights.length) list.textContent = 'No reviewed nights yet.';
   const audit = $('#audit-list'); audit.replaceChildren();
-  for (const entry of auditData.entries) audit.append(text('p', `${entry.actor} ${entry.action}ed a night: ${entry.detail.reason}`));
+  for (const entry of auditData.entries) audit.append(text('p', `${entry.actor} ${entry.action === 'restore' ? 'restored' : 'voided'} a night: ${entry.detail.reason}`));
   if (!auditData.entries.length) audit.textContent = 'No corrections recorded.';
   const shelf = $('#records-list'); shelf.replaceChildren();
   shelf.append(text('p', records.biggestNight ? `Biggest night: ${records.biggestNight.displayName} · ${netText(records.biggestNight.net)}` : 'Records appear after the first scored night.'));
@@ -158,7 +172,7 @@ document.querySelectorAll('[data-tab]').forEach(tab => tab.addEventListener('cli
 }));
 $('#season-select').addEventListener('change', () => renderStandings().catch(error => status(error.message)));
 $('#copy-standings').addEventListener('click', async () => {
-  const copy = `${league.name}\n${currentStandings.map(row => `${row.rank}. ${row.displayName} — ${row.score / 100} · ${row.nights} nights`).join('\n')}`;
+  const copy = `${league.name}\n${currentStandings.map(row => `${row.rank}. ${row.displayName} — ${scoreText(row.score, currentScoring)} · ${row.nights} nights`).join('\n')}`;
   try { await navigator.clipboard.writeText(copy); status('Standings copied.'); }
   catch { window.prompt('Copy standings', copy); status('Select and copy the standings.'); }
 });

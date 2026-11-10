@@ -14,6 +14,15 @@
 - Pure scoring tests cover fixed-point points, ties, net, capped net, ROI, drop-worst, qualification, rank movement and records.
 - Live multi-device phone use, persistent Render storage and Postgres parity remain untested.
 
+## League follow-up audit (November 10, 2026)
+
+- Existing `feature/leagues` was based on `feature/accounts-stats`; `npm ci`, lint and all 76 baseline tests passed. Follow-up commits `6ceabad`, `b9d308e`, `08523cb`, `f434ad7` and `9f1fcdb` passed their lint/test gates. Final league branch: 80 tests pass with zero lint warnings.
+- Added a table-driven permission matrix across 11 league endpoints, scoring fixtures for capped net, ROI zero buy-in, ties and drop-worst, and checks for 30-member capacity, no-database 404s, account-deletion history, privacy leakage and two live leagues.
+- A file-backed SQLite smoke on port 3102 passed: health, two verified accounts, invite join, points season activation, a two-player hand, end-night persistence, cleared live code, standings and night history. The temporary smoke database was removed.
+- Playwright Chromium captured all four league tabs at 360px (commissioner) and 390px (member). There were no page errors or horizontal scrollbars; visible controls met 44px tap targets. The member Rules view showed saved table settings, Nights showed a guest/sub and void reason, and Copy standings kept point units.
+- `src/game.js` was not changed by the league follow-up; its diff from `main` comes from the earlier accounts/stats ledger work. No inline script or style was added. The vendored QR source already contains generated `style=` strings.
+- Untested for real: physical phone browsers, actual email delivery, a live multi-device league night, Render persistent disk and Postgres. No Postgres adapter exists in this local repository.
+
 Validated locally on November 7, 2026 (America/Los_Angeles), on Node 24.20.0. The deployment target remains Node 20+ as configured in `render.yaml`.
 
 ## Executed checks
