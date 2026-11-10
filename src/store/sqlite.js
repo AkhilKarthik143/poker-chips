@@ -1,5 +1,6 @@
 import { createRequire } from 'node:module';
 import { mkdirSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { dirname } from 'node:path';
 
 const migration = `
@@ -64,6 +65,11 @@ const presetsMigration = `
     name TEXT NOT NULL, settings_json TEXT NOT NULL, position INTEGER NOT NULL, created_at INTEGER NOT NULL);
   CREATE INDEX table_presets_owner ON table_presets(account_id, position, created_at);
 `;
+const googleIdentityMigration = `
+  CREATE TABLE google_identities (google_sub TEXT PRIMARY KEY,
+    account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE);
+  CREATE INDEX google_identities_account ON google_identities(account_id);
+`;
 
 export class SqliteStore {
   constructor(path) {
@@ -121,6 +127,14 @@ export class SqliteStore {
         this.db.exec('COMMIT');
       } catch (error) { this.db.exec('ROLLBACK'); throw error; }
     }
+    if (version < 6) {
+      this.db.exec('BEGIN');
+      try {
+        this.db.exec(googleIdentityMigration);
+        this.db.prepare('UPDATE schema_version SET version = 6').run();
+        this.db.exec('COMMIT');
+      } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+    }
   }
   async init() { this.migrate(); }
   async saveNight(snapshot) {
@@ -168,6 +182,26 @@ export class SqliteStore {
       .run(id, email, displayName, time);
     return this.getAccountByEmail(email);
   }
+  async signInGoogle(sub, email, displayName, authoritative, time) {
+    this.db.exec('BEGIN');
+    try {
+      let account = this.db.prepare(`SELECT a.* FROM google_identities g
+        JOIN accounts a ON a.id = g.account_id WHERE g.google_sub = ?`).get(sub);
+      if (!account) {
+        account = this.db.prepare('SELECT * FROM accounts WHERE email = ?').get(email);
+        if (account && !authoritative) { this.db.exec('ROLLBACK'); return null; }
+        if (!account) {
+          const id = randomUUID();
+          this.db.prepare('INSERT INTO accounts (id,email,display_name,created_at) VALUES (?,?,?,?)')
+            .run(id, email, displayName, time);
+          account = this.db.prepare('SELECT * FROM accounts WHERE id = ?').get(id);
+        }
+        this.db.prepare('INSERT INTO google_identities (google_sub,account_id) VALUES (?,?)').run(sub, account.id);
+      }
+      this.db.exec('COMMIT');
+      return account;
+    } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+  }
   async updateAccount(id, displayName) {
     this.db.prepare('UPDATE accounts SET display_name = ? WHERE id = ?').run(displayName, id);
     return this.getAccount(id);
@@ -194,7 +228,8 @@ export class SqliteStore {
       ORDER BY COALESCE(n.ended_at,n.updated_at) DESC,n.id DESC`).all(accountId);
   }
   async exportAccount(accountId) {
-    return { account: await this.getAccount(accountId), settings: await this.getSettings(accountId), presets: await this.listPresets(accountId), nights: await this.listAccountNights(accountId, true) };
+    return { account: await this.getAccount(accountId), googleIdentities: this.db.prepare('SELECT google_sub FROM google_identities WHERE account_id = ?').all(accountId).map(row => row.google_sub),
+      settings: await this.getSettings(accountId), presets: await this.listPresets(accountId), nights: await this.listAccountNights(accountId, true) };
   }
   async getSettings(accountId) {
     const row = this.db.prepare('SELECT settings_json FROM account_settings WHERE account_id = ?').get(accountId);

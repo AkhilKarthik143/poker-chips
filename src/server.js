@@ -5,6 +5,7 @@ import { createHash, randomBytes, randomInt, randomUUID, timingSafeEqual } from 
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { Server } from 'socket.io';
+import { OAuth2Client } from 'google-auth-library';
 const webPush = createRequire(import.meta.url)('web-push');
 import * as game from './game.js';
 import { RequestError, requireValue, validatePayload, entryEvents, normalizedName, validName } from './validation.js';
@@ -23,13 +24,16 @@ const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
 const safeTokenEqual = (a, b) => typeof a === 'string' && typeof b === 'string' && a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
 const hashToken = value => createHash('sha256').update(value).digest('hex');
 
-export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupIntervalMs = 60_000, allowedOrigins = process.env.NODE_ENV === 'production' ? [process.env.RENDER_EXTERNAL_URL || 'https://poker-chips-o7n9.onrender.com'] : null, trustProxy = process.env.RENDER === 'true', devLogin = process.env.TABLEMATE_DEV_LOGIN === '1', logError = error => process.stderr.write(`${error.stack}\n`), pushTransport = webPush, vapid = { publicKey: process.env.VAPID_PUBLIC_KEY, privateKey: process.env.VAPID_PRIVATE_KEY, subject: process.env.VAPID_SUBJECT }, store = createStore(), mailer = createMailer() } = {}) {
+export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupIntervalMs = 60_000, allowedOrigins = process.env.NODE_ENV === 'production' ? [process.env.RENDER_EXTERNAL_URL || 'https://poker-chips-o7n9.onrender.com'] : null, trustProxy = process.env.RENDER === 'true', devLogin = process.env.TABLEMATE_DEV_LOGIN === '1', googleClientId = process.env.GOOGLE_CLIENT_ID, verifyGoogleIdToken = null, logError = error => process.stderr.write(`${error.stack}\n`), pushTransport = webPush, vapid = { publicKey: process.env.VAPID_PUBLIC_KEY, privateKey: process.env.VAPID_PRIVATE_KEY, subject: process.env.VAPID_SUBJECT }, store = createStore(), mailer = createMailer() } = {}) {
   const app = express();
   const httpServer = createHttpServer(app);
   const originAllowed = (origin, requestHost) => allowedOrigins ? allowedOrigins.includes(origin)
     : !origin || origin === `http://${requestHost}` || origin === `https://${requestHost}`;
-  const accountsEnabled = store.enabled && mailer.enabled;
+  const emailEnabled = store.enabled && mailer.enabled;
+  const googleEnabled = store.enabled && typeof googleClientId === 'string' && /^[A-Za-z0-9_-]+\.apps\.googleusercontent\.com$/.test(googleClientId);
+  const accountsEnabled = emailEnabled || googleEnabled;
   const auth = accountsEnabled ? createAuth({ store, mailer, now }) : null;
+  const googleClient = googleEnabled && !verifyGoogleIdToken ? new OAuth2Client(googleClientId) : null;
   const leagueStore = accountsEnabled ? new LeagueStore(store.db) : null;
   const io = new Server(httpServer, { maxHttpBufferSize: 16_384,
     cors: { origin: (origin, cb) => cb(null, allowedOrigins ? allowedOrigins.includes(origin) : true) },
@@ -85,11 +89,14 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
   app.use((_req, res, next) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'same-origin');
-    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
+    const googleSources = googleEnabled && _req.path === '/login.html';
+    res.setHeader('Content-Security-Policy', googleSources
+      ? "default-src 'self'; script-src 'self' https://accounts.google.com/gsi/client; style-src 'self' https://accounts.google.com/gsi/style; connect-src 'self' https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+      : "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
     next();
   });
   app.get('/healthz', (_req, res) => res.status(200).json({ ok: true }));
-  app.get('/api/config', (_req, res) => res.json({ accounts: accountsEnabled }));
+  app.get('/api/config', (_req, res) => res.json({ accounts: accountsEnabled, email: emailEnabled, googleClientId: googleEnabled ? googleClientId : null }));
   app.use('/api', express.json({ limit: '4kb' }));
   const authLimits = new Map();
   function apiOrigin(req, res, next) {
@@ -122,6 +129,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
   }
   app.use('/api/auth', (req, res, next) => { if (!accountsEnabled) res.sendStatus(404); else next(); });
   app.post('/api/auth/request', apiOrigin, async (req, res) => {
+    if (!emailEnabled) { res.sendStatus(404); return; }
     const email = normalizeEmail(req.body?.email);
     let devLink;
     if (email && allowLinkRequest(req, email)) {
@@ -135,10 +143,32 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     res.json({ message: 'If that address can receive mail, a sign-in link is on its way.', ...(devLink ? { devLink } : {}) });
   });
   app.post('/api/auth/verify', apiOrigin, async (req, res) => {
+    if (!emailEnabled) { res.sendStatus(404); return; }
     const verified = await auth.verify(req.body?.token);
     if (!verified) { res.status(400).json({ error: 'This link has expired or was already used.' }); return; }
     res.setHeader('Set-Cookie', `tm_session=${verified.sessionToken}; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000${process.env.NODE_ENV === 'production' ? '; Secure' : ''}`);
     res.json({ displayName: verified.account.display_name });
+  });
+  app.post('/api/auth/google', apiOrigin, async (req, res) => {
+    if (!googleEnabled) { res.sendStatus(404); return; }
+    const credential = req.body?.credential;
+    if (typeof credential !== 'string' || credential.length > 3500 || credential.split('.').length !== 3) {
+      res.status(400).json({ error: 'Invalid Google credential.' }); return;
+    }
+    try {
+      const payload = verifyGoogleIdToken ? await verifyGoogleIdToken(credential, googleClientId)
+        : (await googleClient.verifyIdToken({ idToken: credential, audience: googleClientId })).getPayload();
+      const verified = await auth.google(payload);
+      if (verified?.needsEmail) { res.status(409).json({ error: emailEnabled
+        ? 'Use the email link to access the existing account for this address.'
+        : 'This address belongs to another account. Use its existing sign-in method.' }); return; }
+      if (!verified) { res.status(401).json({ error: 'Google did not verify this account.' }); return; }
+      res.setHeader('Set-Cookie', `tm_session=${verified.sessionToken}; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000${process.env.NODE_ENV === 'production' ? '; Secure' : ''}`);
+      res.json({ displayName: verified.account.display_name });
+    } catch (error) {
+      logError(error);
+      res.status(401).json({ error: 'Google sign-in could not be verified. Please try again.' });
+    }
   });
   app.post('/api/auth/logout', apiOrigin, async (req, res) => {
     await auth.logout(req.headers.cookie);

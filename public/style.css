@@ -1076,3 +1076,8 @@ dialog.app-sheet :focus-visible { scroll-margin:20px; }
 #local-login{margin-top:14px}
 #local-login a{white-space:normal}
 @media(max-width:380px){.home-account{align-items:stretch;flex-direction:column}.home-account a{align-self:flex-start}}
+.google-signin{display:grid;justify-items:center;gap:8px;margin:22px 0 12px}
+.google-signin>button{width:100%;max-width:360px;min-height:44px;margin:0}
+.google-signin>p{font-size:12px;color:var(--dp-color-ink-muted);text-align:center}
+.signin-divider{display:flex;align-items:center;gap:12px;margin:18px 0;color:var(--dp-color-ink-muted);font-size:12px;font-weight:700;text-align:center}
+.signin-divider::before,.signin-divider::after{content:"";flex:1;border-top:1px solid var(--dp-color-rule-muted)}

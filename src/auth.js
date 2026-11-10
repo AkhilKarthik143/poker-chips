@@ -13,6 +13,15 @@ export function parseSessionCookie(header) {
   return /^[a-f0-9]{64}$/.test(token || '') ? token : null;
 }
 export function createAuth({ store, mailer, now = Date.now }) {
+  const displayNameFor = email => {
+    const local = email.split('@')[0].replace(/[<>\p{Cc}\p{Cf}]/gu, '').slice(0, 20);
+    return validName(local) ? normalizedName(local) : 'Player';
+  };
+  const sessionFor = async account => {
+    const sessionToken = randomBytes(32).toString('hex');
+    await store.saveSession(hashSecret(sessionToken), account.id, now() + 30 * 24 * 60 * 60_000);
+    return { account, sessionToken };
+  };
   return {
     async request(email, origin) {
       const token = randomBytes(32).toString('hex');
@@ -25,12 +34,17 @@ export function createAuth({ store, mailer, now = Date.now }) {
       if (typeof token !== 'string' || !/^[a-f0-9]{64}$/.test(token)) return null;
       const email = await store.consumeMagicLink(hashSecret(token), now());
       if (!email) return null;
-      const local = email.split('@')[0].replace(/[<>\p{Cc}\p{Cf}]/gu, '').slice(0, 20);
-      const displayName = validName(local) ? normalizedName(local) : 'Player';
-      const account = await store.createAccount(randomUUID(), email, displayName, now());
-      const sessionToken = randomBytes(32).toString('hex');
-      await store.saveSession(hashSecret(sessionToken), account.id, now() + 30 * 24 * 60 * 60_000);
-      return { account, sessionToken };
+      const account = await store.createAccount(randomUUID(), email, displayNameFor(email), now());
+      return sessionFor(account);
+    },
+    async google(payload) {
+      const email = normalizeEmail(payload?.email);
+      if (!email || payload.email_verified !== true || typeof payload.sub !== 'string' ||
+        !/^[A-Za-z0-9_-]{1,255}$/.test(payload.sub)) return null;
+      const name = validName(payload.name) ? normalizedName(payload.name) : displayNameFor(email);
+      const authoritative = email.endsWith('@gmail.com') || (typeof payload.hd === 'string' && payload.hd.length > 0);
+      const account = await store.signInGoogle(payload.sub, email, name, authoritative, now());
+      return account ? sessionFor(account) : { needsEmail: true };
     },
     async accountFromCookie(cookie) {
       const token = parseSessionCookie(cookie);
