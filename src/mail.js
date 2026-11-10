@@ -8,5 +8,5 @@ export function createMailer({ apiKey = process.env.RESEND_API_KEY, from = proce
     if (!response.ok) throw new Error(`Mail delivery failed (${response.status})`);
   } };
   if (production) return { enabled: false, async send() {} };
-  return { enabled: true, async send(email, url) { process.stdout.write(`Tablemate sign-in link for ${email}: ${url}\n`); } };
+  return { enabled: true, local: true, async send(email, url) { process.stdout.write(`Tablemate sign-in link for ${email}: ${url}\n`); } };
 }

@@ -23,7 +23,7 @@ const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
 const safeTokenEqual = (a, b) => typeof a === 'string' && typeof b === 'string' && a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
 const hashToken = value => createHash('sha256').update(value).digest('hex');
 
-export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupIntervalMs = 60_000, allowedOrigins = process.env.NODE_ENV === 'production' ? [process.env.RENDER_EXTERNAL_URL || 'https://poker-chips-o7n9.onrender.com'] : null, trustProxy = process.env.RENDER === 'true', logError = error => process.stderr.write(`${error.stack}\n`), pushTransport = webPush, vapid = { publicKey: process.env.VAPID_PUBLIC_KEY, privateKey: process.env.VAPID_PRIVATE_KEY, subject: process.env.VAPID_SUBJECT }, store = createStore(), mailer = createMailer() } = {}) {
+export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupIntervalMs = 60_000, allowedOrigins = process.env.NODE_ENV === 'production' ? [process.env.RENDER_EXTERNAL_URL || 'https://poker-chips-o7n9.onrender.com'] : null, trustProxy = process.env.RENDER === 'true', devLogin = process.env.TABLEMATE_DEV_LOGIN === '1', logError = error => process.stderr.write(`${error.stack}\n`), pushTransport = webPush, vapid = { publicKey: process.env.VAPID_PUBLIC_KEY, privateKey: process.env.VAPID_PRIVATE_KEY, subject: process.env.VAPID_SUBJECT }, store = createStore(), mailer = createMailer() } = {}) {
   const app = express();
   const httpServer = createHttpServer(app);
   const originAllowed = (origin, requestHost) => allowedOrigins ? allowedOrigins.includes(origin)
@@ -123,13 +123,16 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
   app.use('/api/auth', (req, res, next) => { if (!accountsEnabled) res.sendStatus(404); else next(); });
   app.post('/api/auth/request', apiOrigin, async (req, res) => {
     const email = normalizeEmail(req.body?.email);
+    let devLink;
     if (email && allowLinkRequest(req, email)) {
       try {
         const origin = req.get('Origin') || `${req.protocol}://${req.get('Host')}`;
-        await auth.request(email, origin);
+        const link = await auth.request(email, origin);
+        if (devLogin && process.env.NODE_ENV !== 'production' && mailer.local === true &&
+          ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress)) devLink = link;
       } catch (error) { logError(error); }
     }
-    res.json({ message: 'If that address can receive mail, a sign-in link is on its way.' });
+    res.json({ message: 'If that address can receive mail, a sign-in link is on its way.', ...(devLink ? { devLink } : {}) });
   });
   app.post('/api/auth/verify', apiOrigin, async (req, res) => {
     const verified = await auth.verify(req.body?.token);

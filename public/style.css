@@ -1068,3 +1068,11 @@ dialog.app-sheet :focus-visible { scroll-margin:20px; }
 .preset-manager{display:grid;gap:12px;min-width:min(460px,85vw)}.preset-manager h2{margin-bottom:12px}
 .preset-manager ol{list-style:none;margin:0;padding:0}.preset-manager li{display:flex;align-items:center;gap:6px;padding:8px 0;border-bottom:1px solid var(--border-seat-empty)}
 .preset-manager li strong{margin-right:auto;overflow-wrap:anywhere}.preset-manager li button{min-width:40px;min-height:44px;padding:6px}
+
+/* Account entry lives on the home panel when account storage is enabled. */
+.home-account{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:-8px 0 20px;padding:11px 12px;border:2px solid var(--dp-color-outline);border-radius:12px;background:var(--dp-color-field-soft);color:var(--dp-color-ink-muted);font-size:13px;line-height:1.35}
+.home-account span{min-width:0;overflow-wrap:anywhere}
+.home-account a,#local-login a{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:8px 12px;border:2px solid var(--dp-color-outline);border-radius:8px;background:var(--dp-color-accent-fresh);color:var(--dp-color-accent-fresh-ink);font-weight:800;text-align:center;white-space:nowrap}
+#local-login{margin-top:14px}
+#local-login a{white-space:normal}
+@media(max-width:380px){.home-account{align-items:stretch;flex-direction:column}.home-account a{align-self:flex-start}}

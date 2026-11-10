@@ -1112,10 +1112,14 @@ fetch('/api/config').then(response => response.json()).then(async config => {
   const response = await fetch('/api/me');
   const link = $('#account-link');
   link.hidden = false;
+  $('#home-account').hidden = false;
   if (!response.ok) return;
   const account = await response.json();
   link.textContent = `${account.displayName} · My stats`;
   link.href = '/me.html';
+  $('#home-account').querySelector('span').textContent = `Welcome back, ${account.displayName}. Your nights and settings are saved.`;
+  $('#home-account-link').textContent = 'My account';
+  $('#home-account-link').href = '/me.html';
   $('#account-logout').hidden = false;
   canSavePresets = true;
   loadPresets();

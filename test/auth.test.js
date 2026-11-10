@@ -59,3 +59,29 @@ test('no-database mode hides auth endpoints', async t => {
   assert.equal((await fetch(url + '/api/auth/request', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status, 404);
   assert.equal((await fetch(url + '/api/me')).status, 404);
 });
+
+test('local sign-in link requires an explicit demo flag and console mailer', async t => {
+  const sent = [];
+  const servers = [];
+  t.after(async () => { for (const server of servers) await server.close(); });
+  async function request(devLogin, local) {
+    const server = createServer({ store: new SqliteStore(':memory:'), devLogin,
+      mailer: { enabled: true, local, send: async (_email, link) => sent.push(link) } });
+    servers.push(server);
+    const address = await server.listen();
+    const response = await fetch(`http://127.0.0.1:${address.port}/api/auth/request`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'demo@example.com' })
+    });
+    return response.json();
+  }
+  const normal = await request(false, true);
+  const nonlocalMailer = await request(true, false);
+  const demo = await request(true, true);
+  assert.deepEqual(normal, nonlocalMailer);
+  assert.deepEqual(demo.message, normal.message);
+  assert.equal('devLink' in normal, false);
+  assert.equal('devLink' in nonlocalMailer, false);
+  assert.equal(demo.devLink, sent.at(-1));
+  assert.match(new URL(demo.devLink).searchParams.get('token'), /^[a-f0-9]{64}$/);
+});

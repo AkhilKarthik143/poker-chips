@@ -17,7 +17,9 @@ export function createAuth({ store, mailer, now = Date.now }) {
     async request(email, origin) {
       const token = randomBytes(32).toString('hex');
       await store.saveMagicLink(hashSecret(token), email, now() + 15 * 60_000);
-      await mailer.send(email, `${origin}/verify.html?token=${token}`);
+      const link = `${origin}/verify.html?token=${token}`;
+      await mailer.send(email, link);
+      return link;
     },
     async verify(token) {
       if (typeof token !== 'string' || !/^[a-f0-9]{64}$/.test(token)) return null;
