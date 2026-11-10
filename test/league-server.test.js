@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { io as connect } from 'socket.io-client';
 import { createServer } from '../src/server.js';
 import { SqliteStore } from '../src/store/sqlite.js';
+import { LeagueStore } from '../src/league-store.js';
 
 test('league roster, locked season, saved results, review trail and private room settings', async t => {
   const links = [];
@@ -98,7 +99,8 @@ test('league roster, locked season, saved results, review trail and private room
   }
   const nightId = nights.data.nights[0].id;
   assert.equal((await api(`/api/leagues/${leagueId}/nights/${nightId}/void`, 'POST', { reason: 'Seat total corrected' }, bCookie)).status, 403);
-  assert.equal((await api(`/api/leagues/${leagueId}/nights/${nightId}/void`, 'POST', { reason: 'Seat total corrected' }, aCookie)).status, 200);
+  assert.equal((await api(`/api/leagues/${leagueId}/members/${joined.data.members[1].memberId}`, 'PATCH', { role: 'co' }, aCookie)).status, 200);
+  assert.equal((await api(`/api/leagues/${leagueId}/nights/${nightId}/void`, 'POST', { reason: 'Seat total corrected' }, bCookie)).status, 200);
   assert.equal((await api(`/api/leagues/${leagueId}/seasons/${seasonId}/standings`, 'GET', null, aCookie)).data.standings[0].score, 0);
   assert.equal((await api(`/api/leagues/${leagueId}/audit`, 'GET', null, aCookie)).data.entries[0].detail.reason, 'Seat total corrected');
   assert.equal((await api(`/api/leagues/${leagueId}/nights`, 'GET', null, aCookie)).data.nights[0].voidReason, 'Seat total corrected');
@@ -107,6 +109,11 @@ test('league roster, locked season, saved results, review trail and private room
   assert.equal((await api(`/api/leagues/${leagueId}/nights`, 'GET', null, aCookie)).data.nights[0].voidReason, null);
   assert.equal((await api(`/api/leagues/${leagueId}/seasons/${seasonId}/close`, 'POST', {}, aCookie)).data.championMemberId, created.data.members[0].memberId);
   assert.notEqual((await api(`/api/leagues/${leagueId}/nights/${nightId}/void`, 'POST', { reason: 'Too late' }, aCookie)).status, 200);
+  const closedResults = store.db.prepare('SELECT member_id,rank,net FROM league_night_results WHERE night_id = ? ORDER BY member_id').all(nightId);
+  store.db.prepare(`UPDATE night_players SET net = net + CASE name WHEN 'Alex' THEN 100 WHEN 'Blair' THEN -100 ELSE 0 END
+    WHERE night_id = ?`).run(nightId);
+  new LeagueStore(store.db).finalizeNight(nightId);
+  assert.deepEqual(store.db.prepare('SELECT member_id,rank,net FROM league_night_results WHERE night_id = ? ORDER BY member_id').all(nightId), closedResults);
   const beforeDelete = (await api(`/api/leagues/${leagueId}/seasons/${seasonId}/standings`, 'GET', null, bCookie)).data.standings;
   assert.equal((await api('/api/me', 'DELETE', { confirm: 'DELETE' }, aCookie)).status, 200);
   const afterDelete = (await api(`/api/leagues/${leagueId}/seasons/${seasonId}/standings`, 'GET', null, bCookie)).data.standings;
