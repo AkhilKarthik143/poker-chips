@@ -1,0 +1,84 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { io as connect } from 'socket.io-client';
+import { createServer } from '../src/server.js';
+import { SqliteStore } from '../src/store/sqlite.js';
+
+test('league roster, locked season, saved results, review trail and private room settings', async t => {
+  const links = [];
+  const store = new SqliteStore(':memory:');
+  const server = createServer({ store, mailer: { enabled: true, send: async (_email, link) => links.push(link) } });
+  const address = await server.listen(); const base = `http://127.0.0.1:${address.port}`;
+  const sockets = [];
+  t.after(async () => { sockets.forEach(socket => socket.disconnect()); await server.close(); });
+  const api = async (path, method = 'GET', body, cookie) => {
+    const response = await fetch(base + path, { method,
+      headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), ...(cookie ? { Cookie: cookie } : {}) },
+      ...(body ? { body: JSON.stringify(body) } : {}) });
+    let data; try { data = await response.json(); } catch { data = null; }
+    return { status: response.status, data, cookie: response.headers.get('set-cookie') };
+  };
+  const account = async email => {
+    await api('/api/auth/request', 'POST', { email });
+    const token = new URL(links.at(-1)).searchParams.get('token');
+    return (await api('/api/auth/verify', 'POST', { token })).cookie;
+  };
+  const aCookie = await account('alex@example.com');
+  const bCookie = await account('blair@example.com');
+  const cCookie = await account('casey@example.com');
+  const created = await api('/api/leagues', 'POST', { name: 'Friday Night' }, aCookie);
+  assert.equal(created.status, 201);
+  const leagueId = created.data.id;
+  assert.equal((await api(`/api/leagues/${leagueId}`, 'GET', null, cCookie)).status, 404);
+  assert.equal((await api(`/api/leagues/${leagueId}/seasons`, 'POST', { name: 'Fall', scoring: { type: 'points', table: [10, 7, 5] } }, cCookie)).status, 404);
+  const joined = await api('/api/leagues/join', 'POST', { inviteCode: created.data.inviteCode }, bCookie);
+  assert.equal(joined.status, 200);
+  assert.equal((await api('/api/leagues/join', 'POST', { inviteCode: created.data.inviteCode }, bCookie)).data.members.length, 2);
+  assert.equal((await api(`/api/leagues/${leagueId}/seasons`, 'POST', { name: 'Nope', scoring: { type: 'net' } }, bCookie)).status, 403);
+  const season = await api(`/api/leagues/${leagueId}/seasons`, 'POST', { name: 'Fall', scoring: { type: 'points', table: [10, 7, 5], minNightsPct: 50 } }, aCookie);
+  assert.equal(season.status, 201);
+  const seasonId = season.data.id;
+  assert.equal((await api(`/api/leagues/${leagueId}/seasons/${seasonId}/activate`, 'POST', {}, aCookie)).status, 200);
+  assert.notEqual((await api(`/api/leagues/${leagueId}/seasons/${seasonId}`, 'PATCH', { scoring: { type: 'net' } }, aCookie)).status, 200);
+  const socket = async cookie => {
+    const value = connect(base, { transports: ['websocket'], forceNew: true, ...(cookie ? { extraHeaders: { Cookie: cookie } } : {}) });
+    sockets.push(value); value.on('state', state => { value.state = state; });
+    await new Promise(resolve => value.once('connect', resolve)); return value;
+  };
+  const emit = (socketValue, event, body) => new Promise(resolve => socketValue.emit(event, body, resolve));
+  const a = await socket(aCookie); const b = await socket(bCookie); const sub = await socket();
+  const start = await emit(a, 'create', { name: 'Alex', leagueId, settings: { startingStack: 5000 } });
+  assert.equal(start.ok, true);
+  assert.equal(start.state.settings.startingStack, 1000, 'league settings override the client');
+  assert.equal('leagueId' in start.state.settings, false);
+  assert.equal(JSON.stringify(start.state).includes(leagueId), false);
+  assert.equal((await emit(b, 'create', { name: 'Blair', leagueId })).ok, false);
+  const secondStart = await emit(a, 'create', { name: 'Alex', leagueId });
+  assert.equal(secondStart.ok, false, 'seated socket cannot start a duplicate room');
+  const joinedSeat = await emit(b, 'join', { name: 'Blair', code: start.roomCode });
+  assert.equal(joinedSeat.ok, true);
+  const subSeat = await emit(sub, 'join', { name: 'Guest', code: start.roomCode });
+  assert.equal(subSeat.ok, true);
+  assert.equal((await api(`/api/leagues/${leagueId}/live`, 'GET', null, aCookie)).data.roomCode, start.roomCode);
+  const hand = await emit(a, 'start-hand', { token: start.token, revision: subSeat.state.revision });
+  assert.equal(hand.ok, true);
+  const foldA = await emit(a, 'action', { token: start.token, revision: hand.state.revision, type: 'fold' });
+  assert.equal(foldA.ok, true);
+  const foldB = await emit(b, 'action', { token: joinedSeat.token, revision: foldA.state.revision, type: 'fold' });
+  assert.equal(foldB.state.street, 'complete');
+  assert.equal((await emit(a, 'host:endNight', { token: start.token, revision: foldB.state.revision })).ok, true);
+  const standings = await api(`/api/leagues/${leagueId}/seasons/${seasonId}/standings`, 'GET', null, aCookie);
+  assert.equal(standings.data.standings[0].nights, 1);
+  assert.equal(standings.data.standings[0].score, 1000);
+  const nights = await api(`/api/leagues/${leagueId}/nights`, 'GET', null, aCookie);
+  assert.equal(nights.data.nights[0].participants.length, 3);
+  assert.equal(nights.data.nights[0].results.length, 2, 'guest is outside standings');
+  const nightId = nights.data.nights[0].id;
+  assert.equal((await api(`/api/leagues/${leagueId}/nights/${nightId}/void`, 'POST', { reason: 'Seat total corrected' }, bCookie)).status, 403);
+  assert.equal((await api(`/api/leagues/${leagueId}/nights/${nightId}/void`, 'POST', { reason: 'Seat total corrected' }, aCookie)).status, 200);
+  assert.equal((await api(`/api/leagues/${leagueId}/seasons/${seasonId}/standings`, 'GET', null, aCookie)).data.standings[0].score, 0);
+  assert.equal((await api(`/api/leagues/${leagueId}/audit`, 'GET', null, aCookie)).data.entries[0].detail.reason, 'Seat total corrected');
+  assert.equal((await api(`/api/leagues/${leagueId}/nights/${nightId}/restore`, 'POST', { reason: 'Verified totals' }, aCookie)).status, 200);
+  assert.equal((await api(`/api/leagues/${leagueId}/seasons/${seasonId}/close`, 'POST', {}, aCookie)).data.championMemberId, created.data.members[0].memberId);
+  assert.notEqual((await api(`/api/leagues/${leagueId}/nights/${nightId}/void`, 'POST', { reason: 'Too late' }, aCookie)).status, 200);
+});

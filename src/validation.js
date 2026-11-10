@@ -29,7 +29,7 @@ const ids = value => Array.isArray(value) && value.length >= 1 && value.length <
 const auth = {token,revision:integer(Number.MAX_SAFE_INTEGER)};
 export const entryEvents = new Set(['create','join','table-preview','rejoin']);
 const schemas = {
-  create: [{name:validName},{settings}],
+  create: [{name:validName},{settings,leagueId:uuid}],
   join: [{name:validName,code},{expectedBuyIn:integer(1e9,1)}],
   'table-preview': [{code},{}],
   rejoin: [{code,playerId:uuid,token},{}],

@@ -16,7 +16,35 @@ async function load() {
   renderChart(data.trend);
   renderNights(data);
   showClaims();
+  loadLeagues();
 }
+async function loadLeagues() {
+  const response = await fetch('/api/leagues');
+  const list = $('#leagues-list'); list.replaceChildren();
+  if (!response.ok) { list.textContent = 'Leagues are unavailable.'; return; }
+  const { leagues } = await response.json();
+  if (!leagues.length) list.textContent = 'No leagues yet. Create one or ask a friend for an invite code.';
+  for (const league of leagues) {
+    const link = document.createElement('a'); link.href = `/league.html?id=${encodeURIComponent(league.id)}`;
+    link.className = 'league-link'; link.textContent = `${league.name} · ${league.role}`; list.append(link);
+  }
+}
+async function leagueAction(path, body) {
+  const response = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || 'League request failed.');
+  window.location.assign(`/league.html?id=${encodeURIComponent(data.id)}`);
+}
+$('#create-league').addEventListener('submit', async event => {
+  event.preventDefault();
+  try { await leagueAction('/api/leagues', { name: $('#league-name').value }); }
+  catch (error) { $('#league-status').textContent = error.message; }
+});
+$('#join-league').addEventListener('submit', async event => {
+  event.preventDefault();
+  try { await leagueAction('/api/leagues/join', { inviteCode: $('#league-code').value.trim().toUpperCase() }); }
+  catch (error) { $('#league-status').textContent = error.message; }
+});
 function renderStats(stats) {
   const items = [
     ['Nights played', number(stats.nights)], ['Lifetime net', signed(stats.net) + ' chips'],

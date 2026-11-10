@@ -9,7 +9,9 @@
 <section class="profile-panel" aria-labelledby="summary-title"><h2 id="summary-title">Lifetime</h2><div id="stat-grid" class="stat-grid"></div></section>
 <section class="profile-panel" aria-labelledby="trend-title"><h2 id="trend-title">Net chips over time</h2><svg id="net-chart" viewBox="0 0 680 180" role="img" aria-label="Cumulative net chips by night"></svg></section>
 <section class="profile-panel" aria-labelledby="nights-title"><h2 id="nights-title">Nights</h2><div id="nights-list"></div><nav class="page-nav" aria-label="Nights pages"><button id="previous-page" type="button">Previous</button><span id="page-label"></span><button id="next-page" type="button">Next</button></nav></section>
-<section class="profile-panel" aria-labelledby="groups-title"><h2 id="groups-title">My leagues</h2><p id="groups-placeholder">Leagues will appear here when available.</p></section>
+<section class="profile-panel" aria-labelledby="groups-title"><h2 id="groups-title">My leagues</h2><div id="leagues-list"></div>
+<div class="league-entry-forms"><form id="create-league"><label for="league-name">New league name</label><input id="league-name" maxlength="20" required><button type="submit">Create league</button></form>
+<form id="join-league"><label for="league-code">Join with invite code</label><input id="league-code" maxlength="8" pattern="[A-HJ-NP-Za-hj-np-z]{8}" required><button type="submit">Join league</button></form></div><p id="league-status" role="status"></p></section>
 <section class="profile-panel" aria-labelledby="privacy-title"><h2 id="privacy-title">Your data</h2><p>Download your account and saved night rows, or delete your account. Night totals remain anonymous so friends' records still add up.</p><div class="privacy-actions"><button id="export-data" type="button">Export my data</button><button id="delete-data" type="button" class="danger">Delete my account</button></div><p id="privacy-status" role="status"></p></section>
 <p class="profile-footnote">An informal tally for friends. Tablemate does not move money.</p>
 </main></body></html>

@@ -48,6 +48,16 @@ Account APIs: `POST /api/auth/request`, `POST /api/auth/verify`, `POST /api/auth
 
 Tablemate is an **informal tally for friends, not a gambling or payments platform**. It never moves money.
 
+## Leagues
+
+Signed-in friends can create a league, join with an eight-letter invite code, and maintain a roster. The commissioner can set table rules and create a draft season; a co-commissioner can help with invites and night review. Only commissioners and co-commissioners can open the league's table. The server applies the league settings and keeps one live room per league. Guests may still join by room code as subs; their chips remain in the night history, but they do not enter standings. League pages, nights, records and audit entries are visible only to active members.
+
+The commissioner chooses a scoring format for each season: total net chips, per-night points (default table 10/7/5/3/2/1), net chips capped by a buy-in multiple, or ROI. Drop-worst (up to three nights, retaining at least one) and minimum attendance are optional except that ROI cannot drop nights. Scores are stored as integer hundredths; ROI uses integer basis points. For example, a first place night worth 10 and a second place night worth 7 produces 17.00 points. Ties split the occupied place points. Scoring rules lock on activation; only one season can be active. Closing a season stores its qualified champion and makes its results immutable.
+
+A completed league night is saved with stable member IDs. A commissioner or co-commissioner may void or restore an active-season night with a required reason; every such review is logged. Individual chip totals are not editable through league review. The roster supports commissioner transfer, co-commissioner promotion, removal, and invite-code rotation. The league page includes standings, nights, members and table/season rules.
+
+League APIs under `/api/leagues`: create/list, join by invite, member detail, leave, invite rotation, member role/removal/transfer, live room, seasons (draft/edit/activate/close/standings), nights, records and audit, and night void/restore. They require a signed-in session and member authorization. The socket `create` event accepts an optional top-level `leagueId`; it never enters game settings or broadcasts.
+
 ## House rules and recovery
 
 - Whole-number chips, no antes, no rake. Settings and each chip add are capped at one billion; the full table ledger is capped at one trillion.

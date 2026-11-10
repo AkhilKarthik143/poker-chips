@@ -7,6 +7,13 @@
 - No database configured: `/api/config` reports accounts off; auth and account routes return 404 and guest socket tests pass.
 - Real email delivery, cookie behavior behind Render, and persistent-disk behavior have not been exercised here.
 
+## League local work (November 10, 2026)
+
+- `feature/leagues` is based on the passing `feature/accounts-stats` branch. Lint and 76 tests pass.
+- League integration test covers invite membership, member-only responses, season activation and rule freeze, server-owned league table settings, a guest sub, saved results, standings, void/restore with an audit reason, and champion close.
+- Pure scoring tests cover fixed-point points, ties, net, capped net, ROI, drop-worst, qualification, rank movement and records.
+- Live multi-device phone use, persistent Render storage and Postgres parity remain untested.
+
 Validated locally on November 7, 2026 (America/Los_Angeles), on Node 24.20.0. The deployment target remains Node 20+ as configured in `render.yaml`.
 
 ## Executed checks

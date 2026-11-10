@@ -30,6 +30,31 @@ const accountsMigration = `
   CREATE INDEX sessions_account ON sessions(account_id);
   CREATE TABLE magic_links (token_hash TEXT PRIMARY KEY, email TEXT NOT NULL, expires_at INTEGER NOT NULL);
 `;
+const leagueMigration = `
+  ALTER TABLE nights ADD COLUMN league_id TEXT;
+  ALTER TABLE nights ADD COLUMN season_id TEXT;
+  ALTER TABLE nights ADD COLUMN counts INTEGER NOT NULL DEFAULT 1;
+  CREATE INDEX nights_league_ended ON nights(league_id, ended_at);
+  CREATE TABLE leagues (id TEXT PRIMARY KEY, name TEXT NOT NULL, invite_code TEXT NOT NULL UNIQUE,
+    table_settings_json TEXT NOT NULL, created_at INTEGER NOT NULL, archived_at INTEGER);
+  CREATE TABLE league_members (id TEXT PRIMARY KEY, league_id TEXT NOT NULL REFERENCES leagues(id),
+    account_id TEXT, display_name TEXT NOT NULL, role TEXT NOT NULL,
+    joined_at INTEGER NOT NULL, left_at INTEGER,
+    UNIQUE(league_id, account_id));
+  CREATE INDEX league_members_active ON league_members(league_id, left_at);
+  CREATE TABLE seasons (id TEXT PRIMARY KEY, league_id TEXT NOT NULL REFERENCES leagues(id),
+    name TEXT NOT NULL, status TEXT NOT NULL, starts_at INTEGER, ends_at INTEGER,
+    scoring_json TEXT NOT NULL, champion_member_id TEXT, created_at INTEGER NOT NULL);
+  CREATE UNIQUE INDEX one_active_season ON seasons(league_id) WHERE status = 'active';
+  CREATE TABLE league_night_results (night_id TEXT NOT NULL REFERENCES nights(id),
+    league_id TEXT NOT NULL, season_id TEXT, member_id TEXT NOT NULL,
+    rank INTEGER NOT NULL, net INTEGER NOT NULL, buy_in INTEGER NOT NULL,
+    PRIMARY KEY(night_id, member_id));
+  CREATE INDEX league_results_season ON league_night_results(season_id);
+  CREATE TABLE league_audit (id TEXT PRIMARY KEY, league_id TEXT NOT NULL,
+    season_id TEXT, night_id TEXT, actor_member_id TEXT NOT NULL,
+    action TEXT NOT NULL, detail_json TEXT NOT NULL, at INTEGER NOT NULL);
+`;
 
 export class SqliteStore {
   constructor(path) {
@@ -63,18 +88,27 @@ export class SqliteStore {
         this.db.exec('COMMIT');
       } catch (error) { this.db.exec('ROLLBACK'); throw error; }
     }
+    if (version < 3) {
+      this.db.exec('BEGIN');
+      try {
+        this.db.exec(leagueMigration);
+        this.db.prepare('UPDATE schema_version SET version = 3').run();
+        this.db.exec('COMMIT');
+      } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+    }
   }
   async init() { this.migrate(); }
   async saveNight(snapshot) {
     this.db.exec('BEGIN');
     try {
       this.db.prepare(`INSERT INTO nights
-        (id, room_code, group_id, started_at, updated_at, ended_at, hands, settings_json, settlement_json)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (id, room_code, group_id, started_at, updated_at, ended_at, hands, settings_json, settlement_json, league_id, season_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET updated_at=excluded.updated_at, ended_at=excluded.ended_at,
           hands=excluded.hands, settings_json=excluded.settings_json, settlement_json=excluded.settlement_json`)
         .run(snapshot.nightId, snapshot.roomCode, snapshot.groupId ?? null, snapshot.startedAt,
-          snapshot.updatedAt, snapshot.endedAt ?? null, snapshot.hands, JSON.stringify(snapshot.settings), JSON.stringify(snapshot.settlement));
+          snapshot.updatedAt, snapshot.endedAt ?? null, snapshot.hands, JSON.stringify(snapshot.settings), JSON.stringify(snapshot.settlement),
+          snapshot.leagueId ?? null, snapshot.seasonId ?? null);
       const insert = this.db.prepare(`INSERT INTO night_players
         (night_id,seat_id,name,account_id,claim_hash,buy_in,cash_out,net,hands_played,hands_won,
           vpip_hands,pfr_hands,raises,calls,checks,folds,all_ins,showdowns,showdown_wins)
@@ -140,7 +174,18 @@ export class SqliteStore {
   async deleteAccount(accountId) {
     this.db.exec('BEGIN');
     try {
+      const owned = this.db.prepare(`SELECT league_id,id FROM league_members WHERE account_id = ? AND role = 'commissioner' AND left_at IS NULL`).all(accountId);
+      for (const owner of owned) {
+        const successor = this.db.prepare(`SELECT id FROM league_members WHERE league_id = ? AND id <> ? AND left_at IS NULL
+          ORDER BY (role = 'co') DESC,joined_at,id LIMIT 1`).get(owner.league_id, owner.id);
+        if (successor) {
+          this.db.prepare(`UPDATE league_members SET role = 'member' WHERE id = ?`).run(owner.id);
+          this.db.prepare(`UPDATE league_members SET role = 'commissioner' WHERE id = ?`).run(successor.id);
+        } else this.db.prepare('UPDATE leagues SET archived_at = ? WHERE id = ?').run(Date.now(), owner.league_id);
+      }
       this.db.prepare('UPDATE night_players SET account_id = NULL WHERE account_id = ?').run(accountId);
+      this.db.prepare(`UPDATE league_members SET account_id = NULL, display_name = 'Former member',
+        left_at = COALESCE(left_at, ?) WHERE account_id = ?`).run(Date.now(), accountId);
       this.db.prepare('DELETE FROM accounts WHERE id = ?').run(accountId);
       this.db.exec('COMMIT');
     } catch (error) { this.db.exec('ROLLBACK'); throw error; }

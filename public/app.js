@@ -262,9 +262,14 @@ $('#entry-form').addEventListener('submit', async event => {
   busy = true; setButtons();
   try {
     const data = { name: $('#name').value.trim() };
-    if (mode === 'create') data.settings = { startingStack: Number($('#starting-stack').value), smallBlind: Number($('#small-blind').value), bigBlind: Number($('#big-blind').value), blindMinutes: Number($('#blind-minutes').value), centsPer1000Chips: Math.round(Number($('#cash-value').value) * 100) };
+    if (mode === 'create') {
+      data.settings = { startingStack: Number($('#starting-stack').value), smallBlind: Number($('#small-blind').value), bigBlind: Number($('#big-blind').value), blindMinutes: Number($('#blind-minutes').value), centsPer1000Chips: Math.round(Number($('#cash-value').value) * 100) };
+      const leagueId = new URL(window.location.href).searchParams.get('league');
+      if (leagueId) data.leagueId = leagueId;
+    }
     else { data.code = $('#room-code').value.trim().toUpperCase(); await previewJoin(data); return; }
     const result = await request(mode, data);
+    if (result.existing) { toast(`League table ${result.roomCode} is already open. Join with that code.`); return; }
     rememberNight(result, data.name);
     saveIdentity({ code: result.roomCode, playerId: result.playerId, token: result.token });
     receive(result.state); status('At the table', true);

@@ -12,6 +12,8 @@ import { createStore } from './store/index.js';
 import { createMailer } from './mail.js';
 import { createAuth, normalizeEmail } from './auth.js';
 import { aggregateStats, paginateNights } from './stats.js';
+import { LeagueStore } from './league-store.js';
+import { validateScoring, computeStandings, recordsFromResults } from './league.js';
 
 const SIX_HOURS = 6 * 60 * 60 * 1000;
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -25,6 +27,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     : !origin || origin === `http://${requestHost}` || origin === `https://${requestHost}`;
   const accountsEnabled = store.enabled && mailer.enabled;
   const auth = accountsEnabled ? createAuth({ store, mailer, now }) : null;
+  const leagueStore = accountsEnabled ? new LeagueStore(store.db) : null;
   const io = new Server(httpServer, { maxHttpBufferSize: 16_384,
     cors: { origin: (origin, cb) => cb(null, allowedOrigins ? allowedOrigins.includes(origin) : true) },
     allowRequest: (req, cb) => {
@@ -48,6 +51,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     requireValue(++bucket.count <= (event === 'create' ? 12 : 30), 'Too many requests. Try again in a moment.');
   }
   const rooms = new Map();
+  const liveByLeague = new Map();
   function persist(room, finalize = false) {
     if (!store.enabled || room.game.handNumber === 0) return;
     try {
@@ -59,10 +63,14 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
         ...Object.fromEntries(game.STAT_FIELDS.map(field => [field, p[field] ?? 0]))
       }));
       const snapshot = { nightId: room.nightId, roomCode: room.code, groupId: null,
+        leagueId: room.leagueId, seasonId: room.seasonId,
         startedAt: room.startedAt, updatedAt: now(), endedAt: room.endedAt ?? null,
         hands: room.game.handNumber, settings: room.game.settings,
         settlement: game.settlement(room.game), players };
-      Promise.resolve().then(() => store.saveNight(snapshot)).catch(logError);
+      Promise.resolve().then(async () => {
+        await store.saveNight(snapshot);
+        if (snapshot.endedAt && room.leagueId) leagueStore.finalizeNight(room.nightId);
+      }).catch(logError);
     } catch (error) { logError(error); }
   }
   let pushEnabled = false;
@@ -172,6 +180,132 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     res.setHeader('Set-Cookie', 'tm_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0');
     res.json({ deleted: true });
   });
+  const leagueIdValid = value => typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value);
+  const newInvite = () => Array.from({ length: 8 }, () => ALPHABET[randomInt(ALPHABET.length)]).join('');
+  const publicLeague = league => ({ id: league.id, name: league.name, inviteCode: league.invite_code,
+    tableSettings: JSON.parse(league.table_settings_json), members: leagueStore.roster(league.id) });
+  function requireLeague(req, res, next) {
+    if (!leagueIdValid(req.params.id)) { res.sendStatus(404); return; }
+    const league = leagueStore.get(req.params.id);
+    const member = league && leagueStore.member(league.id, req.account.id);
+    if (!member) { res.sendStatus(404); return; }
+    req.league = league; req.leagueMember = member; next();
+  }
+  const role = (...roles) => (req, res, next) => {
+    if (!roles.includes(req.leagueMember.role)) { res.status(403).json({ error: 'League role cannot do that.' }); return; }
+    next();
+  };
+  function tableSettings(input) {
+    const allowed = ['startingStack', 'smallBlind', 'bigBlind', 'blindMinutes', 'centsPer1000Chips'];
+    requireValue(input && typeof input === 'object' && !Array.isArray(input) &&
+      Object.keys(input).every(key => allowed.includes(key)), 'Invalid table settings.');
+    return game.createTable(input).settings;
+  }
+  app.use('/api/leagues', requireAccount);
+  app.post('/api/leagues', apiOrigin, (req, res) => {
+    if (!req.body || Object.keys(req.body).length !== 1 || !validName(req.body.name)) {
+      res.status(400).json({ error: 'Invalid league name.' }); return;
+    }
+    let inviteCode;
+    do { inviteCode = newInvite(); } while (leagueStore.byInvite(inviteCode));
+    const league = leagueStore.create({ id: randomUUID(), name: normalizedName(req.body.name), inviteCode,
+      settings: game.createTable().settings, account: req.account, memberId: randomUUID(), time: now() });
+    res.status(201).json(publicLeague(league));
+  });
+  app.get('/api/leagues', (req, res) => res.json({ leagues: leagueStore.mine(req.account.id) }));
+  app.post('/api/leagues/join', apiOrigin, (req, res) => {
+    const code = typeof req.body?.inviteCode === 'string' ? req.body.inviteCode.toUpperCase() : null;
+    if (!code || !/^[A-HJ-NP-Z]{8}$/.test(code) || Object.keys(req.body).length !== 1) {
+      res.status(400).json({ error: 'Invalid invite code.' }); return;
+    }
+    const league = leagueStore.byInvite(code);
+    if (!league) { res.sendStatus(404); return; }
+    leagueStore.join(league.id, req.account, randomUUID(), now());
+    res.json(publicLeague(league));
+  });
+  app.get('/api/leagues/:id', requireLeague, (req, res) => res.json({ ...publicLeague(req.league), myRole: req.leagueMember.role }));
+  app.patch('/api/leagues/:id', apiOrigin, requireLeague, role('commissioner'), (req, res) => {
+    const body = req.body || {};
+    if (Object.keys(body).some(key => !['name', 'tableSettings'].includes(key)) ||
+      (body.name !== undefined && !validName(body.name))) { res.status(400).json({ error: 'Invalid league update.' }); return; }
+    const settings = body.tableSettings === undefined ? JSON.parse(req.league.table_settings_json) : tableSettings(body.tableSettings);
+    res.json(publicLeague(leagueStore.update(req.league.id, body.name ? normalizedName(body.name) : req.league.name, settings)));
+  });
+  app.post('/api/leagues/:id/leave', apiOrigin, requireLeague, (req, res) => {
+    leagueStore.leave(req.leagueMember, now()); res.json({ left: true });
+  });
+  app.post('/api/leagues/:id/invite/rotate', apiOrigin, requireLeague, role('commissioner', 'co'), (req, res) => {
+    let code; do { code = newInvite(); } while (leagueStore.byInvite(code));
+    leagueStore.rotate(req.league.id, code); res.json({ inviteCode: code });
+  });
+  app.patch('/api/leagues/:id/members/:memberId', apiOrigin, requireLeague, role('commissioner'), (req, res) => {
+    if (!['co', 'member'].includes(req.body?.role) || Object.keys(req.body).length !== 1) { res.status(400).json({ error: 'Invalid role.' }); return; }
+    leagueStore.setRole(req.league.id, req.params.memberId, req.body.role); res.json({ members: leagueStore.roster(req.league.id) });
+  });
+  app.delete('/api/leagues/:id/members/:memberId', apiOrigin, requireLeague, role('commissioner', 'co'), (req, res) => {
+    leagueStore.remove(req.league.id, req.params.memberId, now()); res.json({ members: leagueStore.roster(req.league.id) });
+  });
+  app.post('/api/leagues/:id/transfer', apiOrigin, requireLeague, role('commissioner'), (req, res) => {
+    requireValue(leagueIdValid(req.body?.memberId) && Object.keys(req.body).length === 1, 'Invalid member.');
+    leagueStore.transfer(req.league.id, req.leagueMember.id, req.body?.memberId); res.json({ members: leagueStore.roster(req.league.id) });
+  });
+  app.get('/api/leagues/:id/live', requireLeague, (req, res) => res.json({ roomCode: liveByLeague.get(req.league.id) ?? null }));
+  app.get('/api/leagues/:id/seasons', requireLeague, (req, res) => res.json({ seasons: leagueStore.seasons(req.league.id).map(season => ({
+    id: season.id, name: season.name, status: season.status, startsAt: season.starts_at, endsAt: season.ends_at,
+    scoring: JSON.parse(season.scoring_json), championMemberId: season.champion_member_id })) }));
+  app.post('/api/leagues/:id/seasons', apiOrigin, requireLeague, role('commissioner'), (req, res) => {
+    if (!validName(req.body?.name) || Object.keys(req.body).some(key => !['name', 'scoring'].includes(key))) {
+      res.status(400).json({ error: 'Invalid season.' }); return;
+    }
+    const scoring = validateScoring(req.body.scoring);
+    const season = leagueStore.createSeason(req.league.id, randomUUID(), normalizedName(req.body.name), scoring, now());
+    res.status(201).json({ id: season.id, status: season.status, scoring });
+  });
+  app.patch('/api/leagues/:id/seasons/:sid', apiOrigin, requireLeague, role('commissioner'), (req, res) => {
+    const prior = leagueStore.season(req.league.id, req.params.sid);
+    if (!prior) { res.sendStatus(404); return; }
+    if (Object.keys(req.body || {}).some(key => !['name', 'scoring'].includes(key)) ||
+      (req.body?.name !== undefined && !validName(req.body.name))) { res.status(400).json({ error: 'Invalid season update.' }); return; }
+    const scoring = req.body?.scoring ? validateScoring(req.body.scoring) : JSON.parse(prior.scoring_json);
+    const season = leagueStore.updateSeason(req.league.id, prior.id, req.body?.name ? normalizedName(req.body.name) : prior.name, scoring);
+    res.json({ id: season.id, status: season.status, scoring });
+  });
+  app.post('/api/leagues/:id/seasons/:sid/activate', apiOrigin, requireLeague, role('commissioner'), (req, res) => {
+    const season = leagueStore.activateSeason(req.league.id, req.params.sid, now()); res.json({ id: season.id, status: season.status });
+  });
+  app.post('/api/leagues/:id/seasons/:sid/close', apiOrigin, requireLeague, role('commissioner'), (req, res) => {
+    const season = leagueStore.season(req.league.id, req.params.sid);
+    if (!season) { res.sendStatus(404); return; }
+    const standings = computeStandings({ scoring: JSON.parse(season.scoring_json) }, leagueStore.results(req.league.id, season.id), leagueStore.roster(req.league.id));
+    const champion = standings.find(row => row.qualified && row.nights > 0);
+    const closed = leagueStore.closeSeason(req.league.id, season.id, champion?.memberId ?? null, now());
+    res.json({ id: closed.id, status: closed.status, championMemberId: closed.champion_member_id });
+  });
+  app.get('/api/leagues/:id/seasons/:sid/standings', requireLeague, (req, res) => {
+    const season = leagueStore.season(req.league.id, req.params.sid);
+    if (!season) { res.sendStatus(404); return; }
+    res.json({ season: { id: season.id, name: season.name, status: season.status,
+      scoring: JSON.parse(season.scoring_json), championMemberId: season.champion_member_id },
+    standings: computeStandings({ scoring: JSON.parse(season.scoring_json) }, leagueStore.results(req.league.id, season.id), leagueStore.roster(req.league.id)) });
+  });
+  app.get('/api/leagues/:id/nights', requireLeague, (req, res) => res.json({ nights: leagueStore.nights(req.league.id, req.query.season || null) }));
+  app.get('/api/leagues/:id/audit', requireLeague, (req, res) => {
+    const page = Math.max(1, Number(req.query.page) || 1);
+    res.json({ entries: leagueStore.audit(req.league.id, 50, (page - 1) * 50), page });
+  });
+  app.get('/api/leagues/:id/records', requireLeague, (req, res) => res.json(recordsFromResults(leagueStore.results(req.league.id), leagueStore.roster(req.league.id))));
+  for (const action of ['void', 'restore']) app.post(`/api/leagues/:id/nights/:nightId/${action}`, apiOrigin, requireLeague, role('commissioner', 'co'), (req, res) => {
+    const reason = req.body?.reason;
+    if (typeof reason !== 'string' || reason.trim().length < 3 || reason.length > 200 || /[<>\p{Cc}\p{Cf}]/u.test(reason) || Object.keys(req.body).length !== 1) {
+      res.status(400).json({ error: 'A reason of 3–200 safe characters is required.' }); return;
+    }
+    leagueStore.reviewNight(req.league.id, req.params.nightId, action === 'restore', req.leagueMember.id, reason.trim(), now(), randomUUID());
+    res.json({ counts: action === 'restore' });
+  });
+  app.use((error, _req, res, _next) => {
+    if (error instanceof RequestError) { res.status(400).json({ error: error.message }); return; }
+    logError(error); res.status(500).json({ error: 'Something went wrong.' });
+  });
   app.use(express.static(fileURLToPath(new URL('../public', import.meta.url))));
 
   function view(room, id) {
@@ -255,6 +389,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
       if (now() - room.lastActive >= idleMs) {
         persist(room, true);
         for (const id of [...room.connections.keys()]) detach(room, id, 'Room expired after six hours of inactivity.');
+        if (room.leagueId) liveByLeague.delete(room.leagueId);
         rooms.delete(code);
       }
     }
@@ -294,16 +429,28 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     on('create', payload => {
       requireValue(!socket.data.identity, 'Leave your current table first.');
       requireValue(rooms.size < 1000, 'Server is full. Try again later.');
+      let league = null;
+      let leagueSettings = null;
+      if (payload.leagueId) {
+        requireValue(accountsEnabled && socket.data.accountId, 'Sign in to start a league table.');
+        league = leagueStore.get(payload.leagueId);
+        requireValue(league && ['commissioner', 'co'].includes(leagueStore.member(league.id, socket.data.accountId)?.role), 'Only league commissioners and co-commissioners can start a league table.');
+        const existingCode = liveByLeague.get(league.id);
+        if (existingCode && rooms.has(existingCode)) return { roomCode: existingCode, existing: true };
+        leagueSettings = JSON.parse(league.table_settings_json);
+      }
       const id = randomUUID();
-      const state = game.addPlayer(game.createTable(payload.settings), id, payload.name);
+      const state = game.addPlayer(game.createTable(leagueSettings || payload.settings), id, payload.name);
       let code;
       do { code = Array.from({ length: 8 }, () => ALPHABET[randomInt(ALPHABET.length)]).join(''); } while (rooms.has(code));
       const token = randomBytes(32).toString('hex');
       const room = { code, nightId: randomUUID(), startedAt: now(), endedAt: null, hostId: id, game: state,
+        leagueId: league?.id ?? null, seasonId: league ? leagueStore.activeSeason(league.id)?.id ?? null : null,
         tokens: new Map([[id, token]]), tokenHashes: new Map([[id, hashToken(token)]]), accounts: new Map(),
         connections: new Map(), rebuyRequests: new Map(), pushSubscriptions: new Map(), presence: new Map(),
         lastActive: now(), revision: 0, lastSettlement: null };
-      rooms.set(code, room); bind(socket, room, id); broadcast(room);
+      rooms.set(code, room); if (league) liveByLeague.set(league.id, code);
+      bind(socket, room, id); broadcast(room);
       return { token, playerId: id, roomCode: code, state: view(room, id) };
     });
     on('table-preview', payload => {
@@ -422,7 +569,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
       requireValue(payload.revision === room.revision, 'Table changed. Please try again.');
       room.game = game.removePlayer(room.game, id);
       detach(room, id, 'You left the table.'); room.revision++; room.lastActive = now();
-      if (!room.game.players.length) { persist(room, true); rooms.delete(room.code); }
+      if (!room.game.players.length) { persist(room, true); if (room.leagueId) liveByLeague.delete(room.leagueId); rooms.delete(room.code); }
       else {
         if (room.hostId === id) room.hostId = room.game.players[0].id;
         broadcast(room);

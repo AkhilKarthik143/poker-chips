@@ -1,5 +1,13 @@
 # Decisions and progress
 
+## Leagues on the correct checkout (2026-11-10)
+
+- Branch `feature/leagues` starts from passing `feature/accounts-stats`. SQLite migration v3 adds league, roster, season, night-result and audit tables; no legacy groups existed to migrate.
+- Assumption: a guest sub can win a pot and appears in night history, but only signed-in members receive a league result row. A night needs two member participants to score.
+- Season scoring is immutable after activation; nights are stamped with the active season at room creation. Closing stores a champion and prevents later result rewrites or review.
+- Commissioner/member/co permissions are server checked. League IDs are top-level socket inputs and never part of game settings or room broadcasts.
+- Integration test and scoring fixtures pass; browser viewport and real-device verification remain pending. No remote push.
+
 ## Correct poker-chips checkout: accounts and history (2026-11-10)
 
 - Branch `feature/accounts-stats` starts at clean `feature/ux-overhaul` commit `66fd4e8`; the remote is `AkhilKarthik143/poker-chips`. No push or PR.
