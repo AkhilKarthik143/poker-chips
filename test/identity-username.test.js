@@ -50,5 +50,8 @@ test('username API rate limit and no-database feature flag', async t => {
   for (let index = 0; index < 28; index++) await fetch(`${root}/api/username/check?u=OtherName`, { headers });
   assert.equal((await fetch(`${root}/api/username/check?u=OtherName`, { headers })).status, 429);
   assert.equal((await fetch(`http://127.0.0.1:${noDbPort}/api/username/check?u=alex`)).status, 404);
+  assert.equal((await fetch(`http://127.0.0.1:${noDbPort}/api/username/suggestions`)).status, 404);
+  assert.equal((await fetch(`http://127.0.0.1:${noDbPort}/api/u/alex`)).status, 404);
   assert.equal((await fetch(`http://127.0.0.1:${noDbPort}/api/me/profile`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status, 404);
+  assert.equal((await fetch(`http://127.0.0.1:${noDbPort}/api/me/onboarding/skip`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status, 404);
 });

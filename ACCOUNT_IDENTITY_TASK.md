@@ -84,25 +84,25 @@ Update `README.md` (username rules, change and hold policy, privacy model and wh
 - [x] I3: avatar spec, renderer, tokens and CSS classes, contrast checks, builder sheet, table and league integration, tests. Gate: lint + test, commit
 - [x] I4: onboarding flow and profile editing UI, tests. Gate: lint + test, commit
 - [x] I5: docs. Gate: lint + test, commit
-- [ ] Add defensive checks for edge cases (simultaneous username claims, username held by a deleted account, cooldown boundary at exactly 30 days, avatar spec from an older version, a 10-player table with all avatars, display name equal to another member's)
+- [x] Add defensive checks for edge cases (simultaneous username claims, username held by a deleted account, cooldown boundary at exactly 30 days, avatar spec from an older version, a 10-player table with all avatars, display name equal to another member's)
 
 ### Validation
-- [ ] Run `npm run lint` and fix any issues (zero warnings)
-- [ ] Run `npm test` and ensure all pass, including new tests for username validation, hold and cooldown, profile visibility and 404 uniformity, avatar validation and rendering, parity, onboarding
-- [ ] Run `npm test` again with no DB env vars set and confirm all original tests pass unchanged and identity routes return 404
-- [ ] Run `node scripts/check-contrast.js` and ensure every theme (including high contrast if present) passes, including avatar ink vs background
-- [ ] Run `node scripts/simulate-four.js` and ensure it exits 0
-- [ ] Start with `TABLEMATE_DB_PATH=./data/smoke.db npm start` in the background and smoke it with curl and `socket.io-client`: sign up two accounts, claim usernames, confirm the second claim of a taken name fails, set an avatar, join one table, and assert `view()` shows avatars for both and `@username` for neither; confirm `GET /healthz` returns `{"ok":true}`; stop the server and delete `data/smoke.db`
-- [ ] Run a leak test: serialize every `view()` payload and every response to a second user and assert none contains an email, account id, session token or privacy flag, and that hidden and missing profiles return byte-identical 404 bodies
-- [ ] Run `grep -rnE "style=\"|<script>[^<]|fill=\"var" public/` and confirm no inline styles, inline scripts, or var-in-attribute fills were added
-- [ ] If Playwright is installed, screenshot onboarding, the avatar builder, the profile section, and a 10-seat table with avatars at 360x740 and 390x844 in two themes; confirm no overlap, no horizontal scroll, and tap targets of at least 44px; otherwise list manual checks in Notes
-- [ ] Verify regressions: `git diff main -- src/game.js` shows no change to betting, pot, payout or undo logic
+- [x] Run `npm run lint` and fix any issues (zero warnings)
+- [x] Run `npm test` and ensure all pass, including new tests for username validation, hold and cooldown, profile visibility and 404 uniformity, avatar validation and rendering, parity, onboarding
+- [x] Run `npm test` again with no DB env vars set and confirm all original tests pass unchanged and identity routes return 404
+- [x] Run `node scripts/check-contrast.js` and ensure every theme (including high contrast if present) passes, including avatar ink vs background
+- [x] Run `node scripts/simulate-four.js` and ensure it exits 0
+- [x] Start with `TABLEMATE_DB_PATH=./data/smoke.db npm start` in the background and smoke it with curl and `socket.io-client`: sign up two accounts, claim usernames, confirm the second claim of a taken name fails, set an avatar, join one table, and assert `view()` shows avatars for both and `@username` for neither; confirm `GET /healthz` returns `{"ok":true}`; stop the server and delete `data/smoke.db`
+- [x] Run a leak test: serialize every `view()` payload and every response to a second user and assert none contains an email, account id, session token or privacy flag, and that hidden and missing profiles return byte-identical 404 bodies
+- [x] Run `grep -rnE "style=\"|<script>[^<]|fill=\"var" public/` and confirm no inline styles, inline scripts, or var-in-attribute fills were added
+- [x] If Playwright is installed, screenshot onboarding, the avatar builder, the profile section, and a 10-seat table with avatars at 360x740 and 390x844 in two themes; confirm no overlap, no horizontal scroll, and tap targets of at least 44px; otherwise list manual checks in Notes
+- [x] Verify regressions: `git diff main -- src/game.js` shows no change to betting, pot, payout or undo logic
 
 ### Cleanup
-- [ ] Remove debug code and stray `console.log`
-- [ ] Update docs/CHANGELOG (README, VALIDATION.md)
-- [ ] Final validation: `npm run lint && npm test && node scripts/simulate-four.js && node scripts/check-contrast.js`
-- [ ] Write the final summary at the top of Notes
+- [x] Remove debug code and stray `console.log`
+- [x] Update docs/CHANGELOG (README, VALIDATION.md)
+- [x] Final validation: `npm run lint && npm test && node scripts/simulate-four.js && node scripts/check-contrast.js`
+- [x] Write the final summary at the top of Notes
 
 ## Definition of Done
 - `src/identity.js` validates usernames (length, charset, reserved words, leet-normalized blocklist, case-insensitive uniqueness) with a client parity test, and enforces the 30-day change cooldown and the 30-day hold on released names
@@ -119,7 +119,9 @@ Update `README.md` (username rules, change and hold policy, privacy model and wh
 Agent: log progress, assumptions, and blockers here.
 
 ### Final summary
-(write last)
+- Implemented account identity on `feature/account-identity` in the local poker-chips repo. Users can claim a unique username, set a display name and closed-spec avatar, choose profile/table visibility, complete or skip onboarding, and edit their profile later. League and table views receive only allowed identity fields.
+- Final gate: lint zero warnings, 105/105 tests, four-player chip conservation, and contrast across eight themes. The no-DB suite also passed 105/105. A file-backed two-account smoke verified username conflict, avatars, private socket views and health; hidden and missing profiles returned identical 404 bodies. The temporary database was removed.
+- Playwright Chromium captured ten phone screenshots across Felt and Retro Arcade at 360×740 and 390×844, including a ten-seat table. No overlap, horizontal overflow, page errors or sub-44px visible tap targets were found. `src/game.js` has no changes relative to the starting feature branch. No remote was changed.
 
 ### Progress log
 - Baseline: `feature/customization` was newest. `npm ci`, lint and all 96 tests passed. Created `feature/account-identity` from it.
@@ -129,6 +131,7 @@ Agent: log progress, assumptions, and blockers here.
 - I3: closed avatar spec, deterministic SVG renderer, six-part builder, table/Players/league rendering, theme-token colors and avatar ink contrast checks. Lint, 103 tests and eight-theme contrast check passed.
 - I4: first-sign-in redirect for email and Google, four-step skippable onboarding, available suggestions, generated username on skip, profile editing and preview, signed-in name prefill. Lint and 105 tests passed.
 - I5: README privacy, username, avatar and API documentation; validation record. Lint and 105 tests passed. Follow-up privacy review cleared live identity on sign-out and restored it on signed-in reconnect. Playwright Chromium completed onboarding, profile, avatar dialog and ten-seat table checks at 360×740 and 390×844 in two themes with ten screenshots, no overflow or page errors.
+- Final review: added regression checks for older avatar documents, atomic rollback when a username is taken, duplicate display names in one league, and no-database route gating. The final lint/test/simulation/contrast gate passed; explicit no-DB suite passed 105/105. File-backed smoke passed on port 3103 and its database was removed. Playwright's visible interactive targets were at least 44×44 pixels. Static scan found no new inline styles, scripts or var-in-attribute fills. `git diff feature/customization -- src/game.js` was empty; `main` predates other local feature branches.
 
 ### Assumption log
 - Username changes to a different name start a 30-day cooldown, including the first claim; changing casing alone does not. A prior owner may reclaim a held name during cooldown. (I1)
@@ -137,7 +140,7 @@ Agent: log progress, assumptions, and blockers here.
 - Avatar colors reuse the twelve closed color IDs but use a stable light palette across themes, so one dark ink token stays above 3:1. Seat stripes retain their existing theme-specific colors. (I3)
 
 ### Blockers
-- (stage, what failed, approaches tried)
+- None.
 
 ### Untested for real
-- (phone browsers, real email onboarding, screen readers, anything else)
+- Physical phone browsers, real email delivery, production Google sign-in, screen readers, multi-device syncing across a deployed service, and the Node 20 SQLite fallback.

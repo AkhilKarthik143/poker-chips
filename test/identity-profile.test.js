@@ -47,11 +47,15 @@ test('profiles require shared league, hide private users uniformly, and update a
   const privacy = { profileVisibility: 'private', showUsernameAtTables: false, showAvatarAtTables: true };
   assert.equal((await put('alice', { displayName: 'Alice New', privacy })).status, 200);
   assert.equal((await (await get('/api/me', 'alice')).json()).displayName, 'Alice New');
+  assert.equal((await put('alice', { username: 'bob', displayName: 'Wrong Name' })).status, 409);
+  assert.equal((await (await get('/api/me', 'alice')).json()).displayName, 'Alice New', 'a conflicting username rolls back the accompanying name');
+  assert.equal((await put('bob', { displayName: 'Alice New' })).status, 200);
   const privateResult = await get('/api/u/alice', 'bob');
   assert.equal(privateResult.status, 404); assert.equal(await privateResult.text(), await (await get('/api/u/missing', 'bob')).text());
   assert.equal((await (await get('/api/u/alice', 'alice')).json()).displayName, 'Alice New');
   const roster = await (await get(`/api/leagues/${leagueId}`, 'bob')).json();
   assert.equal(roster.members.find(member => member.username === 'alice').displayName, 'Alice New');
+  assert.equal(roster.members.find(member => member.username === 'bob').displayName, 'Alice New', 'duplicate display names remain distinguishable by username');
   assert.equal(JSON.stringify(roster).includes('alice@example.com'), false);
 });
 
