@@ -186,7 +186,7 @@ function receive(value) {
   if (dragSeat) { queuedDragState = value; return; }
   const previousState = state;
   const previousRequestIds = new Set((previousState?.rebuyRequests || []).map(item => item.id));
-  const receivedRequest = previousState && value.hostId === value.playerId && (value.rebuyRequests || []).some(item => item.id !== value.playerId && !previousRequestIds.has(item.id));
+  const receivedRequest = previousState && value.permissions?.manage && (value.rebuyRequests || []).some(item => item.id !== value.playerId && !previousRequestIds.has(item.id));
   const alertResult = window.Tablemate.alertTransition(previousState, value, value.playerId, ready, alertWinHands);
   alertWinHands = alertResult.seenHands;
   const previousOrder = state?.seatOrder || [];
@@ -348,7 +348,7 @@ async function previewJoin(data) {
   }, 'Confirm & join');
 }
 function inviteDialog() {
-  const host = state.hostId === state.playerId;
+  const host = state.permissions?.manage;
   const inviteUrl = window.Tablemate.roomInviteUrl(window.location.origin, state.roomCode);
   if (!inviteUrl) return toast('Could not create an invite link for this room.');
   showDialog(`Invite to table ${state.roomCode}`, `<section class="room-invite" aria-label="Invite friends">
@@ -454,7 +454,7 @@ function donationDialog() {
   }, 'Confirm donation');
 }
 function openControls(targetId) {
-  const panel = document.getElementById(targetId || (state.hostId === state.playerId ? 'host-menu' : 'your-seat'));
+  const panel = document.getElementById(targetId || (state.permissions?.manage ? 'host-menu' : 'your-seat'));
   const sidebar = document.querySelector('#table .sidebar');
   $('#table-rail').open = true;
   panel.open = true;
@@ -489,7 +489,7 @@ const instructions = {
   flop: 'Reveal three community cards on the real table.',
   turn: 'Reveal the fourth community card on the real table.',
   river: 'Reveal the fifth and final community card.',
-  showdown: 'Reveal any remaining community cards, then your hole cards. The host selects winners below.',
+  showdown: 'Reveal any remaining community cards, then your hole cards. The host or co-host selects winners below.',
   complete: 'Chips settled. Collect the cards and get ready for the next hand.'
 };
 function option(p) { return `<option value="${escape(p.id)}">${escape(p.name)} · ${number(p.stack)}</option>`; }
@@ -679,9 +679,9 @@ function renderRebuyRequests(force = false) {
   const dialog = $('#rebuy-requests-dialog');
   if (!dialog.open && !force) return;
   const snapshot = dialog.open ? captureRegion(dialog) : null;
-  const requests = state.hostId === state.playerId ? (state.rebuyRequests || []) : [];
+  const requests = state.permissions?.manage ? (state.rebuyRequests || []) : [];
   const rows = requests.map(item => `<article class="rebuy-request-row"><div><h3>${escape(item.name)}</h3><p>Requested ${number(item.amount)} chips</p></div><label for="request-amount-${escape(item.id)}">Approve amount</label><input id="request-amount-${escape(item.id)}" data-request-amount="${escape(item.id)}" type="number" inputmode="numeric" min="1" max="1000000000" step="1" value="${item.amount}"><div class="rebuy-request-actions"><button type="button" data-rebuy-approve="${escape(item.id)}">Approve</button><button type="button" class="quiet danger" data-rebuy-deny="${escape(item.id)}">Deny</button></div></article>`).join('');
-  dialog.innerHTML = `<section class="rebuy-requests-sheet"><header class="tonight-header"><div><p class="eyebrow">HOST CONTROLS</p><h2 id="rebuy-requests-title">Rebuy requests (${requests.length})</h2></div><button type="button" class="seat-sheet-close" data-close-rebuy aria-label="Close rebuy requests">×</button></header><p id="rebuy-request-message" role="alert" class="seat-message">${escape(rebuyRequestMessage)}</p>${rows || '<p class="empty-ledger">No pending requests.</p>'}</section>`;
+  dialog.innerHTML = `<section class="rebuy-requests-sheet"><header class="tonight-header"><div><p class="eyebrow">TABLE CONTROLS</p><h2 id="rebuy-requests-title">Rebuy requests (${requests.length})</h2></div><button type="button" class="seat-sheet-close" data-close-rebuy aria-label="Close rebuy requests">×</button></header><p id="rebuy-request-message" role="alert" class="seat-message">${escape(rebuyRequestMessage)}</p>${rows || '<p class="empty-ledger">No pending requests.</p>'}</section>`;
   if (snapshot) restoreRegion(dialog, snapshot);
   dialog.querySelector('[data-close-rebuy]').addEventListener('click', () => dialog.close());
   dialog.querySelectorAll('[data-rebuy-approve]').forEach(button => button.addEventListener('click', () => respondToRebuy(button.dataset.rebuyApprove, true)));
@@ -713,6 +713,12 @@ function leaveConfirmation() {
   const net = row ? `${row.net > 0 ? '+' : ''}${number(row.net)} chips${row.netMoney ? ` · ${row.netMoney}` : ''}` : 'No settled totals yet.';
   showDialog('Leave table', `<p>Your net so far: <strong>${escape(net)}</strong>.</p><p class="helper">Leaving removes your seat. You can copy the Tonight summary first.</p>`, async () => { await request('leave'); if (state) reset('You left the table.'); }, 'Leave table');
 }
+function endLeagueNight() {
+  showDialog('End league night', '<p>Save tonight’s results and close this league table for everyone?</p><p class="helper">The completed night will appear in league history and standings.</p>', async () => {
+    await request('host:endNight');
+    if (state) reset('League night ended. Results saved.');
+  }, 'End night');
+}
 function nextAssignments(order, changed) {
   const eligible = order.filter(id => { const p = state.players.find(p => p.id === id); return p.stack > 0 && !p.sittingOut; });
   if (eligible.length < 2) return {};
@@ -729,7 +735,7 @@ function renderSeatReorder(force = false) {
   if ((!dialog.open && !force) || dragSeat) return;
   const previousScroll = dialog.querySelector('.seat-sort-list')?.scrollTop || 0;
   const focusedPlayer = document.activeElement?.closest?.('[data-seat-row]')?.dataset.playerId;
-  const host = state.hostId === state.playerId;
+  const host = state.permissions?.manage;
   const editable = host && ['lobby', 'complete'].includes(state.street);
   const changed = JSON.stringify(seatDraft) !== JSON.stringify(state.seatOrder);
   const roles = editable ? nextAssignments(seatDraft, changed) : { D: state.players.find(p => p.seat === state.dealerSeat)?.id, SB: state.smallBlindId, BB: state.bigBlindId };
@@ -740,7 +746,7 @@ function renderSeatReorder(force = false) {
     const label = `Seat ${index + 1}, ${escape(player.name)}, stack ${number(player.stack)}${Object.entries(roles).filter(([, playerId]) => playerId === id).map(([role]) => `, ${roleNames[role]}`).join('')}`;
     return `<li data-seat-row data-player-id="${escape(id)}" tabindex="0" aria-label="${label}" ${editable ? 'aria-roledescription="sortable seat" aria-grabbed="false"' : ''}><button type="button" class="seat-grip" aria-label="Drag ${escape(player.name)}">⠿</button><span class="seat-index">${index + 1}</span><strong class="seat-player">${escape(player.name)}</strong><span class="seat-stack" title="${number(player.stack)} chips" aria-label="${number(player.stack)} chips">${compactStack(player.stack)}</span><span class="seat-role-chips">${badges}</span>${editable ? `<span class="seat-actions"><button type="button" data-seat-move="up" aria-label="Move ${escape(player.name)} up" ${index === 0 ? 'disabled' : ''}>↑</button><button type="button" data-seat-move="down" aria-label="Move ${escape(player.name)} down" ${index === seatDraft.length - 1 ? 'disabled' : ''}>↓</button></span>` : ''}</li>`;
   }).join('');
-  dialog.innerHTML = `<section class="seat-sheet ${editable ? '' : 'read-only'}"><header class="seat-sheet-header"><div><p class="eyebrow">TABLE SEATING</p><h2 id="seat-reorder-title">${editable ? 'Arrange players' : 'Seat order'}</h2></div><button type="button" class="seat-sheet-close" aria-label="Close seat order">×</button></header><p class="seat-sheet-note">${editable ? 'Drag by the handle, hold a row, or use the arrow keys. Seat 1 stays at the top.' : 'This order is read-only. Ask the host to change seats between hands.'}</p><p class="seat-preview" id="seat-preview">Next hand: ${['D', 'SB', 'BB'].map(role => `${role} ${escape(state.players.find(p => p.id === roles[role])?.name || '—')}`).join(' · ')}</p>${state.players.length ? `<ol class="seat-sort-list" aria-label="${editable ? 'Reorder players' : 'Player seat order'}">${rows}</ol>` : '<p>No players seated.</p>'}<p class="seat-message" role="status">${escape(seatMessage)}</p><div class="seat-live sr-only" aria-live="polite" aria-atomic="true"></div>${editable ? `<footer class="seat-sheet-footer"><button type="button" class="seat-shuffle">Shuffle seats</button><button type="button" class="seat-cancel">Cancel</button><button type="button" class="primary seat-save" ${!changed || busy || !ready ? 'disabled' : ''}>Save order</button></footer>` : ''}</section>`;
+  dialog.innerHTML = `<section class="seat-sheet ${editable ? '' : 'read-only'}"><header class="seat-sheet-header"><div><p class="eyebrow">TABLE SEATING</p><h2 id="seat-reorder-title">${editable ? 'Arrange players' : 'Seat order'}</h2></div><button type="button" class="seat-sheet-close" aria-label="Close seat order">×</button></header><p class="seat-sheet-note">${editable ? 'Drag by the handle, hold a row, or use the arrow keys. Seat 1 stays at the top.' : 'This order is read-only. Ask the host or co-host to change seats between hands.'}</p><p class="seat-preview" id="seat-preview">Next hand: ${['D', 'SB', 'BB'].map(role => `${role} ${escape(state.players.find(p => p.id === roles[role])?.name || '—')}`).join(' · ')}</p>${state.players.length ? `<ol class="seat-sort-list" aria-label="${editable ? 'Reorder players' : 'Player seat order'}">${rows}</ol>` : '<p>No players seated.</p>'}<p class="seat-message" role="status">${escape(seatMessage)}</p><div class="seat-live sr-only" aria-live="polite" aria-atomic="true"></div>${editable ? `<footer class="seat-sheet-footer"><button type="button" class="seat-shuffle">Shuffle seats</button><button type="button" class="seat-cancel">Cancel</button><button type="button" class="primary seat-save" ${!changed || busy || !ready ? 'disabled' : ''}>Save order</button></footer>` : ''}</section>`;
   const list = dialog.querySelector('.seat-sort-list'); if (list) list.scrollTop = previousScroll;
   if (focusedPlayer) dialog.querySelector(`[data-player-id="${CSS.escape(focusedPlayer)}"]`)?.focus({ preventScroll: true });
   dialog.querySelector('.seat-sheet-close').addEventListener('click', () => dialog.close());
@@ -957,7 +963,7 @@ function render() {
   if (!state) return;
   const me = state.players.find(p => p.id === state.playerId);
   if (!me) return;
-  const host = state.hostId === state.playerId;
+  const host = state.permissions?.manage;
   const requestCount = host ? (state.rebuyRequests || []).length : 0;
   const playing = !['lobby', 'complete'].includes(state.street);
   const actor = state.players.find(p => p.id === state.turn);
@@ -976,11 +982,11 @@ function render() {
         ${state.street === 'showdown' && state.pots.length > 1 ? `<div class="pot-summary">${state.pots.map((p, i) => `<span>${i ? `Side pot ${i}` : 'Main pot'} · ${number(p.amount)}</span>`).join('')}</div>` : ''}</div>
       ${seatOval(state.seatOrder)}</div><div class="table-meta"><span>Action moves clockwise</span><span id="blind-clock"></span></div>
       ${state.lastResult && state.street === 'complete' ? `<section class="result"><h2>That’s a hand.</h2>${state.lastResult.awards.map(a => `<p>${escape(state.players.find(p => p.id === a.id)?.name || 'Departed player')} <strong>+${number(a.amount)}</strong> · ${escape(a.label)}</p>`).join('')}${[...new Set(state.lastResult.awards.map(a => a.id))].map(id => { const winner = state.players.find(p => p.id === id); return winner ? `<p class="winner-record">${escape(winner.name)} has won ${winner.handsWon} of ${winner.handsPlayed} played hands; dealt ${winner.handsDealt} total tonight.</p>` : ''; }).join('')}</section>` : ''}
-      ${state.street === 'showdown' ? `<section class="showdown"><h2>Who takes the pot?</h2><p class="helper">${host ? 'Select every tied winner for each pot. Chips settle after all pots are assigned; odd chips go left of the dealer.' : 'The host is selecting winners from the physical cards.'}</p>${state.pots.map((pot, index) => `<form class="winner-form" data-pot="${pot.id}"><h3>${index ? `Side pot ${index}` : 'Main pot'} · ${number(pot.amount)} chips</h3>${pot.winners ? `<p class="helper">Selected: ${pot.winners.map(id => escape(state.players.find(p => p.id === id).name)).join(' + ')}</p>` : pot.eligible.map(id => `<label for="winner-${pot.id}-${id}"><input id="winner-${pot.id}-${id}" type="checkbox" name="winner" value="${escape(id)}" ${!host ? 'disabled' : ''}>${escape(state.players.find(p => p.id === id).name)}</label>`).join('')}${host && !pot.winners ? '<button class="primary" type="submit">Confirm winner(s)</button>' : ''}</form>`).join('')}</section>` : ''}
+      ${state.street === 'showdown' ? `<section class="showdown"><h2>Who takes the pot?</h2><p class="helper">${host ? 'Select every tied winner for each pot. Chips settle after all pots are assigned; odd chips go left of the dealer.' : 'The host or co-host is selecting winners from the physical cards.'}</p>${state.pots.map((pot, index) => `<form class="winner-form" data-pot="${pot.id}"><h3>${index ? `Side pot ${index}` : 'Main pot'} · ${number(pot.amount)} chips</h3>${pot.winners ? `<p class="helper">Selected: ${pot.winners.map(id => escape(state.players.find(p => p.id === id).name)).join(' + ')}</p>` : pot.eligible.map(id => `<label for="winner-${pot.id}-${id}"><input id="winner-${pot.id}-${id}" type="checkbox" name="winner" value="${escape(id)}" ${!host ? 'disabled' : ''}>${escape(state.players.find(p => p.id === id).name)}</label>`).join('')}${host && !pot.winners ? '<button class="primary" type="submit">Confirm winner(s)</button>' : ''}</form>`).join('')}</section>` : ''}
     </section><details class="rail-drawer" id="table-rail" ${railMedia.matches ? 'open' : ''}><summary>Players, hand log & controls</summary><aside class="sidebar">
       <details class="panel" id="players-panel" open><summary>Players <span>${state.players.length}/10</span></summary><ul class="players-list">${state.seatOrder.map(id => { const p = state.players.find(p => p.id === id); const cosmetic = state.cosmetics?.[id] || { avatar:'chip',color:'c1',note:'' }; return `<li class="seat-color-${escape(cosmetic.color)}"><strong>${avatarIcon(cosmetic.avatar)} ${escape(p.name)}${p.id === state.playerId ? ' · You' : ''}</strong><span>${p.sittingOut ? '⏸ Away' : p.connected ? '✓ Connected' : '⏸ Offline'}</span>${cosmetic.note ? `<span class="seat-note">${escape(cosmetic.note)}</span>` : ''}<span>Won ${p.handsWon} · Played ${p.handsPlayed} · Dealt ${p.handsDealt}</span></li>`; }).join('')}</ul><div class="panel-content"><button id="donate-chips" ${playing || me.stack < 1 || state.players.length < 2 ? 'disabled' : ''}>Donate chips</button><button id="open-tonight-players">Tonight</button><p class="helper">${playing ? 'Available between hands.' : 'Give chips from your stack to another player.'}</p></div></details>
       <details class="panel" id="hand-log" ${railMedia.matches ? 'open' : ''}><summary>Hand log <span>Hand ${state.handNumber}</span></summary><ol class="log-list">${handLog()}</ol></details>
-      ${host ? hostPanel(playing, actor) : ''}
+      ${host ? hostPanel(playing, actor, state.permissions.owner) : ''}
       <details class="panel" id="your-seat"><summary>Your seat</summary><div class="panel-content"><p class="helper">${playing ? 'Sit out applies from the next hand. Leave and rebuy between hands.' : 'Ask your host for a rebuy or add-on.'}</p><button id="sit-out">${me.sittingOut ? 'Play next hand' : 'Sit out next hand'}</button><button id="leave" class="quiet danger" ${playing ? 'disabled' : ''}>Leave table</button><button type="button" id="open-cosmetics">Avatar & seat color</button>${rebuyRequestControls()}${themePickerMarkup('seat')}${pushControls()}${alertControls()}</div></details>
     </aside></details></div>
     <section class="dock" aria-label="Your betting controls"><div class="dock-inner"><div class="dock-summary"><div class="turn-label ${state.legal.active ? '' : 'waiting'}${ready && !state.legal.active && actor ? ' other-turn' : ''}" role="status">${!ready ? 'RECONNECTING' : state.legal.active ? 'YOUR TURN' : state.street === 'showdown' ? 'SHOWDOWN' : actor ? `${escape(actor.name).toUpperCase()} TO ACT` : host ? 'HOST · TABLE CONTROLS' : 'WAITING FOR HOST'}</div><div class="balance"><span>Your stack</span><strong>${number(me.stack)}</strong></div><div class="balance"><span>To call</span><strong>${number(state.legal.toCall)}</strong></div></div>
@@ -1004,13 +1010,13 @@ function render() {
   document.querySelectorAll('.seat-oval').forEach(el => ellipseObserver.observe(el));
   positionSeats();
 }
-function hostPanel(playing, actor) {
+function hostPanel(playing, actor, owner) {
   const requestCount = (state.rebuyRequests || []).length;
-  return `<details class="panel" id="host-menu"><summary tabindex="0">Host controls</summary><div class="panel-content"><button id="undo" ${!state.canUndo ? 'disabled' : ''}>Undo last action</button><button type="button" id="open-rebuy-requests-host" ${requestCount ? '' : 'disabled'}>Rebuy requests (${requestCount})</button>${actor && !actor.connected ? '<button id="host-fold" class="danger">Fold disconnected player</button>' : ''}<p class="helper">${playing ? 'Settings are available between hands.' : 'Changes to the starting stack apply to new seats. Before the first hand, they apply to everyone.'}</p>
+  return `<details class="panel" id="host-menu"><summary tabindex="0">${owner ? 'Host controls' : 'Co-host controls'}</summary><div class="panel-content">${owner ? `<button id="undo" ${!state.canUndo ? 'disabled' : ''}>Undo last action</button>` : ''}<button type="button" id="open-rebuy-requests-host" ${requestCount ? '' : 'disabled'}>Rebuy requests (${requestCount})</button>${actor && !actor.connected ? '<button id="host-fold" class="danger">Fold disconnected player</button>' : ''}${state.leagueTable && state.handNumber > 0 ? `<button type="button" id="end-league-night" class="quiet" ${playing ? 'disabled' : ''}>End league night</button>` : ''}<p class="helper">${playing ? 'Settings are available between hands.' : 'Changes to the starting stack apply to new seats. Before the first hand, they apply to everyone.'}</p>
     <form id="settings-form"><div class="form-grid"><div><label for="host-stack">Starting stack</label><input id="host-stack" type="number" min="1" max="1000000000" value="${state.settings.startingStack}" ${playing ? 'disabled' : ''} required></div><div><label for="host-timer">Timer (minutes)</label><input id="host-timer" type="number" min="0" max="1440" value="${state.settings.blindMinutes}" ${playing ? 'disabled' : ''} required></div><div><label for="host-sb">Small blind</label><input id="host-sb" type="number" min="1" value="${state.settings.smallBlind}" ${playing ? 'disabled' : ''} required></div><div><label for="host-bb">Big blind</label><input id="host-bb" type="number" min="1" value="${state.settings.bigBlind}" ${playing ? 'disabled' : ''} required></div><div><label for="host-cash-value">Cash value per 1,000 chips ($)</label><input id="host-cash-value" type="number" inputmode="decimal" min="0" max="100000" step="0.01" value="${(state.settings.centsPer1000Chips / 100).toFixed(2)}" ${playing ? 'disabled' : ''}></div></div><button type="submit" ${playing ? 'disabled' : ''}>Save table settings</button></form>
     <form id="host-policy-form"><h3>Rebuy approval</h3><label for="host-policy-mode">Mode</label><select id="host-policy-mode"><option value="host" ${state.rebuyPolicy?.mode === 'host' ? 'selected' : ''}>Host approves</option><option value="auto" ${state.rebuyPolicy?.mode === 'auto' ? 'selected' : ''}>Auto-approve up to a cap</option></select><div id="host-policy-auto" ${state.rebuyPolicy?.mode === 'auto' ? '' : 'hidden'}><label for="host-policy-cap">Cap · chips</label><input id="host-policy-cap" type="number" min="1" max="1000000000" value="${state.rebuyPolicy?.cap ?? state.settings.startingStack}"><label for="host-policy-limit">Auto rebuys per player</label><input id="host-policy-limit" type="number" min="0" max="20" value="${state.rebuyPolicy?.maxPerPlayer ?? 3}"></div><button type="submit">Save rebuy policy</button></form>
-    <form id="rebuy-form"><label for="rebuy-player">Rebuy / add-on</label><select id="rebuy-player" ${playing ? 'disabled' : ''}>${state.players.map(option).join('')}</select><label for="rebuy-amount">Chips to add</label><input id="rebuy-amount" type="number" min="1" max="1000000000" value="${state.settings.startingStack}" ${playing ? 'disabled' : ''} required><button type="submit" ${playing ? 'disabled' : ''}>Add chips</button></form>
-    ${state.players.length > 1 ? `<form id="kick-form"><label for="kick-player">Remove a player</label><select id="kick-player" ${playing ? 'disabled' : ''}>${state.players.filter(p => p.id !== state.playerId).map(option).join('')}</select><button class="danger quiet" type="submit" ${playing ? 'disabled' : ''}>Remove selected player</button></form>` : ''}</div></details>`;
+    ${owner ? `<form id="rebuy-form"><label for="rebuy-player">Rebuy / add-on</label><select id="rebuy-player" ${playing ? 'disabled' : ''}>${state.players.map(option).join('')}</select><label for="rebuy-amount">Chips to add</label><input id="rebuy-amount" type="number" min="1" max="1000000000" value="${state.settings.startingStack}" ${playing ? 'disabled' : ''} required><button type="submit" ${playing ? 'disabled' : ''}>Add chips</button></form>` : ''}
+    ${owner && state.players.length > 1 ? `<form id="kick-form"><label for="kick-player">Remove a player</label><select id="kick-player" ${playing ? 'disabled' : ''}>${state.players.filter(p => p.id !== state.playerId).map(option).join('')}</select><button class="danger quiet" type="submit" ${playing ? 'disabled' : ''}>Remove selected player</button></form>` : ''}</div></details>`;
 }
 function wireTable(me, pot) {
   $('#copy-code').addEventListener('click', async () => {
@@ -1030,6 +1036,7 @@ function wireTable(me, pot) {
   $('#start-hand')?.addEventListener('click', () => run('start-hand'));
   $('#undo')?.addEventListener('click', () => run('undo'));
   $('#host-fold')?.addEventListener('click', () => run('host-fold'));
+  $('#end-league-night')?.addEventListener('click', endLeagueNight);
   $('#sit-out').addEventListener('click', () => run('sit-out', { value: !me.sittingOut }));
   $('#leave').addEventListener('click', leaveConfirmation);
   $('#open-cosmetics').addEventListener('click', openCosmetics);

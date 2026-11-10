@@ -11,7 +11,7 @@ import * as game from './game.js';
 import { RequestError, requireValue, validatePayload, entryEvents, normalizedName, validName } from './validation.js';
 import { createStore } from './store/index.js';
 import { createMailer } from './mail.js';
-import { createAuth, normalizeEmail } from './auth.js';
+import { createAuth, normalizeEmail, parseSessionCookie } from './auth.js';
 import { aggregateStats, paginateNights } from './stats.js';
 import { LeagueStore } from './league-store.js';
 import { validateScoring, computeStandings, recordsFromResults } from './league.js';
@@ -33,6 +33,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
   const googleEnabled = store.enabled && typeof googleClientId === 'string' && /^[A-Za-z0-9_-]+\.apps\.googleusercontent\.com$/.test(googleClientId);
   const accountsEnabled = emailEnabled || googleEnabled;
   const auth = accountsEnabled ? createAuth({ store, mailer, now }) : null;
+  const activeSession = accountsEnabled ? store.db.prepare('SELECT 1 FROM sessions WHERE token_hash = ? AND account_id = ? AND expires_at > ?') : null;
   const googleClient = googleEnabled && !verifyGoogleIdToken ? new OAuth2Client(googleClientId) : null;
   const leagueStore = accountsEnabled ? new LeagueStore(store.db) : null;
   const io = new Server(httpServer, { maxHttpBufferSize: 16_384,
@@ -59,6 +60,32 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
   }
   const rooms = new Map();
   const liveByLeague = new Map();
+  const signedInSeat = (room, id, socket) => {
+    const accountId = room.accounts.get(id);
+    return Boolean(accountId && socket?.data.accountId === accountId && socket.data.sessionHash &&
+      activeSession.get(socket.data.sessionHash, accountId, now()));
+  };
+  function roomAccess(room, id, socket) {
+    if (!room.leagueId) {
+      const host = room.hostId === id;
+      return { manage: host, owner: host };
+    }
+    const accountId = room.accounts.get(id);
+    if (!signedInSeat(room, id, socket) || !leagueStore.get(room.leagueId)) {
+      return { manage: false, owner: false };
+    }
+    const role = leagueStore.member(room.leagueId, accountId)?.role;
+    return { manage: role === 'commissioner' || role === 'co', owner: role === 'commissioner' };
+  }
+  function requireRoomAccess(room, id, socket, permission) {
+    requireValue(roomAccess(room, id, socket)[permission], permission === 'owner'
+      ? 'Only the league commissioner or table host can do that.'
+      : 'Only the table host or a league commissioner or co-commissioner can do that.');
+  }
+  function broadcastLeague(leagueId) {
+    const room = rooms.get(liveByLeague.get(leagueId));
+    if (room) broadcast(room);
+  }
   function persist(room, finalize = false) {
     if (!store.enabled || room.game.handNumber === 0) return;
     try {
@@ -172,7 +199,14 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     }
   });
   app.post('/api/auth/logout', apiOrigin, async (req, res) => {
+    const token = parseSessionCookie(req.headers.cookie);
+    const sessionHash = token ? hashToken(token) : null;
     await auth.logout(req.headers.cookie);
+    if (sessionHash) {
+      for (const room of rooms.values()) {
+        if ([...room.connections.values()].some(socketId => io.sockets.sockets.get(socketId)?.data.sessionHash === sessionHash)) broadcast(room);
+      }
+    }
     res.setHeader('Set-Cookie', 'tm_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0');
     res.json({ ok: true });
   });
@@ -249,7 +283,11 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     }
     await store.deleteAccount(req.account.id);
     for (const room of rooms.values()) {
-      for (const [playerId, accountId] of room.accounts) if (accountId === req.account.id) room.accounts.delete(playerId);
+      let changed = false;
+      for (const [playerId, accountId] of room.accounts) {
+        if (accountId === req.account.id) { room.accounts.delete(playerId); changed = true; }
+      }
+      if (changed) broadcast(room);
     }
     res.setHeader('Set-Cookie', 'tm_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0');
     res.json({ deleted: true });
@@ -306,7 +344,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     res.json(publicLeague(leagueStore.update(req.league.id, body.name ? normalizedName(body.name) : req.league.name, settings)));
   });
   app.post('/api/leagues/:id/leave', apiOrigin, requireLeague, (req, res) => {
-    leagueStore.leave(req.leagueMember, now()); res.json({ left: true });
+    leagueStore.leave(req.leagueMember, now()); broadcastLeague(req.league.id); res.json({ left: true });
   });
   app.post('/api/leagues/:id/invite/rotate', apiOrigin, requireLeague, role('commissioner', 'co'), (req, res) => {
     let code; do { code = newInvite(); } while (leagueStore.byInvite(code));
@@ -314,14 +352,17 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
   });
   app.patch('/api/leagues/:id/members/:memberId', apiOrigin, requireLeague, role('commissioner'), (req, res) => {
     if (!['co', 'member'].includes(req.body?.role) || Object.keys(req.body).length !== 1) { res.status(400).json({ error: 'Invalid role.' }); return; }
-    leagueStore.setRole(req.league.id, req.params.memberId, req.body.role); res.json({ members: leagueStore.roster(req.league.id) });
+    leagueStore.setRole(req.league.id, req.params.memberId, req.body.role); broadcastLeague(req.league.id);
+    res.json({ members: leagueStore.roster(req.league.id) });
   });
   app.delete('/api/leagues/:id/members/:memberId', apiOrigin, requireLeague, role('commissioner', 'co'), (req, res) => {
-    leagueStore.remove(req.league.id, req.params.memberId, now()); res.json({ members: leagueStore.roster(req.league.id) });
+    leagueStore.remove(req.league.id, req.params.memberId, now()); broadcastLeague(req.league.id);
+    res.json({ members: leagueStore.roster(req.league.id) });
   });
   app.post('/api/leagues/:id/transfer', apiOrigin, requireLeague, role('commissioner'), (req, res) => {
     requireValue(leagueIdValid(req.body?.memberId) && Object.keys(req.body).length === 1, 'Invalid member.');
-    leagueStore.transfer(req.league.id, req.leagueMember.id, req.body?.memberId); res.json({ members: leagueStore.roster(req.league.id) });
+    leagueStore.transfer(req.league.id, req.leagueMember.id, req.body?.memberId); broadcastLeague(req.league.id);
+    res.json({ members: leagueStore.roster(req.league.id) });
   });
   app.get('/api/leagues/:id/live', requireLeague, (req, res) => res.json({ roomCode: liveByLeague.get(req.league.id) ?? null }));
   app.get('/api/leagues/:id/seasons', requireLeague, (req, res) => res.json({ seasons: leagueStore.seasons(req.league.id).map(season => ({
@@ -387,15 +428,19 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     const state = structuredClone(room.game);
     delete state.history;
     const handInProgress = game.isPlaying(room.game);
-    return { ...state, roomCode: room.code, nightId: room.nightId, hostId: room.hostId, playerId: id, revision: room.revision,
-      signedIn: room.accounts.has(id),
+    const socket = io.sockets.sockets.get(room.connections.get(id));
+    const permissions = roomAccess(room, id, socket);
+    return { ...state, roomCode: room.code, nightId: room.nightId, leagueTable: Boolean(room.leagueId),
+      hostId: room.hostId, playerId: id, revision: room.revision,
+      signedIn: signedInSeat(room, id, socket),
+      permissions,
       cosmetics: Object.fromEntries(room.cosmetics),
       rebuyPolicy: room.rebuyPolicy,
-      canUndo: room.game.history.length > 0, serverTime: now(),
+      canUndo: permissions.owner && room.game.history.length > 0, serverTime: now(),
       settlement: structuredClone(room.lastSettlement || game.settlement(room.game)),
       settlementNote: handInProgress ? 'Hand in progress. Showing totals from before this hand.' : '',
       push: { enabled: pushEnabled, publicKey: pushEnabled ? vapid.publicKey : '', subscribed: room.pushSubscriptions.has(id) },
-      rebuyRequests: [...room.rebuyRequests].filter(([playerId]) => room.hostId === id || playerId === id).map(([playerId, request]) => ({
+      rebuyRequests: [...room.rebuyRequests].filter(([playerId]) => permissions.manage || playerId === id).map(([playerId, request]) => ({
         id: playerId, name: room.game.players.find(player => player.id === playerId)?.name || 'Player', amount: request.amount, at: request.at
       })),
       players: state.players.map(p => ({ ...p, connected: room.connections.has(p.id) })),
@@ -442,7 +487,8 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     });
   }
   function bind(socket, room, id) {
-    if (socket.data.accountId && !room.accounts.has(id) && ![...room.accounts.values()].includes(socket.data.accountId)) {
+    if (socket.data.accountId && socket.data.sessionHash && activeSession.get(socket.data.sessionHash, socket.data.accountId, now()) &&
+      !room.accounts.has(id) && ![...room.accounts.values()].includes(socket.data.accountId)) {
       room.accounts.set(id, socket.data.accountId);
     }
     const previousId = room.connections.get(id);
@@ -476,7 +522,6 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     requireValue(safeTokenEqual(room.tokens.get(identity.id), payload.token), 'Seat token is invalid. Rejoin the room to continue.');
     return { room, id: identity.id };
   }
-  function host(room, id) { requireValue(room.hostId === id, 'Only the host can do that.'); }
   function detach(room, id, reason) {
     const socket = io.sockets.sockets.get(room.connections.get(id));
     if (socket) {
@@ -509,6 +554,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     if (accountsEnabled) {
       try {
         socket.data.accountId = (await auth.accountFromCookie(socket.handshake.headers.cookie))?.id ?? null;
+        socket.data.sessionHash = socket.data.accountId ? hashToken(parseSessionCookie(socket.handshake.headers.cookie)) : null;
         if (socket.data.accountId) socket.data.prefs = await store.getSettings(socket.data.accountId);
       }
       catch (error) { logError(error); socket.data.accountId = null; }
@@ -545,7 +591,8 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
       let league = null;
       let leagueSettings = null;
       if (payload.leagueId) {
-        requireValue(accountsEnabled && socket.data.accountId, 'Sign in to start a league table.');
+        requireValue(accountsEnabled && socket.data.accountId && socket.data.sessionHash &&
+          activeSession.get(socket.data.sessionHash, socket.data.accountId, now()), 'Sign in to start a league table.');
         league = leagueStore.get(payload.leagueId);
         requireValue(league && ['commissioner', 'co'].includes(leagueStore.member(league.id, socket.data.accountId)?.role), 'Only league commissioners and co-commissioners can start a league table.');
         const existingCode = liveByLeague.get(league.id);
@@ -597,10 +644,10 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
       bind(socket, room, payload.playerId); broadcast(room);
       return { playerId: payload.playerId, roomCode: room.code, state: view(room, payload.playerId) };
     });
-    function mutate(event, fn, hostOnly = false) {
+    function mutate(event, fn, permission = null) {
       on(event, payload => {
         const { room, id } = member(socket, payload);
-        if (hostOnly) host(room, id);
+        if (permission) requireRoomAccess(room, id, socket, permission);
         requireValue(payload.revision === room.revision, 'Table changed. Please try again.');
         const previousTurn = room.game.turn;
         const wasPlaying = game.isPlaying(room.game);
@@ -613,11 +660,11 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
         return { state: view(room, id) };
       });
     }
-    mutate('start-hand', room => game.startHand(room.game, now()), true);
+    mutate('start-hand', room => game.startHand(room.game, now()), 'manage');
     mutate('action', (room, id, payload) => game.act(room.game, id, { type: payload.type, amount: payload.amount }));
-    mutate('showdown-pick', (room, _id, payload) => game.pickWinners(room.game, payload.potId, payload.winnerIds), true);
-    mutate('host-settings', (room, _id, payload) => game.configure(room.game, payload.settings), true);
-    mutate('host:reorderSeats', (room, _id, payload) => game.reorderSeats(room.game, payload.order), true);
+    mutate('showdown-pick', (room, _id, payload) => game.pickWinners(room.game, payload.potId, payload.winnerIds), 'manage');
+    mutate('host-settings', (room, _id, payload) => game.configure(room.game, payload.settings), 'manage');
+    mutate('host:reorderSeats', (room, _id, payload) => game.reorderSeats(room.game, payload.order), 'manage');
     on('seat:cosmetics', payload => {
       const { room, id } = member(socket, payload);
       requireValue(Object.keys(payload).some(key => ['avatar', 'color', 'note'].includes(key)), 'Choose a seat style first.');
@@ -627,7 +674,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
       return { state: view(room, id) };
     });
     on('host:rebuyPolicy', payload => {
-      const { room, id } = member(socket, payload); host(room, id);
+      const { room, id } = member(socket, payload); requireRoomAccess(room, id, socket, 'manage');
       const policy = { mode: payload.mode, ...(payload.cap === undefined ? {} : { cap: payload.cap }),
         ...(payload.maxPerPlayer === undefined ? {} : { maxPerPlayer: payload.maxPerPlayer }) };
       requireValue(validRebuyPolicy(policy), 'Invalid rebuy policy.');
@@ -636,7 +683,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
       return { state: view(room, id) };
     });
     on('host:endNight', payload => {
-      const { room, id } = member(socket, payload); host(room, id);
+      const { room, id } = member(socket, payload); requireRoomAccess(room, id, socket, 'manage');
       requireValue(payload.revision === undefined || payload.revision === room.revision, 'Table changed. Please try again.');
       requireValue(!game.isPlaying(room.game) && room.game.handNumber > 0, 'Finish a hand before ending the night.');
       if (!room.leagueId) { persist(room, true); return {}; }
@@ -652,10 +699,10 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
         return {};
       });
     });
-    mutate('undo', room => game.undo(room.game), true);
+    mutate('undo', room => game.undo(room.game), 'owner');
     mutate('sit-out', (room, id, payload) => game.setSitOut(room.game, id, payload.value));
     mutate('donate', (room, id, payload) => game.donate(room.game, id, payload.recipientId, payload.amount));
-    mutate('rebuy', (room, _id, payload) => game.rebuy(room.game, payload.playerId, payload.amount, { source: 'host', timestamp: now() }), true);
+    mutate('rebuy', (room, _id, payload) => game.rebuy(room.game, payload.playerId, payload.amount, { source: 'host', timestamp: now() }), 'owner');
     on('push:subscribe', payload => {
       const { room, id } = member(socket, payload);
       requireValue(pushEnabled, 'Turn notifications are not configured on this server.');
@@ -691,7 +738,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
       return {};
     });
     on('rebuy:deny', payload => {
-      const { room, id } = member(socket, payload); host(room, id);
+      const { room, id } = member(socket, payload); requireRoomAccess(room, id, socket, 'manage');
       const request = room.rebuyRequests.get(payload.playerId);
       requireValue(request, 'That rebuy request is no longer pending.');
       room.rebuyRequests.delete(payload.playerId); room.lastActive = now();
@@ -709,11 +756,11 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
       const target = io.sockets.sockets.get(room.connections.get(payload.playerId));
       target?.emit('rebuy-result', { type: 'approved', amount });
       return nextState;
-    }, true);
+    }, 'manage');
     mutate('host-fold', room => {
       requireValue(room.game.turn && !room.connections.has(room.game.turn), 'Only the disconnected current player can be folded by the host.');
       return game.act(room.game, room.game.turn, { type: 'fold' });
-    }, true);
+    }, 'manage');
     on('leave', payload => {
       const { room, id } = member(socket, payload);
       requireValue(payload.revision === room.revision, 'Table changed. Please try again.');
@@ -731,7 +778,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
       const state = game.removePlayer(room.game, payload.playerId);
       detach(room, payload.playerId, 'The host removed your seat.');
       return state;
-    }, true);
+    }, 'owner');
     socket.on('disconnect', () => {
       const identity = socket.data.identity;
       const room = rooms.get(identity?.code);
