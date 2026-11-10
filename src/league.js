@@ -59,7 +59,8 @@ export function computeStandings(season, results, members = []) {
     const drop = Math.min(rule.dropWorst ?? 0, Math.max(0, perNight.length - 1));
     const retained = [...perNight].sort((a, b) => a - b).slice(drop);
     const score = rule.type === 'roi' ? basisPoints(net, buyIn) : retained.reduce((sum, value) => sum + value, 0);
-    return { memberId: member.memberId, displayName: member.displayName, rank: 0, score,
+    return { memberId: member.memberId, displayName: member.displayName, username: member.username ?? null,
+      avatar: member.avatar ?? null, rank: 0, score,
       nights: played.length, wins: played.filter(row => row.rank === 1).length, net,
       roi: basisPoints(net, buyIn),
       qualified: seasonNights === 0 ? (rule.minNightsPct ?? 0) === 0 : played.length * 100 >= seasonNights * (rule.minNightsPct ?? 0),

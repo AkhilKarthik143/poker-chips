@@ -18,7 +18,7 @@ import { validateScoring, computeStandings, recordsFromResults } from './league.
 import { DEFAULT_PREFS, PREF_ENUMS, normalizePrefs, validatePrefs } from './prefs-schema.js';
 import { MAX_PRESETS, normalizePreset, validPreset } from './preset-schema.js';
 import { normalizeRebuyPolicy, validRebuyPolicy } from './rebuy-policy.js';
-import { THIRTY_DAYS, usernameError } from './identity.js';
+import { THIRTY_DAYS, usernameError, validAvatar, validPrivacy, avatarForAccount, privacyForAccount } from './identity.js';
 
 const SIX_HOURS = 6 * 60 * 60 * 1000;
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -211,7 +211,15 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     res.setHeader('Set-Cookie', 'tm_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0');
     res.json({ ok: true });
   });
-  app.get('/api/me', requireAccount, (req, res) => res.json({ displayName: req.account.display_name, email: req.account.email }));
+  const selfProfile = account => ({ displayName: account.display_name, email: account.email,
+    username: account.username, avatar: avatarForAccount(account), privacy: privacyForAccount(account),
+    usernameChangeAvailableAt: account.username_changed_at === null ? null : account.username_changed_at + THIRTY_DAYS });
+  const tableIdentity = account => {
+    const privacy = privacyForAccount(account);
+    return { ...(privacy.showAvatarAtTables ? { avatar: avatarForAccount(account) } : {}),
+      ...(privacy.showUsernameAtTables && account.username ? { username: account.username } : {}) };
+  };
+  app.get('/api/me', requireAccount, (req, res) => res.json(selfProfile(req.account)));
   const usernameLimits = new Map();
   app.get('/api/username/check', apiOrigin, requireAccount, (req, res) => {
     const session = hashToken(parseSessionCookie(req.headers.cookie));
@@ -223,12 +231,38 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     res.json({ available: !reason, reason });
   });
   app.put('/api/me/profile', apiOrigin, requireAccount, async (req, res) => {
-    if (!req.body || Object.keys(req.body).length !== 1 || !Object.hasOwn(req.body, 'username') || usernameError(req.body.username)) {
-      res.status(400).json({ error: 'Invalid username.' }); return;
+    const body = req.body;
+    if (!body || typeof body !== 'object' || Array.isArray(body) || !Object.keys(body).length ||
+      Object.keys(body).some(key => !['username', 'displayName', 'avatar', 'privacy'].includes(key)) ||
+      (body.username !== undefined && usernameError(body.username)) ||
+      (body.displayName !== undefined && !validName(body.displayName)) ||
+      (body.avatar !== undefined && !validAvatar(body.avatar)) ||
+      (body.privacy !== undefined && !validPrivacy(body.privacy))) {
+      res.status(400).json({ error: 'Invalid profile update.' }); return;
     }
-    const result = await store.updateProfile(req.account.id, { username: req.body.username }, now(), THIRTY_DAYS);
+    const patch = { ...body, ...(body.displayName !== undefined ? { displayName: normalizedName(body.displayName) } : {}) };
+    const result = await store.updateProfile(req.account.id, patch, now(), THIRTY_DAYS);
     if (result.reason) { res.status(409).json({ error: result.reason }); return; }
-    res.json({ username: result.account.username });
+    for (const room of rooms.values()) {
+      let changed = false;
+      for (const [playerId, accountId] of room.accounts) if (accountId === req.account.id) {
+        room.identities.set(playerId, tableIdentity(result.account)); changed = true;
+      }
+      if (changed) broadcast(room);
+    }
+    res.json(selfProfile(result.account));
+  });
+  const hiddenProfile = res => res.status(404).json({ error: 'Profile not found.' });
+  app.get('/api/u/:username', requireAccount, async (req, res) => {
+    if (usernameError(req.params.username)) { hiddenProfile(res); return; }
+    const target = await store.profileByUsername(req.params.username);
+    if (!target) { hiddenProfile(res); return; }
+    const sharedLeagues = store.sharedLeagues(req.account.id, target.id);
+    if (target.id !== req.account.id && (privacyForAccount(target).profileVisibility !== 'leagues' || !sharedLeagues.length)) {
+      hiddenProfile(res); return;
+    }
+    res.json({ displayName: target.display_name, username: target.username, avatar: avatarForAccount(target),
+      memberSince: new Date(target.created_at).toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' }), sharedLeagues });
   });
   app.patch('/api/me', apiOrigin, requireAccount, async (req, res) => {
     if (!req.body || Object.keys(req.body).length !== 1 || !validName(req.body.displayName)) {
@@ -300,11 +334,11 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     if (req.body?.confirm !== 'DELETE' || Object.keys(req.body).length !== 1) {
       res.status(400).json({ error: 'Confirm account deletion with DELETE.' }); return;
     }
-    await store.deleteAccount(req.account.id);
+    await store.deleteAccount(req.account.id, now());
     for (const room of rooms.values()) {
       let changed = false;
       for (const [playerId, accountId] of room.accounts) {
-        if (accountId === req.account.id) { room.accounts.delete(playerId); changed = true; }
+        if (accountId === req.account.id) { room.accounts.delete(playerId); room.identities.delete(playerId); changed = true; }
       }
       if (changed) broadcast(room);
     }
@@ -454,6 +488,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
       signedIn: signedInSeat(room, id, socket),
       permissions,
       cosmetics: Object.fromEntries(room.cosmetics),
+      identities: Object.fromEntries(room.identities),
       rebuyPolicy: room.rebuyPolicy,
       canUndo: permissions.owner && room.game.history.length > 0, serverTime: now(),
       settlement: structuredClone(room.lastSettlement || game.settlement(room.game)),
@@ -509,6 +544,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     if (socket.data.accountId && socket.data.sessionHash && activeSession.get(socket.data.sessionHash, socket.data.accountId, now()) &&
       !room.accounts.has(id) && ![...room.accounts.values()].includes(socket.data.accountId)) {
       room.accounts.set(id, socket.data.accountId);
+      if (socket.data.accountProfile) room.identities.set(id, tableIdentity(socket.data.accountProfile));
     }
     const previousId = room.connections.get(id);
     if (previousId && previousId !== socket.id) {
@@ -552,6 +588,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     room.rebuyRequests.delete(id);
     room.autoRebuys.delete(id);
     room.cosmetics.delete(id);
+    room.identities.delete(id);
     room.pushSubscriptions.delete(id);
     room.presence.delete(id);
   }
@@ -572,7 +609,8 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
   io.use(async (socket, next) => {
     if (accountsEnabled) {
       try {
-        socket.data.accountId = (await auth.accountFromCookie(socket.handshake.headers.cookie))?.id ?? null;
+        socket.data.accountProfile = await auth.accountFromCookie(socket.handshake.headers.cookie);
+        socket.data.accountId = socket.data.accountProfile?.id ?? null;
         socket.data.sessionHash = socket.data.accountId ? hashToken(parseSessionCookie(socket.handshake.headers.cookie)) : null;
         if (socket.data.accountId) socket.data.prefs = await store.getSettings(socket.data.accountId);
       }
@@ -626,7 +664,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
       const room = { code, nightId: randomUUID(), startedAt: now(), endedAt: null, hostId: id, game: state,
         leagueId: league?.id ?? null, seasonId: league ? leagueStore.activeSeason(league.id)?.id ?? null : null,
         tokens: new Map([[id, token]]), tokenHashes: new Map([[id, hashToken(token)]]), accounts: new Map(),
-        connections: new Map(), rebuyRequests: new Map(), autoRebuys: new Map(), cosmetics: new Map(),
+        connections: new Map(), rebuyRequests: new Map(), autoRebuys: new Map(), cosmetics: new Map(), identities: new Map(),
         rebuyPolicy: normalizeRebuyPolicy(payload.rebuyPolicy), pushSubscriptions: new Map(), presence: new Map(),
         lastActive: now(), revision: 0, lastSettlement: null };
       rooms.set(code, room); if (league) liveByLeague.set(league.id, code);

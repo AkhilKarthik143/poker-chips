@@ -51,7 +51,8 @@ test('magic link is single-use, session is private and logout invalidates it', a
   assert.match(cookie, /HttpOnly; SameSite=Lax/);
   assert.equal((await fetch(url + '/api/me')).status, 401);
   const me = await (await fetch(url + '/api/me', { headers: { Cookie: cookie } })).json();
-  assert.deepEqual(me, { displayName: 'alex', email: 'alex@example.com' });
+  assert.equal(me.displayName, 'alex'); assert.equal(me.email, 'alex@example.com');
+  assert.equal(me.username, null); assert.equal(me.privacy.showUsernameAtTables, false);
   const socket = connect(url, { transports: ['websocket'], forceNew: true, extraHeaders: { Cookie: cookie } });
   sockets.push(socket);
   await new Promise(resolve => socket.once('connect', resolve));
@@ -140,14 +141,13 @@ test('Google sign-in verifies a credential, links by subject and uses the normal
   assert.equal(signedIn.status, 200);
   const cookie = signedIn.headers.get('set-cookie');
   assert.match(cookie, /HttpOnly; SameSite=Lax/);
-  assert.deepEqual(await (await fetch(url + '/api/me', { headers: { Cookie: cookie } })).json(),
-    { displayName: 'Alex', email: 'alex@gmail.com' });
+  assert.equal((await (await fetch(url + '/api/me', { headers: { Cookie: cookie } })).json()).displayName, 'Alex');
   assert.deepEqual((await (await fetch(url + '/api/me/export', { headers: { Cookie: cookie } })).json()).googleIdentities, ['google-123']);
   identities.set('renamed.token.sig', identities.get('renamed'));
   const returning = await post('/api/auth/google', { credential: 'renamed.token.sig' });
   assert.equal(returning.status, 200);
-  assert.deepEqual(await (await fetch(url + '/api/me', { headers: { Cookie: returning.headers.get('set-cookie') } })).json(),
-    { displayName: 'Alex', email: 'alex@gmail.com' }, 'Google subject stays linked if its email changes');
+  assert.equal((await (await fetch(url + '/api/me', { headers: { Cookie: returning.headers.get('set-cookie') } })).json()).email,
+    'alex@gmail.com', 'Google subject stays linked if its email changes');
   await post('/api/auth/request', { email: 'friend@example.com' });
   await post('/api/auth/verify', { token: new URL(sent.at(-1)).searchParams.get('token') });
   identities.set('external.token.sig', identities.get('external'));
