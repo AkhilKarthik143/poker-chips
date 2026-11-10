@@ -3,6 +3,24 @@ import assert from 'node:assert/strict';
 import { io as connect } from 'socket.io-client';
 import { createServer } from '../src/server.js';
 import { SqliteStore } from '../src/store/sqlite.js';
+import { createAuth } from '../src/auth.js';
+
+test('new accounts get distinct safe default display names', async () => {
+  const links = [];
+  const store = new SqliteStore(':memory:');
+  const auth = createAuth({ store, mailer: { send: async (_email, link) => links.push(link) } });
+  const names = [];
+  for (const email of ['same@first.example', 'same@second.example']) {
+    await auth.request(email, 'http://localhost');
+    names.push((await auth.verify(new URL(links.at(-1)).searchParams.get('token'))).account.display_name);
+  }
+  const google = await auth.google({ sub: 'third-person', email: 'third@example.com', email_verified: true, name: 'same' });
+  assert.deepEqual([...names, google.account.display_name], ['same', 'same 2', 'same 3']);
+  const longName = 'abcdefghijklmnopqrst';
+  await store.createAccount('long-1', 'long@first.example', longName, Date.now());
+  const clipped = await store.createAccount('long-2', 'long@second.example', longName, Date.now());
+  assert.equal(clipped.display_name, `${longName.slice(0, 18)} 2`);
+});
 
 test('magic link is single-use, session is private and logout invalidates it', async t => {
   let time = 1_000;

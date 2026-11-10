@@ -177,9 +177,21 @@ export class SqliteStore {
   }
   async getAccountByEmail(email) { return this.db.prepare('SELECT * FROM accounts WHERE email = ?').get(email) ?? null; }
   async getAccount(id) { return this.db.prepare('SELECT * FROM accounts WHERE id = ?').get(id) ?? null; }
+  uniqueDisplayName(name) {
+    const taken = this.db.prepare('SELECT 1 FROM accounts WHERE display_name = ? COLLATE NOCASE LIMIT 1');
+    if (!taken.get(name)) return name;
+    for (let number = 2; number < Number.MAX_SAFE_INTEGER; number++) {
+      const suffix = ` ${number}`;
+      const candidate = `${name.slice(0, 20 - suffix.length).trimEnd()}${suffix}`;
+      if (!taken.get(candidate)) return candidate;
+    }
+    throw new Error('No display name is available.');
+  }
   async createAccount(id, email, displayName, time) {
+    const existing = await this.getAccountByEmail(email);
+    if (existing) return existing;
     this.db.prepare('INSERT INTO accounts (id,email,display_name,created_at) VALUES (?,?,?,?) ON CONFLICT(email) DO NOTHING')
-      .run(id, email, displayName, time);
+      .run(id, email, this.uniqueDisplayName(displayName), time);
     return this.getAccountByEmail(email);
   }
   async signInGoogle(sub, email, displayName, authoritative, time) {
@@ -193,7 +205,7 @@ export class SqliteStore {
         if (!account) {
           const id = randomUUID();
           this.db.prepare('INSERT INTO accounts (id,email,display_name,created_at) VALUES (?,?,?,?)')
-            .run(id, email, displayName, time);
+            .run(id, email, this.uniqueDisplayName(displayName), time);
           account = this.db.prepare('SELECT * FROM accounts WHERE id = ?').get(id);
         }
         this.db.prepare('INSERT INTO google_identities (google_sub,account_id) VALUES (?,?)').run(sub, account.id);
