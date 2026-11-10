@@ -2,9 +2,10 @@
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#fffdf5"><title>My stats · Tablemate</title>
 <script src="/helpers.js"></script><script src="/theme-init.js"></script>
-<link rel="stylesheet" href="/tokens.css"><link rel="stylesheet" href="/style.css"><script src="/prefs.js" defer></script><script src="/me.js" defer></script></head>
+<link rel="stylesheet" href="/tokens.css"><link rel="stylesheet" href="/style.css"><script src="/prefs.js" defer></script><script src="/avatar.js" defer></script><script src="/me.js" defer></script></head>
 <body><header class="masthead"><a class="wordmark" href="/">tablemate<span class="wordmark-dot">.</span></a><a class="profile-back-link" href="/">Back to table</a></header>
 <main class="profile-page"><div class="profile-heading"><p class="eyebrow">YOUR TABLE HISTORY</p><h1>My stats</h1><p id="profile-name"></p></div>
+<section id="identity-panel" class="profile-panel" aria-labelledby="identity-title"><h2 id="identity-title">Your identity</h2><div class="profile-identity-row"><div id="profile-avatar-preview"></div><div><p>Your avatar can appear at tables and in league standings.</p><button id="edit-avatar" type="button">Build avatar</button></div></div><p id="identity-status" role="status" aria-live="polite"></p></section>
 <section id="claim-banner" class="profile-panel" hidden><h2>Bring your guest nights in</h2><p id="claim-count"></p><button id="claim-button" type="button">Claim nights from this device</button><p id="claim-status" role="status"></p></section>
 <section class="profile-panel" aria-labelledby="summary-title"><h2 id="summary-title">Lifetime</h2><div id="stat-grid" class="stat-grid"></div></section>
 <section class="profile-panel" aria-labelledby="trend-title"><h2 id="trend-title">Net chips over time</h2><svg id="net-chart" viewBox="0 0 680 180" role="img" aria-label="Cumulative net chips by night"></svg></section>
@@ -14,4 +15,4 @@
 <form id="join-league"><label for="league-code">Join with invite code</label><input id="league-code" maxlength="8" pattern="[A-HJ-NP-Za-hj-np-z]{8}" required><button type="submit">Join league</button></form></div><p id="league-status" role="status"></p></section>
 <section class="profile-panel" aria-labelledby="privacy-title"><h2 id="privacy-title">Your data</h2><p>Download your account and saved night rows, or delete your account. Night totals remain anonymous so friends' records still add up.</p><div class="privacy-actions"><button id="export-data" type="button">Export my data</button><button id="delete-data" type="button" class="danger">Delete my account</button></div><p id="privacy-status" role="status"></p></section>
 <p class="profile-footnote">An informal tally for friends. Tablemate does not move money.</p>
-</main></body></html>
+</main><dialog id="avatar-builder-dialog" aria-labelledby="avatar-builder-title"><h2 id="avatar-builder-title">Build your avatar</h2><div id="avatar-builder-body"></div><button id="close-avatar-builder" type="button">Close</button></dialog></body></html>

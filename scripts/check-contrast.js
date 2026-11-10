@@ -71,6 +71,9 @@ for (const name of themeNames) {
   check('net-down', 'bg-panel', 4.5, 'negative settlement text on bg-panel');
   const colors = new Set();
   for (let index = 1; index <= 12; index++) {
+    check('avatar-ink-dark', `avatar-c${index}`, 3, `avatar icon on color ${index}`);
+    const avatarRatio = contrast(highContrast, 'avatar-ink-dark', `avatar-c${index}`);
+    if (avatarRatio < 3) failures.push(`high contrast: avatar ink on color ${index} ${avatarRatio.toFixed(2)}:1 (needs 3:1)`);
     const token = `seat-c${index}`;
     check(token, 'bg-seat-occupied', 3, `${token} against occupied seat`);
     if (colors.has(theme.get(token))) failures.push(`${name}: duplicate seat color ${token}`);

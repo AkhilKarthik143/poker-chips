@@ -1062,6 +1062,33 @@ dialog.app-sheet :focus-visible { scroll-margin:20px; }
 .avatar-grid button,.color-grid button{display:grid;place-items:center;min-width:0;min-height:44px;padding:4px;background:var(--bg-panel);border:2px solid var(--border-seat-empty)}
 .avatar-grid button[aria-checked="true"],.color-grid button[aria-checked="true"]{outline:3px solid var(--accent);outline-offset:1px}
 .avatar-grid .seat-avatar{width:24px;height:24px;color:var(--accent)}
+.profile-avatar{display:inline-block;flex:none;vertical-align:middle;overflow:visible}
+.av-bg-c1{--av-color:var(--avatar-c1)}.av-bg-c2{--av-color:var(--avatar-c2)}.av-bg-c3{--av-color:var(--avatar-c3)}
+.av-bg-c4{--av-color:var(--avatar-c4)}.av-bg-c5{--av-color:var(--avatar-c5)}.av-bg-c6{--av-color:var(--avatar-c6)}
+.av-bg-c7{--av-color:var(--avatar-c7)}.av-bg-c8{--av-color:var(--avatar-c8)}.av-bg-c9{--av-color:var(--avatar-c9)}
+.av-bg-c10{--av-color:var(--avatar-c10)}.av-bg-c11{--av-color:var(--avatar-c11)}.av-bg-c12{--av-color:var(--avatar-c12)}
+.av-accent-c1{--av-accent:var(--avatar-c1)}.av-accent-c2{--av-accent:var(--avatar-c2)}.av-accent-c3{--av-accent:var(--avatar-c3)}
+.av-accent-c4{--av-accent:var(--avatar-c4)}.av-accent-c5{--av-accent:var(--avatar-c5)}.av-accent-c6{--av-accent:var(--avatar-c6)}
+.av-accent-c7{--av-accent:var(--avatar-c7)}.av-accent-c8{--av-accent:var(--avatar-c8)}.av-accent-c9{--av-accent:var(--avatar-c9)}
+.av-accent-c10{--av-accent:var(--avatar-c10)}.av-accent-c11{--av-accent:var(--avatar-c11)}.av-accent-c12{--av-accent:var(--avatar-c12)}
+.profile-avatar [class*="av-bg-"]{fill:var(--av-color)}
+.profile-avatar .av-pattern{fill:none;stroke:var(--av-accent);stroke-width:3;stroke-linecap:round;stroke-linejoin:round;opacity:.42}
+.profile-avatar .av-icon{fill:none;stroke-width:2.7;stroke-linecap:round;stroke-linejoin:round}
+.profile-avatar .av-ink-dark{stroke:var(--avatar-ink-dark)}.profile-avatar .av-ink-light{stroke:var(--avatar-ink-light)}
+.profile-avatar .av-frame{fill:none;stroke:var(--avatar-ink-dark);stroke-width:1.6;opacity:.7}.profile-avatar .av-frame-inner{stroke-width:1;opacity:.45}
+.avatar-swatch{display:block;width:26px;height:26px;border-radius:50%;background:var(--av-color);border:1px solid var(--border-seat-empty)}
+.avatar-builder-preview{display:grid;place-items:center;padding:12px;border:2px dashed var(--border-seat-empty);border-radius:16px;background:var(--bg-seat-empty)}
+.avatar-builder-controls{display:grid;gap:10px}.avatar-builder-part h3{margin:8px 0;font-size:15px;text-transform:capitalize}
+.avatar-builder-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px}
+.avatar-builder-grid button{min-width:0;min-height:44px;padding:5px;display:grid;place-items:center;font-size:12px;background:var(--bg-panel);color:var(--text-primary);border:2px solid var(--border-seat-empty);border-radius:10px}
+.avatar-builder-grid button[aria-checked="true"]{outline:3px solid var(--accent);outline-offset:1px}
+.avatar-builder-grid button:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.avatar-builder-actions{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}.avatar-builder-actions button{min-height:44px}
+.profile-identity-row{display:flex;align-items:center;gap:18px}.profile-identity-row p{margin:0 0 10px}.profile-identity-row button{min-height:44px}
+#avatar-builder-dialog{width:min(620px,calc(100vw - 24px));max-height:min(88vh,820px);overflow:auto;padding:20px;border:2px solid var(--border-seat-empty);border-radius:18px;background:var(--bg-panel);color:var(--text-primary)}
+#avatar-builder-dialog::backdrop{background:#101827ba}#close-avatar-builder{min-height:44px}
+.identity-username{font-size:12px;color:var(--text-secondary);font-weight:600}.identity-name{display:flex;align-items:center;gap:6px;min-width:0}
+@media(max-width:390px){.avatar-builder-grid{grid-template-columns:repeat(4,minmax(0,1fr))}.avatar-builder-grid button{font-size:11px}}
 .color-grid button:before{content:"";display:block;width:23px;height:23px;border-radius:50%;background:var(--seat-color);border:1px solid var(--border-seat-empty)}
 @media(max-width:699px){.seat-oval .oval-seat[class*="seat-color-"]{border-left-width:4px}.seat-avatar{width:14px;height:14px}}
 

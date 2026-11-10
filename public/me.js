@@ -5,11 +5,17 @@ const number = value => Number(value).toLocaleString();
 const signed = value => `${value > 0 ? '+' : ''}${number(value)}`;
 const pct = value => `${Number(value).toFixed(1)}%`;
 let page = 1;
+let profileAccount;
+function renderAvatarPreview() {
+  if (!profileAccount) return;
+  $('#profile-avatar-preview').replaceChildren(window.TablemateAvatar.renderAvatar(profileAccount.avatar, 72, profileAccount.displayName));
+}
 async function load() {
   const [accountResponse, statsResponse] = await Promise.all([fetch('/api/me'), fetch(`/api/me/stats?page=${page}`)]);
   if (accountResponse.status === 401) { window.location.assign('/login.html'); return; }
   if (!accountResponse.ok || !statsResponse.ok) { $('#nights-list').textContent = 'Could not load stats. Try again later.'; return; }
   const account = await accountResponse.json();
+  profileAccount = account; renderAvatarPreview();
   const data = await statsResponse.json();
   $('#profile-name').textContent = account.displayName;
   renderStats(data.lifetime);
@@ -18,6 +24,18 @@ async function load() {
   showClaims();
   loadLeagues();
 }
+$('#edit-avatar').addEventListener('click', () => {
+  if (!profileAccount) return;
+  const dialog = $('#avatar-builder-dialog');
+  window.TablemateAvatar.mountBuilder($('#avatar-builder-body'), profileAccount.avatar, profileAccount.displayName, async avatar => {
+    const response = await fetch('/api/me/profile', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ avatar }) });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'Could not save avatar.');
+    profileAccount = result; renderAvatarPreview(); $('#identity-status').textContent = 'Avatar saved.'; dialog.close();
+  });
+  dialog.showModal(); dialog.querySelector('#avatar-builder-body button')?.focus();
+});
+$('#close-avatar-builder').addEventListener('click', () => $('#avatar-builder-dialog').close());
 async function loadLeagues() {
   const response = await fetch('/api/leagues');
   const list = $('#leagues-list'); list.replaceChildren();

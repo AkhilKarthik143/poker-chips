@@ -81,7 +81,7 @@ Update `README.md` (username rules, change and hold policy, privacy model and wh
 ### Implementation
 - [x] I1: username rules, history and hold, check endpoint, tests. Gate: lint + test, commit
 - [x] I2: profile endpoints, privacy flags, `GET /api/u/:username`, `view()` additions, tests. Gate: lint + test, commit
-- [ ] I3: avatar spec, renderer, tokens and CSS classes, contrast checks, builder sheet, table and league integration, tests. Gate: lint + test, commit
+- [x] I3: avatar spec, renderer, tokens and CSS classes, contrast checks, builder sheet, table and league integration, tests. Gate: lint + test, commit
 - [ ] I4: onboarding flow and profile editing UI, tests. Gate: lint + test, commit
 - [ ] I5: docs. Gate: lint + test, commit
 - [ ] Add defensive checks for edge cases (simultaneous username claims, username held by a deleted account, cooldown boundary at exactly 30 days, avatar spec from an older version, a 10-player table with all avatars, display name equal to another member's)
@@ -126,11 +126,13 @@ Agent: log progress, assumptions, and blockers here.
 - Investigation: accounts, sessions, SQLite v1–v6, `/api/me`, seat cosmetics, league membership and contrast script all exist. `view()` is built in `src/server.js`; account links live in `room.accounts` and are absent from broadcasts. Avatar and opt-in username projection will be added there.
 - I1: SQLite v7 identity columns and held-name table, server/client username validators, checks, cooldown and atomic claims. Lint and 99 tests passed.
 - I2: owner profile API, atomic partial updates, shared-league profile lookup, restricted room identity projection and league roster/standing identity fields. Lint and 101 tests passed.
+- I3: closed avatar spec, deterministic SVG renderer, six-part builder, table/Players/league rendering, theme-token colors and avatar ink contrast checks. Lint, 103 tests and eight-theme contrast check passed.
 
 ### Assumption log
 - Username changes to a different name start a 30-day cooldown, including the first claim; changing casing alone does not. A prior owner may reclaim a held name during cooldown. (I1)
 - The offensive-term list is a minimal baseline, not complete moderation. (I1)
 - Existing account emails remain in the owner-only `/api/me` response for compatibility; public profile and room projections exclude them. (I2)
+- Avatar colors reuse the twelve closed color IDs but use a stable light palette across themes, so one dark ink token stays above 3:1. Seat stripes retain their existing theme-specific colors. (I3)
 
 ### Blockers
 - (stage, what failed, approaches tried)

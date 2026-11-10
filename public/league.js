@@ -23,6 +23,13 @@ function text(tag, value, className) {
   if (className) element.className = className;
   return element;
 }
+function identityStrong(person, prefix = '') {
+  const strong = text('strong', '', 'identity-name');
+  if (person.avatar && window.TablemateAvatar.valid(person.avatar)) strong.append(window.TablemateAvatar.renderAvatar(person.avatar, 32, person.displayName));
+  strong.append(document.createTextNode(`${prefix}${person.displayName}`));
+  if (person.username) strong.append(text('span', `@${person.username}`, 'identity-username'));
+  return strong;
+}
 function scoringLabel(rule) { return { points: 'Points per night', net: 'Total net', capped_net: 'Capped net', roi: 'ROI' }[rule.type]; }
 function scoreText(score, rule) {
   return rule.type === 'roi' ? `${(score / 100).toFixed(2)}%` : rule.type === 'points' ? `${(score / 100).toFixed(2)} pts` : `${number(score / 100)} chips`;
@@ -55,7 +62,7 @@ function renderMembers() {
   const list = $('#members-list'); list.replaceChildren();
   for (const member of league.members.filter(item => item.leftAt === null)) {
     const row = text('div', '', 'league-member');
-    row.append(text('strong', member.displayName), text('span', member.role));
+    row.append(identityStrong(member), text('span', member.role));
     if (league.myRole === 'commissioner' && member.role !== 'commissioner') {
       row.append(button(member.role === 'co' ? 'Make member' : 'Make co', async () => {
         await api(`/members/${member.memberId}`, 'PATCH', { role: member.role === 'co' ? 'member' : 'co' }); await load();
@@ -125,7 +132,7 @@ async function renderStandings() {
   $('#champion-banner').textContent = champion ? `${champion.displayName} · Season champion` : '';
   for (const row of standings) {
     const card = text('div', '', 'standing-row');
-    card.append(text('strong', `${row.rank}. ${row.displayName}`), text('span', scoreText(row.score, season.scoring)),
+    card.append(identityStrong(row, `${row.rank}. `), text('span', scoreText(row.score, season.scoring)),
       text('span', `${row.nights} nights · ${row.wins} wins`), text('span', `${netText(row.net)} · ${row.qualified ? 'Qualified' : 'Needs more nights'}`),
       text('span', row.delta > 0 ? `↑ ${row.delta}` : row.delta < 0 ? `↓ ${-row.delta}` : '—'));
     list.append(card);
@@ -172,7 +179,7 @@ document.querySelectorAll('[data-tab]').forEach(tab => tab.addEventListener('cli
 }));
 $('#season-select').addEventListener('change', () => renderStandings().catch(error => status(error.message)));
 $('#copy-standings').addEventListener('click', async () => {
-  const copy = `${league.name}\n${currentStandings.map(row => `${row.rank}. ${row.displayName} — ${scoreText(row.score, currentScoring)} · ${row.nights} nights`).join('\n')}`;
+  const copy = `${league.name}\n${currentStandings.map(row => `${row.rank}. ${row.displayName}${row.username ? ` @${row.username}` : ''} — ${scoreText(row.score, currentScoring)} · ${row.nights} nights`).join('\n')}`;
   try { await navigator.clipboard.writeText(copy); status('Standings copied.'); }
   catch { window.prompt('Copy standings', copy); status('Select and copy the standings.'); }
 });

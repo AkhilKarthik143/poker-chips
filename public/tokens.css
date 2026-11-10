@@ -1,5 +1,9 @@
 :root {
   color-scheme: light;
+  --avatar-c1:#ffb3c1; --avatar-c2:#a2f5dd; --avatar-c3:#ffe18e; --avatar-c4:#bdb7ff;
+  --avatar-c5:#9ee6ff; --avatar-c6:#ffc59c; --avatar-c7:#d3f4a8; --avatar-c8:#f4b9ed;
+  --avatar-c9:#b7d0ff; --avatar-c10:#f7e6b5; --avatar-c11:#a5f1f4; --avatar-c12:#ffc9c9;
+  --avatar-ink-dark:#172031; --avatar-ink-light:#ffffff;
   --bg-page:#fffdf5; --bg-panel:#ffffff; --bg-table:#e9fff5; --bg-seat-empty:#e9fff5; --bg-seat-occupied:#f1ebff; --bg-action-bar:#ffffff;
   --border-seat-empty:#252b3a; --border-your-seat:#6434df; --border-action-bar-top:#252b3a;
   --text-primary:#253044; --text-secondary:#4e586b; --text-disabled:#4e586b; --accent:#6434df; --accent-hover:#5125c3;
