@@ -8,7 +8,7 @@ runInNewContext(readFileSync(new URL('../public/helpers.js', import.meta.url), '
 const helpers = sandbox.Tablemate;
 
 test('classic client helpers load without browser APIs and share one namespace', () => {
-  assert.deepEqual(Object.keys(helpers).sort(), ['alertTransition', 'dedupeAlert', 'loadPrefs', 'moveItem', 'parseInviteCode', 'reconcileOrder', 'resolveTheme', 'roomInviteUrl', 'savePrefs'].sort());
+  assert.deepEqual(Object.keys(helpers).sort(), ['alertTransition', 'dedupeAlert', 'loadPrefs', 'moveItem', 'parseInviteCode', 'reconcileOrder', 'resolveTheme', 'roomInviteUrl', 'savePrefs', 'themeColors', 'themes'].sort());
   assert.deepEqual([...helpers.moveItem(['a', 'b', 'c'], 0, 2)], ['b', 'c', 'a']);
   assert.deepEqual([...helpers.reconcileOrder(['c', 'a', 'a', 'gone'], ['a', 'b', 'c'])], ['c', 'a', 'b']);
 });
@@ -58,6 +58,9 @@ test('preference storage merges defaults and tolerates malformed or unavailable 
 test('theme resolution applies a safe default and resolves system preference', () => {
   assert.equal(helpers.resolveTheme('unrecognized'), 'felt');
   assert.equal(helpers.resolveTheme('burgundy'), 'burgundy');
+  assert.equal(helpers.resolveTheme('miami-vice'), 'miami-vice');
+  assert.equal(helpers.resolveTheme('royal-flush'), 'royal-flush');
+  assert.equal(helpers.resolveTheme('retro-arcade'), 'retro-arcade');
   assert.equal(helpers.resolveTheme('system', true), 'midnight');
   assert.equal(helpers.resolveTheme('system', false), 'felt');
 });

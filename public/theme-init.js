@@ -1,8 +1,8 @@
 /* global globalThis, document, localStorage, matchMedia */
 (() => {
 const themeStorageKey = 'tablemate-theme-v1';
-const availableThemes = ['felt', 'midnight', 'burgundy', 'graphite', 'daylight', 'system'];
-const themeColor = { felt: '#fffdf5', midnight: '#0b1424', burgundy: '#201018', graphite: '#17191d', daylight: '#f4f7fb' };
+const availableThemes = globalThis.Tablemate.themes;
+const themeColor = globalThis.Tablemate.themeColors;
 let themeChoice = 'felt';
 try {
   const stored = globalThis.Tablemate.loadPrefs(localStorage, themeStorageKey, { theme: 'felt' }).theme;

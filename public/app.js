@@ -5,8 +5,8 @@ const $ = selector => document.querySelector(selector);
 const socket = window.io({ autoConnect: false });
 const STORAGE_KEY = 'tablemate-seat-v1';
 const THEME_STORAGE_KEY = 'tablemate-theme-v1';
-const THEME_CHOICES = ['felt', 'midnight', 'burgundy', 'graphite', 'daylight', 'system'];
-const THEME_COLORS = { felt: '#fffdf5', midnight: '#0b1424', burgundy: '#201018', graphite: '#17191d', daylight: '#f4f7fb' };
+const THEME_CHOICES = window.Tablemate.themes;
+const THEME_COLORS = window.Tablemate.themeColors;
 let themePreference = document.documentElement.dataset.themePreference || 'felt';
 let state = null;
 let identity = null;
@@ -57,7 +57,8 @@ function toast(message) {
   clearTimeout(toastTimer); toastTimer = setTimeout(() => { $('#toast').hidden = true; }, 5500);
 }
 function themePickerMarkup(scope) {
-  const labels = { felt: 'Felt', midnight: 'Midnight', burgundy: 'Burgundy', graphite: 'Graphite', daylight: 'Daylight', system: 'System' };
+  const labels = { felt: 'Felt', midnight: 'Midnight', burgundy: 'Burgundy', graphite: 'Graphite', daylight: 'Daylight',
+    'miami-vice': 'Miami Vice', 'royal-flush': 'Royal Flush', 'retro-arcade': 'Retro Arcade', system: 'System' };
   return `<section class="theme-picker-section" aria-label="Appearance"><h3>Color theme</h3><div class="theme-picker" role="radiogroup" aria-label="Color theme">${THEME_CHOICES.map(choice => `<button type="button" id="theme-${scope}-${choice}" class="theme-choice" role="radio" aria-checked="${themePreference === choice}" tabindex="${themePreference === choice ? '0' : '-1'}" data-theme-choice="${choice}">${themePreviewMarkup(choice)}<span class="theme-card-name">${labels[choice]}</span><span class="theme-check" aria-hidden="true">✓</span></button>`).join('')}</div></section>`;
 }
 function themePreviewMarkup(choice) {

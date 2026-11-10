@@ -18,7 +18,7 @@ function parseTokens(block) {
 
 const base = parseTokens(baseBlock);
 const themes = new Map();
-for (const match of source.matchAll(/:root\[data-theme="([a-z]+)"\]\s*,\s*\[data-theme-preview="\1"\]\s*\{([^}]*)\}/g)) {
+for (const match of source.matchAll(/:root\[data-theme="([a-z-]+)"\]\s*,\s*\[data-theme-preview="\1"\]\s*\{([^}]*)\}/g)) {
   themes.set(match[1], new Map([...base, ...parseTokens(match[2])]));
 }
 
@@ -40,7 +40,7 @@ function contrast(theme, first, second) {
   return (light + 0.05) / (dark + 0.05);
 }
 
-const themeNames = ['felt', 'midnight', 'burgundy', 'graphite', 'daylight'];
+const themeNames = ['felt', 'midnight', 'burgundy', 'graphite', 'daylight', 'miami-vice', 'royal-flush', 'retro-arcade'];
 const failures = [];
 for (const name of themeNames) {
   const theme = themes.get(name);

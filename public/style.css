@@ -949,3 +949,61 @@ dialog.app-sheet :focus-visible { scroll-margin:20px; }
     box-shadow:0 0 0 2px var(--dp-color-outline);
   }
 }
+
+/* New room palettes: artwork is a background layer, never part of the controls. */
+.lobby{position:relative;isolation:isolate}.lobby>.intro,.lobby>.entry-panel{position:relative;z-index:1}.theme-art{display:none;position:absolute;z-index:0;right:44%;top:90px;width:220px;height:180px;pointer-events:none;opacity:.72}.theme-art svg{display:none;width:100%;height:100%;overflow:visible;pointer-events:none}
+:root[data-theme="miami-vice"] .theme-art,:root[data-theme="royal-flush"] .theme-art,:root[data-theme="retro-arcade"] .theme-art{display:block}
+:root[data-theme="miami-vice"] .art-miami,:root[data-theme="royal-flush"] .art-royal,:root[data-theme="retro-arcade"] .art-arcade{display:block}
+:root:is([data-theme="miami-vice"],[data-theme="royal-flush"],[data-theme="retro-arcade"]) .intro:after{display:none}
+.art-miami .art-pink{fill:var(--dp-color-accent)}.art-miami .art-orange{fill:var(--dp-color-accent-warm)}.art-miami .art-lavender{fill:#b79bff}.art-miami .art-horizon{fill:none;stroke:var(--dp-color-accent-secondary);stroke-width:2}.art-miami .art-palm{fill:#0f0a25}
+.art-royal .art-deco{fill:none;stroke:var(--dp-color-accent-warm);stroke-width:2;stroke-linecap:square}.art-royal .art-spade{fill:var(--dp-color-accent-warm)}.art-royal .art-diamond{fill:var(--dp-color-accent)}
+.art-arcade .art-pixel{fill:var(--dp-color-accent)}.art-arcade .art-steps{fill:var(--dp-color-accent-secondary)}.art-arcade .art-joystick-base{fill:var(--bg-stage);stroke:var(--dp-color-accent-secondary);stroke-width:3}.art-arcade .art-joystick-stem{fill:none;stroke:var(--dp-color-accent-warm);stroke-width:8}.art-arcade .art-joystick-knob{fill:var(--dp-color-accent);stroke:var(--bg-page);stroke-width:3}.art-arcade .art-joystick-button{fill:var(--status-allin)}
+:root:is([data-theme="miami-vice"],[data-theme="royal-flush"],[data-theme="retro-arcade"]) body{font-family:var(--dp-typography-reading);background:linear-gradient(145deg,var(--bg-page),var(--bg-stage))}
+:root:is([data-theme="miami-vice"],[data-theme="royal-flush"],[data-theme="retro-arcade"]) :is(h1,h2,h3,.wordmark){font-family:var(--dp-typography-display)}
+:root:is([data-theme="miami-vice"],[data-theme="royal-flush"],[data-theme="retro-arcade"]) :is(input,select,button){font-family:var(--dp-typography-reading)}
+:root:is([data-theme="miami-vice"],[data-theme="royal-flush"],[data-theme="retro-arcade"]) :is(.entry-panel,.how-it-works,.table-heading,.table-stage,.sidebar,.panel,dialog,.result,.showdown){border:2px solid var(--dp-color-outline)}
+:root:is([data-theme="miami-vice"],[data-theme="royal-flush"],[data-theme="retro-arcade"]) :is(.entry-panel,.table-heading,.table-stage,dialog){box-shadow:6px 6px 0 var(--dp-color-accent-secondary)}
+:root:is([data-theme="miami-vice"],[data-theme="royal-flush"],[data-theme="retro-arcade"]) .how-it-works{box-shadow:5px 5px 0 var(--dp-color-accent-warm)}
+:root:is([data-theme="miami-vice"],[data-theme="royal-flush"],[data-theme="retro-arcade"]) :is(button,input,select,textarea):focus-visible{outline:3px solid var(--dp-color-focus);outline-offset:3px}
+:root:is([data-theme="miami-vice"],[data-theme="royal-flush"],[data-theme="retro-arcade"]) .primary{background:var(--accent);border-color:var(--accent);color:var(--dp-color-accent-ink)}
+:root:is([data-theme="miami-vice"],[data-theme="royal-flush"],[data-theme="retro-arcade"]) .primary:hover:not(:disabled){background:var(--accent-hover);border-color:var(--accent-hover);color:var(--dp-color-accent-ink)}
+:root:is([data-theme="miami-vice"],[data-theme="royal-flush"],[data-theme="retro-arcade"]) button:disabled{opacity:.48}
+:root:is([data-theme="miami-vice"],[data-theme="royal-flush"],[data-theme="retro-arcade"]) .seat-oval .table-felt{background:radial-gradient(ellipse at 48% 38%,var(--bg-felt-highlight),var(--bg-table) 78%);border:5px solid var(--border-felt);box-shadow:inset 0 0 0 4px color-mix(in srgb,var(--dp-color-accent-warm) 24%,transparent)}
+:root:is([data-theme="miami-vice"],[data-theme="royal-flush"],[data-theme="retro-arcade"]) .seat-oval .oval-seat{background:var(--bg-seat-occupied);border:2px solid var(--dp-color-outline);box-shadow:3px 3px 0 var(--bg-page)}
+:root:is([data-theme="miami-vice"],[data-theme="royal-flush"],[data-theme="retro-arcade"]) .seat-oval .my-seat{border:3px solid var(--border-your-seat)}
+:root:is([data-theme="miami-vice"],[data-theme="royal-flush"],[data-theme="retro-arcade"]) .seat-oval .acting{background:var(--bg-active-seat);border:3px solid var(--status-active);outline:3px solid var(--status-active);outline-offset:3px;box-shadow:4px 4px 0 var(--dp-color-accent-secondary);animation:none}
+:root:is([data-theme="miami-vice"],[data-theme="royal-flush"],[data-theme="retro-arcade"]) .seat-oval .folded-seat{background:var(--bg-seat-empty);border-style:dashed;box-shadow:none}
+:root:is([data-theme="miami-vice"],[data-theme="royal-flush"],[data-theme="retro-arcade"]) .seat-oval .seat-roles .role-D{background:var(--dp-color-accent-warm);color:var(--dp-color-accent-warm-ink);border-color:var(--dp-color-accent-warm-ink)}
+:root:is([data-theme="miami-vice"],[data-theme="royal-flush"],[data-theme="retro-arcade"]) .seat-oval .seat-roles .role-SB{background:var(--dp-color-accent-secondary);color:var(--dp-color-accent-secondary-ink);border-color:var(--dp-color-accent-secondary-ink)}
+:root:is([data-theme="miami-vice"],[data-theme="royal-flush"],[data-theme="retro-arcade"]) .seat-oval .seat-roles .role-BB{background:var(--dp-color-accent-fresh);color:var(--dp-color-accent-fresh-ink);border-color:var(--dp-color-accent-fresh-ink)}
+:root:is([data-theme="miami-vice"],[data-theme="royal-flush"],[data-theme="retro-arcade"]) .table-stage{background:linear-gradient(145deg,var(--bg-stage),var(--bg-panel))}
+:root:is([data-theme="miami-vice"],[data-theme="royal-flush"],[data-theme="retro-arcade"]) .pot-number{color:var(--dp-color-accent-warm);font-variant-numeric:tabular-nums;font-weight:800}
+:root:is([data-theme="miami-vice"],[data-theme="royal-flush"],[data-theme="retro-arcade"]) .dock{background:var(--bg-action-bar);border-top:3px solid var(--dp-color-outline);box-shadow:0 -4px 0 var(--dp-color-accent-secondary);backdrop-filter:none}
+:root:is([data-theme="miami-vice"],[data-theme="royal-flush"],[data-theme="retro-arcade"]) .actions [data-action="fold"]{color:var(--text-secondary);background:var(--bg-panel);border:2px dashed var(--dp-color-rule-muted)}
+:root:is([data-theme="miami-vice"],[data-theme="royal-flush"],[data-theme="retro-arcade"]) .actions [data-action="all-in"]{color:var(--dp-color-danger-ink);background:var(--status-allin);border:2px solid var(--status-allin);box-shadow:3px 3px 0 var(--dp-color-ground);font-weight:900}
+:root:is([data-theme="miami-vice"],[data-theme="royal-flush"],[data-theme="retro-arcade"]) .turn-label:not(.waiting){color:var(--status-active);border:2px solid var(--status-active);border-radius:99px;padding:5px 10px;font-weight:900}
+:root:is([data-theme="miami-vice"],[data-theme="royal-flush"],[data-theme="retro-arcade"]) .settlement-net.positive b{color:var(--net-up)}
+:root:is([data-theme="miami-vice"],[data-theme="royal-flush"],[data-theme="retro-arcade"]) .settlement-net.negative b{color:var(--net-down)}
+:root:is([data-theme="miami-vice"],[data-theme="royal-flush"],[data-theme="retro-arcade"]) .toast{background:var(--dp-color-accent-warm);color:var(--dp-color-accent-warm-ink);border:2px solid var(--dp-color-outline)}
+:root[data-theme="miami-vice"] .intro h1 em{color:var(--dp-color-accent-secondary)}
+:root[data-theme="miami-vice"] .entry-panel{box-shadow:9px 9px 0 var(--dp-color-accent-secondary)}
+:root[data-theme="miami-vice"] .table-stage{background:linear-gradient(145deg,#2b1b50,#312251)}
+:root[data-theme="miami-vice"] .actions [data-action="check"]{background:var(--dp-color-accent-secondary);color:var(--dp-color-accent-secondary-ink);border-color:var(--dp-color-accent-secondary)}
+:root[data-theme="miami-vice"] .actions [data-action="call"]{background:var(--dp-color-accent-fresh);color:var(--dp-color-accent-fresh-ink);border-color:var(--dp-color-accent-fresh)}
+:root[data-theme="miami-vice"] .actions [data-action="raise"]{background:var(--accent);color:var(--dp-color-accent-ink);border-color:var(--accent)}
+:root[data-theme="royal-flush"] .intro h1 em{color:var(--dp-color-accent-warm)}
+:root[data-theme="royal-flush"] .entry-panel{box-shadow:9px 9px 0 var(--dp-color-accent-warm)}
+:root[data-theme="royal-flush"] .table-stage{background:linear-gradient(145deg,#29183d,#362454)}
+:root[data-theme="royal-flush"] .actions [data-action="check"]{background:var(--dp-color-accent-fresh);color:var(--dp-color-accent-fresh-ink);border-color:var(--dp-color-accent-fresh)}
+:root[data-theme="royal-flush"] .actions [data-action="call"]{background:var(--accent);color:var(--dp-color-accent-ink);border-color:var(--accent)}
+:root[data-theme="royal-flush"] .actions [data-action="raise"]{background:var(--dp-color-accent-warm);color:var(--dp-color-accent-warm-ink);border-color:var(--dp-color-accent-warm)}
+:root[data-theme="retro-arcade"] .intro h1 em{color:var(--dp-color-accent-secondary)}
+:root[data-theme="retro-arcade"] .entry-panel{box-shadow:9px 9px 0 var(--dp-color-accent-secondary)}
+:root[data-theme="retro-arcade"] .table-stage{background:linear-gradient(145deg,#19263d,#273751)}
+:root[data-theme="retro-arcade"] .actions [data-action="check"]{background:var(--dp-color-accent-secondary);color:var(--dp-color-accent-secondary-ink);border-color:var(--dp-color-accent-secondary)}
+:root[data-theme="retro-arcade"] .actions [data-action="call"]{background:var(--accent);color:var(--dp-color-accent-ink);border-color:var(--accent)}
+:root[data-theme="retro-arcade"] .actions [data-action="raise"]{background:#ff7991;color:#39202a;border-color:#ff7991}
+:root[data-theme="retro-arcade"] .entry-panel h2{letter-spacing:-.04em}
+@media(max-width:1100px){.theme-art{width:150px;right:45%;top:100px;opacity:.5}}
+@media(max-width:900px){.theme-art{display:none!important}}
+@media(prefers-reduced-motion:reduce){:root:is([data-theme="miami-vice"],[data-theme="royal-flush"],[data-theme="retro-arcade"]) button{transition:none}}

@@ -1,6 +1,9 @@
 /* global globalThis */
 (() => {
 const objectValue = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+const themes = Object.freeze(['felt', 'midnight', 'burgundy', 'graphite', 'daylight', 'miami-vice', 'royal-flush', 'retro-arcade', 'system']);
+const themeColors = Object.freeze({ felt: '#fffdf5', midnight: '#0b1424', burgundy: '#201018', graphite: '#17191d', daylight: '#f4f7fb',
+  'miami-vice': '#160e31', 'royal-flush': '#1b1230', 'retro-arcade': '#101827' });
 
 function moveItem(order, from, to) {
   if (!Array.isArray(order)) return [];
@@ -56,7 +59,7 @@ function savePrefs(storage, key, value) {
 }
 
 function resolveTheme(theme, prefersDark = false) {
-  const available = new Set(['felt', 'midnight', 'burgundy', 'graphite', 'daylight', 'system']);
+  const available = new Set(themes);
   const selected = available.has(theme) ? theme : 'felt';
   return selected === 'system' ? (prefersDark ? 'midnight' : 'felt') : selected;
 }
@@ -81,5 +84,5 @@ function roomInviteUrl(origin, code) {
   } catch { return null; }
 }
 
-globalThis.Tablemate = Object.freeze({ moveItem, reconcileOrder, dedupeAlert, alertTransition, loadPrefs, savePrefs, resolveTheme, parseInviteCode, roomInviteUrl });
+globalThis.Tablemate = Object.freeze({ moveItem, reconcileOrder, dedupeAlert, alertTransition, loadPrefs, savePrefs, resolveTheme, parseInviteCode, roomInviteUrl, themes, themeColors });
 })();
