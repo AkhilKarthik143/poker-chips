@@ -22,6 +22,7 @@
 - Playwright Chromium captured all four league tabs at 360px (commissioner) and 390px (member). There were no page errors or horizontal scrollbars; visible controls met 44px tap targets. The member Rules view showed saved table settings, Nights showed a guest/sub and void reason, and Copy standings kept point units.
 - `src/game.js` was not changed by the league follow-up; its diff from `main` comes from the earlier accounts/stats ledger work. No inline script or style was added. The vendored QR source already contains generated `style=` strings.
 - Untested for real: physical phone browsers, actual email delivery, a live multi-device league night, Render persistent disk and Postgres. No Postgres adapter exists in this local repository.
+- The league follow-ups were merged into the local `feature/customization` demo branch. Its final gate passed: lint, 94 tests and `node scripts/simulate-four.js`; the league page had no overflow at 360px or 390px, and active league-tab text met 4.5:1 contrast in all eight themes.
 
 Validated locally on November 7, 2026 (America/Los_Angeles), on Node 24.20.0. The deployment target remains Node 20+ as configured in `render.yaml`.
 
