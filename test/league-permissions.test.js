@@ -5,6 +5,7 @@ import { createServer } from '../src/server.js';
 import { hashSecret } from '../src/auth.js';
 import { SqliteStore } from '../src/store/sqlite.js';
 import { LeagueStore } from '../src/league-store.js';
+import { createStore } from '../src/store/index.js';
 
 const roles = ['guest', 'nonmember', 'member', 'co', 'commissioner'];
 const memberRead = [401, 404, 200, 200, 200];
@@ -32,7 +33,7 @@ async function fixture() {
   roster.setRole(id, co.id, 'co');
   const server = createServer({ store, mailer: { enabled: true, send: async () => {} } });
   const { port } = await server.listen();
-  return { base: `http://127.0.0.1:${port}`, server, id, memberId: member.id, cookies };
+  return { base: `http://127.0.0.1:${port}`, server, store, roster, id, memberId: member.id, cookies };
 }
 
 test('league endpoints enforce the roster permission matrix', async () => {
@@ -61,4 +62,24 @@ test('league endpoints enforce the roster permission matrix', async () => {
       } finally { await f.server.close(); }
     }
   }
+});
+
+test('league roster caps at 30 active members and guest mode hides league routes', async () => {
+  const f = await fixture();
+  try {
+    for (let index = 3; index < 30; index++) {
+      const account = await f.store.createAccount(randomUUID(), `seat${index}@example.com`, `Seat ${index}`, Date.now());
+      f.roster.join(f.id, account, randomUUID(), Date.now());
+    }
+    const extra = await f.store.createAccount(randomUUID(), 'extra@example.com', 'Extra', Date.now());
+    assert.throws(() => f.roster.join(f.id, extra, randomUUID(), Date.now()), /full/);
+    assert.equal(f.roster.roster(f.id).filter(row => row.leftAt === null).length, 30);
+  } finally { await f.server.close(); }
+  const guestServer = createServer({ store: createStore(null) });
+  const { port } = await guestServer.listen();
+  try {
+    for (const path of ['/api/leagues', `/api/leagues/${randomUUID()}/records`]) {
+      assert.equal((await fetch(`http://127.0.0.1:${port}${path}`)).status, 404);
+    }
+  } finally { await guestServer.close(); }
 });

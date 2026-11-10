@@ -89,6 +89,13 @@ test('league roster, locked season, saved results, review trail and private room
   const nights = await api(`/api/leagues/${leagueId}/nights`, 'GET', null, aCookie);
   assert.equal(nights.data.nights[0].participants.length, 3);
   assert.equal(nights.data.nights[0].results.length, 2, 'guest is outside standings');
+  const privateValues = [aCookie.split(';')[0], bCookie.split(';')[0], cCookie.split(';')[0],
+    ...store.db.prepare('SELECT id,email FROM accounts').all().flatMap(row => [row.id, row.email]),
+    ...store.db.prepare('SELECT claim_hash FROM night_players').all().map(row => row.claim_hash)];
+  for (const response of [created.data, start.state, joinedSeat.state, subSeat.state, standings.data, nights.data,
+    (await api(`/api/leagues/${leagueId}/records`, 'GET', null, aCookie)).data]) {
+    for (const value of privateValues) assert.equal(JSON.stringify(response).includes(value), false, `league data leaked ${value.slice(0, 8)}`);
+  }
   const nightId = nights.data.nights[0].id;
   assert.equal((await api(`/api/leagues/${leagueId}/nights/${nightId}/void`, 'POST', { reason: 'Seat total corrected' }, bCookie)).status, 403);
   assert.equal((await api(`/api/leagues/${leagueId}/nights/${nightId}/void`, 'POST', { reason: 'Seat total corrected' }, aCookie)).status, 200);
@@ -100,4 +107,16 @@ test('league roster, locked season, saved results, review trail and private room
   assert.equal((await api(`/api/leagues/${leagueId}/nights`, 'GET', null, aCookie)).data.nights[0].voidReason, null);
   assert.equal((await api(`/api/leagues/${leagueId}/seasons/${seasonId}/close`, 'POST', {}, aCookie)).data.championMemberId, created.data.members[0].memberId);
   assert.notEqual((await api(`/api/leagues/${leagueId}/nights/${nightId}/void`, 'POST', { reason: 'Too late' }, aCookie)).status, 200);
+  const beforeDelete = (await api(`/api/leagues/${leagueId}/seasons/${seasonId}/standings`, 'GET', null, bCookie)).data.standings;
+  assert.equal((await api('/api/me', 'DELETE', { confirm: 'DELETE' }, aCookie)).status, 200);
+  const afterDelete = (await api(`/api/leagues/${leagueId}/seasons/${seasonId}/standings`, 'GET', null, bCookie)).data.standings;
+  assert.deepEqual(afterDelete.map(row => [row.memberId, row.score, row.nights]), beforeDelete.map(row => [row.memberId, row.score, row.nights]));
+  assert.equal(afterDelete.find(row => row.memberId === created.data.members[0].memberId).former, true);
+  assert.equal((await api(`/api/leagues/${leagueId}`, 'GET', null, bCookie)).data.myRole, 'commissioner');
+  const secondLeague = await api('/api/leagues', 'POST', { name: 'Sunday Night' }, bCookie);
+  const secondRoom = await emit(b, 'create', { name: 'Blair', leagueId: secondLeague.data.id });
+  assert.equal(secondRoom.ok, true);
+  assert.notEqual(secondRoom.roomCode, fresh.roomCode);
+  assert.equal((await api(`/api/leagues/${leagueId}/live`, 'GET', null, bCookie)).data.roomCode, fresh.roomCode);
+  assert.equal((await api(`/api/leagues/${secondLeague.data.id}/live`, 'GET', null, bCookie)).data.roomCode, secondRoom.roomCode);
 });
