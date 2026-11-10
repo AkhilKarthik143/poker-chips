@@ -1,5 +1,12 @@
 # Validation record
 
+## Optional accounts and history local work (November 10, 2026)
+
+- Node 24.20.0; SQLite `:memory:` smoke and upsert test pass. The Node 20 `better-sqlite3` path is installed but has not been run under Node 20 locally.
+- Lint passes with zero warnings; 73 tests pass, including undo-safe action counters, saved-night idempotence and failure isolation, magic-link single use, session privacy, guest claim, and stats aggregation. `node scripts/simulate-four.js` passes.
+- No database configured: `/api/config` reports accounts off; auth and account routes return 404 and guest socket tests pass.
+- Real email delivery, cookie behavior behind Render, and persistent-disk behavior have not been exercised here.
+
 Validated locally on November 7, 2026 (America/Los_Angeles), on Node 24.20.0. The deployment target remains Node 20+ as configured in `render.yaml`.
 
 ## Executed checks

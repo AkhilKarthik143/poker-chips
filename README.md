@@ -1,6 +1,6 @@
 # Tablemate / Poker Chips
 
-Physical cards. Virtual chips. A mobile-first chip bank and authoritative betting engine for 2–10 people playing Texas Hold’em around the same table. The app never deals, displays, stores, or evaluates cards. No accounts, payments, or chat.
+Physical cards. Virtual chips. A mobile-first chip bank and authoritative betting engine for 2–10 people playing Texas Hold’em around the same table. The app never deals, displays, stores, or evaluates cards. Accounts are optional; there are no payments or chat.
 
 **[Play Tablemate on Render](https://poker-chips-o7n9.onrender.com/)**
 
@@ -37,6 +37,16 @@ node scripts/simulate-four.js
 ```
 
 The service binds `0.0.0.0` and reads `process.env.PORT`, defaulting to 3000. `GET /healthz` returns HTTP 200 and `{"ok":true}`. Keep a single service instance: rooms are process-local.
+
+## Optional accounts and saved nights
+
+Guest play stays available with no setup. Set `TABLEMATE_DB_PATH=./data/tablemate.db` to enable SQLite night history, personal stats and magic-link accounts. Node 22.5+ uses `node:sqlite`; Node 20 uses `better-sqlite3`. Leave the variable unset to disable these features and keep the existing guest behavior. In production, also configure `RESEND_API_KEY` and `MAIL_FROM`; without them account routes remain disabled. Development prints sign-in links to stdout. `GET /api/config` reports whether accounts are available.
+
+The server saves a night after each completed hand, when the host sends `host:endNight`, and when an occupied room expires or empties. Active rooms and seat connections remain in memory and are lost on restart. A signed-in player is linked to their seat; a former guest can claim a saved night using the private seat token retained on that device. The **My stats** page shows lifetime totals and a net-over-time chart. Account export returns account details and night rows. Account deletion removes login sessions and account links from saved rows while keeping anonymous table totals for other players. Magic links last 15 minutes; sessions last 30 days. Email, session secrets, claim hashes and account IDs are never broadcast to table peers.
+
+Account APIs: `POST /api/auth/request`, `POST /api/auth/verify`, `POST /api/auth/logout`, `GET/PATCH/DELETE /api/me`, `GET /api/me/stats`, `POST /api/nights/claim`, and `GET /api/me/export`. Mutating APIs require the same origin; signed-in APIs require an HttpOnly session cookie.
+
+Tablemate is an **informal tally for friends, not a gambling or payments platform**. It never moves money.
 
 ## House rules and recovery
 
@@ -93,6 +103,7 @@ Every request includes a payload object and receives `{ok:true, ...}` or `{ok:fa
 | `table-preview` | `code` | Unseated; read-only |
 | `rejoin` | `code`, `playerId`, `token` | Valid private seat token |
 | `start-hand` | — | Host |
+| `host:endNight` | optional `revision` | Host, between hands after at least one hand |
 | `action` | `type`: fold/check/call/raise/all-in; `amount` for raise-to | Current player |
 | `showdown-pick` | `potId`, `winnerIds` | Host |
 | `host-settings` | `settings`: startingStack/smallBlind/bigBlind/blindMinutes/optional centsPer1000Chips | Host, between hands |

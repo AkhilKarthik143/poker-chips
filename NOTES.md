@@ -1,5 +1,13 @@
 # Decisions and progress
 
+## Correct poker-chips checkout: accounts and history (2026-11-10)
+
+- Branch `feature/accounts-stats` starts at clean `feature/ux-overhaul` commit `66fd4e8`; the remote is `AkhilKarthik143/poker-chips`. No push or PR.
+- Baseline: Node 24.20.0, lint clean, 66 tests passing. A1 adds undo-safe per-night action and showdown counters (67 tests). A2 adds SQLite saved nights and no-op feature-off store, with a Node 20 `better-sqlite3` fallback (70 tests). A3 adds magic-link accounts and session-bound seats (72 tests). A4/A5/A8 add guest-night claims, personal stats, chart, export and deletion (73 tests).
+- Assumption: the league task replaces the old A6 group leaderboard. Group UI and schema will be implemented as leagues on the next local branch.
+- Privacy: account IDs, emails, session tokens and claim hashes stay out of socket state. Store failures are logged without stopping a hand. Guest features remain usable without a database.
+- Untested for real: Resend email delivery, Node 20 fallback under an actual Node 20 runtime, phone browser cookies, Render persistent disk, real Postgres. `DATABASE_URL` support is deferred because the Postgres adapter is optional in the supplied account spec.
+
 ## Tablemate UX overhaul (2026-11)
 
 ### Final summary
