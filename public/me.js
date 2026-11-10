@@ -10,12 +10,24 @@ function renderAvatarPreview() {
   if (!profileAccount) return;
   $('#profile-avatar-preview').replaceChildren(window.TablemateAvatar.renderAvatar(profileAccount.avatar, 72, profileAccount.displayName));
 }
+function renderProfileForm() {
+  if (!profileAccount) return;
+  $('#identity-panel').hidden = false;
+  $('#profile-username').value = profileAccount.username || '';
+  $('#profile-display-name').value = profileAccount.displayName;
+  $('#profile-visibility').value = profileAccount.privacy.profileVisibility;
+  $('#show-username-tables').checked = profileAccount.privacy.showUsernameAtTables;
+  $('#show-avatar-tables').checked = profileAccount.privacy.showAvatarAtTables;
+  const locked = profileAccount.username && profileAccount.usernameChangeAvailableAt > Date.now();
+  $('#username-cooldown').textContent = locked ? `Your next username change is available ${new Date(profileAccount.usernameChangeAvailableAt).toLocaleDateString()}. You may still switch back to a previous name.`
+    : '3–20 letters, numbers or underscores. Start with a letter. Changes are limited to once every 30 days.';
+}
 async function load() {
   const [accountResponse, statsResponse] = await Promise.all([fetch('/api/me'), fetch(`/api/me/stats?page=${page}`)]);
   if (accountResponse.status === 401) { window.location.assign('/login.html'); return; }
   if (!accountResponse.ok || !statsResponse.ok) { $('#nights-list').textContent = 'Could not load stats. Try again later.'; return; }
   const account = await accountResponse.json();
-  profileAccount = account; renderAvatarPreview();
+  profileAccount = account; renderAvatarPreview(); renderProfileForm();
   const data = await statsResponse.json();
   $('#profile-name').textContent = account.displayName;
   renderStats(data.lifetime);
@@ -36,6 +48,32 @@ $('#edit-avatar').addEventListener('click', () => {
   dialog.showModal(); dialog.querySelector('#avatar-builder-body button')?.focus();
 });
 $('#close-avatar-builder').addEventListener('click', () => $('#avatar-builder-dialog').close());
+$('#profile-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  const username = $('#profile-username').value.trim();
+  if (username && !window.TablemateIdentity.validateUsername(username)) { $('#identity-status').textContent = 'Username must be 3–20 safe characters and cannot be reserved.'; return; }
+  const body = { displayName: $('#profile-display-name').value,
+    privacy: { profileVisibility: $('#profile-visibility').value, showUsernameAtTables: $('#show-username-tables').checked,
+      showAvatarAtTables: $('#show-avatar-tables').checked } };
+  if (username && username !== profileAccount.username) body.username = username;
+  if (!username && profileAccount.username) { $('#identity-status').textContent = 'Choose a username or keep your current one.'; return; }
+  const response = await fetch('/api/me/profile', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const data = await response.json();
+  if (!response.ok) { $('#identity-status').textContent = data.error === 'cooldown' ? 'Username is still on cooldown.' : data.error || 'Could not save profile.'; return; }
+  profileAccount = data; renderAvatarPreview(); renderProfileForm(); $('#profile-name').textContent = data.displayName;
+  $('#identity-status').textContent = 'Profile saved.';
+});
+$('#preview-profile').addEventListener('click', () => {
+  const body = $('#profile-preview-body'); body.replaceChildren();
+  body.append(window.TablemateAvatar.renderAvatar(profileAccount.avatar, 72, profileAccount.displayName));
+  const name = document.createElement('h3'); name.textContent = profileAccount.displayName; body.append(name);
+  const username = document.createElement('p'); username.textContent = profileAccount.username ? `@${profileAccount.username}` : 'No username yet'; body.append(username);
+  const visibility = document.createElement('p'); visibility.textContent = profileAccount.privacy.profileVisibility === 'leagues'
+    ? 'People in your leagues can view this profile.' : 'Only you can view this profile.'; body.append(visibility);
+  const table = document.createElement('p'); table.textContent = `At tables: ${profileAccount.privacy.showAvatarAtTables ? 'avatar shown' : 'avatar hidden'} · ${profileAccount.privacy.showUsernameAtTables ? '@username shown' : '@username hidden'}.`;
+  body.append(table); $('#profile-preview-dialog').showModal(); $('#close-profile-preview').focus();
+});
+$('#close-profile-preview').addEventListener('click', () => $('#profile-preview-dialog').close());
 async function loadLeagues() {
   const response = await fetch('/api/leagues');
   const list = $('#leagues-list'); list.replaceChildren();

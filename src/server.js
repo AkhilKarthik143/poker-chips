@@ -18,7 +18,7 @@ import { validateScoring, computeStandings, recordsFromResults } from './league.
 import { DEFAULT_PREFS, PREF_ENUMS, normalizePrefs, validatePrefs } from './prefs-schema.js';
 import { MAX_PRESETS, normalizePreset, validPreset } from './preset-schema.js';
 import { normalizeRebuyPolicy, validRebuyPolicy } from './rebuy-policy.js';
-import { THIRTY_DAYS, usernameError, validAvatar, validPrivacy, avatarForAccount, privacyForAccount } from './identity.js';
+import { THIRTY_DAYS, usernameError, validAvatar, validPrivacy, avatarForAccount, privacyForAccount, defaultAvatar } from './identity.js';
 
 const SIX_HOURS = 6 * 60 * 60 * 1000;
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -176,7 +176,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     const verified = await auth.verify(req.body?.token);
     if (!verified) { res.status(400).json({ error: 'This link has expired or was already used.' }); return; }
     res.setHeader('Set-Cookie', `tm_session=${verified.sessionToken}; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000${process.env.NODE_ENV === 'production' ? '; Secure' : ''}`);
-    res.json({ displayName: verified.account.display_name });
+    res.json({ displayName: verified.account.display_name, onboarding: verified.isNew });
   });
   app.post('/api/auth/google', apiOrigin, async (req, res) => {
     if (!googleEnabled) { res.sendStatus(404); return; }
@@ -187,13 +187,14 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     try {
       const payload = verifyGoogleIdToken ? await verifyGoogleIdToken(credential, googleClientId)
         : (await googleClient.verifyIdToken({ idToken: credential, audience: googleClientId })).getPayload();
+      const existed = await store.getAccountByEmail(normalizeEmail(payload?.email));
       const verified = await auth.google(payload);
       if (verified?.needsEmail) { res.status(409).json({ error: emailEnabled
         ? 'Use the email link to access the existing account for this address.'
         : 'This address belongs to another account. Use its existing sign-in method.' }); return; }
       if (!verified) { res.status(401).json({ error: 'Google did not verify this account.' }); return; }
       res.setHeader('Set-Cookie', `tm_session=${verified.sessionToken}; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000${process.env.NODE_ENV === 'production' ? '; Secure' : ''}`);
-      res.json({ displayName: verified.account.display_name });
+      res.json({ displayName: verified.account.display_name, onboarding: !existed });
     } catch (error) {
       logError(error);
       res.status(401).json({ error: 'Google sign-in could not be verified. Please try again.' });
@@ -229,6 +230,36 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     else bucket.count++;
     const reason = usernameError(req.query.u) || store.usernameAvailability(req.account.id, req.query.u, now(), THIRTY_DAYS);
     res.json({ available: !reason, reason });
+  });
+  const suggestionLimits = new Map();
+  app.get('/api/username/suggestions', apiOrigin, requireAccount, (req, res) => {
+    const key = req.account.id; const bucket = suggestionLimits.get(key);
+    if (bucket && now() - bucket.start < 60_000 && bucket.count >= 5) { res.status(429).json({ error: 'Try suggestions again later.' }); return; }
+    if (!bucket || now() - bucket.start >= 60_000) suggestionLimits.set(key, { start: now(), count: 1 }); else bucket.count++;
+    const stem = req.account.display_name.toLowerCase().replace(/[^a-z0-9]/g, '').replace(/^[^a-z]+/, '').slice(0, 14) || 'player';
+    const choices = new Set();
+    for (let tries = 0; tries < 60 && choices.size < 3; tries++) {
+      const suffix = Array.from({ length: 4 }, () => 'abcdefghijklmnopqrstuvwxyz0123456789'[randomInt(36)]).join('');
+      const candidate = `${stem}${suffix}`;
+      if (!usernameError(candidate) && !store.usernameAvailability(req.account.id, candidate, now(), THIRTY_DAYS)) choices.add(candidate);
+    }
+    res.json({ suggestions: [...choices] });
+  });
+  app.post('/api/me/onboarding/skip', apiOrigin, requireAccount, async (req, res) => {
+    if (!req.body || Object.keys(req.body).length) { res.status(400).json({ error: 'Invalid skip request.' }); return; }
+    if (req.account.username) {
+      const result = req.account.avatar_json ? { account: req.account }
+        : await store.updateProfile(req.account.id, { avatar: defaultAvatar(req.account.id) }, now(), THIRTY_DAYS);
+      res.json(selfProfile(result.account)); return;
+    }
+    for (let tries = 0; tries < 100; tries++) {
+      const suffix = Array.from({ length: 5 }, () => 'abcdefghijklmnopqrstuvwxyz0123456789'[randomInt(36)]).join('');
+      const candidate = `player${suffix}`;
+      const result = await store.updateProfile(req.account.id, { username: candidate, avatar: defaultAvatar(req.account.id) }, now(), THIRTY_DAYS);
+      if (!result.reason) { res.json(selfProfile(result.account)); return; }
+      if (result.reason === 'cooldown') { res.status(409).json({ error: 'Choose your current username.' }); return; }
+    }
+    res.status(503).json({ error: 'Could not assign a username. Try again.' });
   });
   app.put('/api/me/profile', apiOrigin, requireAccount, async (req, res) => {
     const body = req.body;

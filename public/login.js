@@ -33,7 +33,8 @@ fetch('/api/config').then(response => response.json()).then(config => {
           status.textContent = body.error || 'Google sign-in failed. Try again.';
           return;
         }
-        window.location.assign('/me.html');
+        const account = await response.json();
+        window.location.assign(account.onboarding ? '/welcome.html' : '/me.html');
       } catch { status.textContent = 'Could not connect. Try again.'; }
     } });
     try {

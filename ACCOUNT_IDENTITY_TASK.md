@@ -82,7 +82,7 @@ Update `README.md` (username rules, change and hold policy, privacy model and wh
 - [x] I1: username rules, history and hold, check endpoint, tests. Gate: lint + test, commit
 - [x] I2: profile endpoints, privacy flags, `GET /api/u/:username`, `view()` additions, tests. Gate: lint + test, commit
 - [x] I3: avatar spec, renderer, tokens and CSS classes, contrast checks, builder sheet, table and league integration, tests. Gate: lint + test, commit
-- [ ] I4: onboarding flow and profile editing UI, tests. Gate: lint + test, commit
+- [x] I4: onboarding flow and profile editing UI, tests. Gate: lint + test, commit
 - [ ] I5: docs. Gate: lint + test, commit
 - [ ] Add defensive checks for edge cases (simultaneous username claims, username held by a deleted account, cooldown boundary at exactly 30 days, avatar spec from an older version, a 10-player table with all avatars, display name equal to another member's)
 
@@ -127,6 +127,7 @@ Agent: log progress, assumptions, and blockers here.
 - I1: SQLite v7 identity columns and held-name table, server/client username validators, checks, cooldown and atomic claims. Lint and 99 tests passed.
 - I2: owner profile API, atomic partial updates, shared-league profile lookup, restricted room identity projection and league roster/standing identity fields. Lint and 101 tests passed.
 - I3: closed avatar spec, deterministic SVG renderer, six-part builder, table/Players/league rendering, theme-token colors and avatar ink contrast checks. Lint, 103 tests and eight-theme contrast check passed.
+- I4: first-sign-in redirect for email and Google, four-step skippable onboarding, available suggestions, generated username on skip, profile editing and preview, signed-in name prefill. Lint and 105 tests passed.
 
 ### Assumption log
 - Username changes to a different name start a 30-day cooldown, including the first claim; changing casing alone does not. A prior owner may reclaim a held name during cooldown. (I1)

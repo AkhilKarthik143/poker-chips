@@ -1127,6 +1127,7 @@ fetch('/api/config').then(response => response.json()).then(async config => {
   $('#home-account').hidden = false;
   if (!response.ok) return;
   const account = await response.json();
+  if (!$('#name').value.trim()) $('#name').value = account.displayName;
   link.textContent = `${account.displayName} · My stats`;
   link.href = '/me.html';
   $('#home-account').querySelector('span').textContent = `Welcome back, ${account.displayName}. Your nights and settings are saved.`;

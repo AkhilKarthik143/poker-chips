@@ -34,8 +34,9 @@ export function createAuth({ store, mailer, now = Date.now }) {
       if (typeof token !== 'string' || !/^[a-f0-9]{64}$/.test(token)) return null;
       const email = await store.consumeMagicLink(hashSecret(token), now());
       if (!email) return null;
+      const existed = await store.getAccountByEmail(email);
       const account = await store.createAccount(randomUUID(), email, displayNameFor(email), now());
-      return sessionFor(account);
+      return { ...await sessionFor(account), isNew: !existed };
     },
     async google(payload) {
       const email = normalizeEmail(payload?.email);
