@@ -84,4 +84,7 @@ test('table view exposes only opted-in username and enum avatar', async t => {
   const next = await nextState;
   assert.equal(next.identities[created.playerId].username, 'AlexName');
   assert.equal('avatar' in next.identities[created.playerId], false);
+  const afterLogout = new Promise(resolve => guest.once('state', resolve));
+  await fetch(root + '/api/auth/logout', { method: 'POST', headers: { Cookie: `tm_session=${token}` } });
+  assert.equal(created.playerId in (await afterLogout).identities, false);
 });

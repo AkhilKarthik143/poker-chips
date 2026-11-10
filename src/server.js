@@ -206,7 +206,11 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     await auth.logout(req.headers.cookie);
     if (sessionHash) {
       for (const room of rooms.values()) {
-        if ([...room.connections.values()].some(socketId => io.sockets.sockets.get(socketId)?.data.sessionHash === sessionHash)) broadcast(room);
+        let changed = false;
+        for (const [playerId, socketId] of room.connections) if (io.sockets.sockets.get(socketId)?.data.sessionHash === sessionHash) {
+          room.identities.delete(playerId); changed = true;
+        }
+        if (changed) broadcast(room);
       }
     }
     res.setHeader('Set-Cookie', 'tm_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0');
@@ -261,7 +265,12 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     }
     res.status(503).json({ error: 'Could not assign a username. Try again.' });
   });
+  const profileLimits = new Map();
   app.put('/api/me/profile', apiOrigin, requireAccount, async (req, res) => {
+    const session = hashToken(parseSessionCookie(req.headers.cookie));
+    const bucket = profileLimits.get(session);
+    if (bucket && now() - bucket.start < 60_000 && bucket.count >= 30) { res.status(429).json({ error: 'Too many profile updates.' }); return; }
+    if (!bucket || now() - bucket.start >= 60_000) profileLimits.set(session, { start: now(), count: 1 }); else bucket.count++;
     const body = req.body;
     if (!body || typeof body !== 'object' || Array.isArray(body) || !Object.keys(body).length ||
       Object.keys(body).some(key => !['username', 'displayName', 'avatar', 'privacy'].includes(key)) ||
@@ -277,7 +286,10 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     for (const room of rooms.values()) {
       let changed = false;
       for (const [playerId, accountId] of room.accounts) if (accountId === req.account.id) {
-        room.identities.set(playerId, tableIdentity(result.account)); changed = true;
+        const socket = io.sockets.sockets.get(room.connections.get(playerId));
+        if (signedInSeat(room, playerId, socket)) room.identities.set(playerId, tableIdentity(result.account));
+        else room.identities.delete(playerId);
+        changed = true;
       }
       if (changed) broadcast(room);
     }
@@ -575,8 +587,9 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     if (socket.data.accountId && socket.data.sessionHash && activeSession.get(socket.data.sessionHash, socket.data.accountId, now()) &&
       !room.accounts.has(id) && ![...room.accounts.values()].includes(socket.data.accountId)) {
       room.accounts.set(id, socket.data.accountId);
-      if (socket.data.accountProfile) room.identities.set(id, tableIdentity(socket.data.accountProfile));
     }
+    if (room.accounts.get(id) === socket.data.accountId && socket.data.accountProfile && socket.data.sessionHash &&
+      activeSession.get(socket.data.sessionHash, socket.data.accountId, now())) room.identities.set(id, tableIdentity(socket.data.accountProfile));
     const previousId = room.connections.get(id);
     if (previousId && previousId !== socket.id) {
       const previous = io.sockets.sockets.get(previousId);

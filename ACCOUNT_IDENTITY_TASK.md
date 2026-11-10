@@ -83,7 +83,7 @@ Update `README.md` (username rules, change and hold policy, privacy model and wh
 - [x] I2: profile endpoints, privacy flags, `GET /api/u/:username`, `view()` additions, tests. Gate: lint + test, commit
 - [x] I3: avatar spec, renderer, tokens and CSS classes, contrast checks, builder sheet, table and league integration, tests. Gate: lint + test, commit
 - [x] I4: onboarding flow and profile editing UI, tests. Gate: lint + test, commit
-- [ ] I5: docs. Gate: lint + test, commit
+- [x] I5: docs. Gate: lint + test, commit
 - [ ] Add defensive checks for edge cases (simultaneous username claims, username held by a deleted account, cooldown boundary at exactly 30 days, avatar spec from an older version, a 10-player table with all avatars, display name equal to another member's)
 
 ### Validation
@@ -128,6 +128,7 @@ Agent: log progress, assumptions, and blockers here.
 - I2: owner profile API, atomic partial updates, shared-league profile lookup, restricted room identity projection and league roster/standing identity fields. Lint and 101 tests passed.
 - I3: closed avatar spec, deterministic SVG renderer, six-part builder, table/Players/league rendering, theme-token colors and avatar ink contrast checks. Lint, 103 tests and eight-theme contrast check passed.
 - I4: first-sign-in redirect for email and Google, four-step skippable onboarding, available suggestions, generated username on skip, profile editing and preview, signed-in name prefill. Lint and 105 tests passed.
+- I5: README privacy, username, avatar and API documentation; validation record. Lint and 105 tests passed. Follow-up privacy review cleared live identity on sign-out and restored it on signed-in reconnect. Playwright Chromium completed onboarding, profile, avatar dialog and ten-seat table checks at 360×740 and 390×844 in two themes with ten screenshots, no overflow or page errors.
 
 ### Assumption log
 - Username changes to a different name start a 30-day cooldown, including the first claim; changing casing alone does not. A prior owner may reclaim a held name during cooldown. (I1)
