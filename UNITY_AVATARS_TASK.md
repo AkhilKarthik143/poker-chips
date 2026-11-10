@@ -102,7 +102,7 @@ Required: accounts with sessions, `PUT /api/me/profile` and `avatar_json` (ident
 - [x] U1: SVG art, manifest, `avatar-assets.js` with `--check`, generated PNGs. Gate: `node scripts/avatar-assets.js --check`, lint, test, commit
 - [x] U2: spec v2, generated enums with `--check`, server validation, `view()`, tests. Gate: lint + test + `gen-avatar-enums.js --check`, commit
 - [x] U3: web compositor, dispatch, caching, tests. Gate: lint + test, commit
-- [ ] U4: Unity project sources, editor scripts, build script, source checker. Gate: `node scripts/check-unity-sources.js`, lint, test, commit (plus a real Unity build if the Editor exists)
+- [x] U4: Unity project sources, editor scripts, build script, source checker. Gate: `node scripts/check-unity-sources.js`, lint, test, commit (plus a real Unity build if the Editor exists)
 - [ ] U5: template, static middleware, scoped CSP, config flag, install script, tests. Gate: lint + test, commit
 - [ ] U6: integration UI and fallbacks. Gate: lint + test, commit
 - [ ] U7: CI workflow, docs. Gate: lint + test, commit
@@ -150,6 +150,7 @@ Agent: log progress, assumptions, and blockers here.
 - U1: Authored 42 transparent SVG layers for 11 z-ordered slots, 12 palette colors and eight skin tones. The Playwright export produced 256×256 RGBA PNGs for web and Unity Resources (169 KB total). `--check` rerenders and compares both copies, checks grayscale tintable layers, dimensions and limits. Lint and all 105 tests pass.
 - U2: Manifest-generated server, browser and Unity enums now pass drift checks. Strict v1/v2 validation rejects unknown fields, ids and oversized specs. Signed-in accounts without saved art use a deterministic v2 default; saved v1 art remains valid, and onboarding skip writes v2. A room integration test confirms v2 spec-only projection after profile update. Lint and 107 tests pass; enum check passes.
 - U3: Browser compositor now loads 11 z-ordered layers in parallel, tints grayscale slots, caches images and completed specs, and hydrates table markup after each state update. Existing v1 rendering remains. Chromium pixel check produced distinct character images, identical pixels for a repeated spec and zero additional compositions. Lint and 109 tests pass.
+- U4: Added code-driven Unity 6.3 LTS project: runtime camera, 11 SpriteRenderers, manifest/Resources loader, idle animation, uGUI editor, WebGL bridge, import postprocessor and batch build script. `check-unity-sources.js` validates balanced C# source, conditional blocks, generated enum parity and all 42 Resources paths. It passes, as do lint and 109 tests. No Unity Editor or C# compiler is installed, so a real build and compile remain unverified.
 
 ### Assumption log
 - Target Unity 6.3 LTS (6000.3); no Editor is installed. Unity's own documentation identifies 6.3 as the latest LTS. Exact patch will be pinned to a known published release until an Editor build verifies it. (Investigation/U4)
@@ -158,4 +159,4 @@ Agent: log progress, assumptions, and blockers here.
 - (stage, what failed, approaches tried)
 
 ### Untested for real
-- (Unity Editor build, WebGL on iOS and Android browsers, real memory use, screen readers, anything else)
+- Unity Editor import, C# compilation and WebGL build (no Unity Editor installed), WebGL on iOS and Android browsers, real memory use, and screen-reader use of the Unity canvas.
