@@ -70,6 +70,15 @@ const googleIdentityMigration = `
     account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE);
   CREATE INDEX google_identities_account ON google_identities(account_id);
 `;
+const identityMigration = `
+  ALTER TABLE accounts ADD COLUMN username TEXT;
+  ALTER TABLE accounts ADD COLUMN username_lower TEXT;
+  ALTER TABLE accounts ADD COLUMN username_changed_at INTEGER;
+  ALTER TABLE accounts ADD COLUMN avatar_json TEXT;
+  ALTER TABLE accounts ADD COLUMN profile_json TEXT;
+  CREATE UNIQUE INDEX accounts_username_lower ON accounts(username_lower);
+  CREATE TABLE username_history (username_lower TEXT PRIMARY KEY, account_id TEXT NOT NULL, released_at INTEGER NOT NULL);
+`;
 
 export class SqliteStore {
   constructor(path) {
@@ -132,6 +141,14 @@ export class SqliteStore {
       try {
         this.db.exec(googleIdentityMigration);
         this.db.prepare('UPDATE schema_version SET version = 6').run();
+        this.db.exec('COMMIT');
+      } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+    }
+    if (version < 7) {
+      this.db.exec('BEGIN');
+      try {
+        this.db.exec(identityMigration);
+        this.db.prepare('UPDATE schema_version SET version = 7').run();
         this.db.exec('COMMIT');
       } catch (error) { this.db.exec('ROLLBACK'); throw error; }
     }
@@ -218,6 +235,51 @@ export class SqliteStore {
     this.db.prepare('UPDATE accounts SET display_name = ? WHERE id = ?').run(displayName, id);
     return this.getAccount(id);
   }
+  usernameAvailability(accountId, username, time, cooldownMs) {
+    const lower = username.toLowerCase();
+    const account = this.db.prepare('SELECT username_lower,username_changed_at FROM accounts WHERE id = ?').get(accountId);
+    if (!account) return 'taken';
+    if (account.username_lower === lower) return null;
+    const owner = this.db.prepare('SELECT id FROM accounts WHERE username_lower = ?').get(lower);
+    if (owner && owner.id !== accountId) return 'taken';
+    const held = this.db.prepare('SELECT account_id,released_at FROM username_history WHERE username_lower = ?').get(lower);
+    if (held && held.account_id !== accountId && time - held.released_at < cooldownMs) return 'held';
+    if (account.username_changed_at !== null && time - account.username_changed_at < cooldownMs && held?.account_id !== accountId) return 'cooldown';
+    return null;
+  }
+  async updateProfile(accountId, patch, time, cooldownMs) {
+    this.db.exec('BEGIN');
+    try {
+      const current = this.db.prepare('SELECT * FROM accounts WHERE id = ?').get(accountId);
+      if (!current) throw new Error('Account not found.');
+      if (patch.username !== undefined) {
+        const reason = this.usernameAvailability(accountId, patch.username, time, cooldownMs);
+        if (reason) { this.db.exec('ROLLBACK'); return { reason }; }
+        const lower = patch.username.toLowerCase();
+        if (lower !== current.username_lower) {
+          if (current.username_lower) this.db.prepare(`INSERT INTO username_history (username_lower,account_id,released_at) VALUES (?,?,?)
+            ON CONFLICT(username_lower) DO UPDATE SET account_id=excluded.account_id,released_at=excluded.released_at`)
+            .run(current.username_lower, accountId, time);
+          this.db.prepare('DELETE FROM username_history WHERE username_lower = ? AND account_id = ?').run(lower, accountId);
+          this.db.prepare('UPDATE accounts SET username = ?,username_lower = ?,username_changed_at = ? WHERE id = ?')
+            .run(patch.username, lower, time, accountId);
+        } else this.db.prepare('UPDATE accounts SET username = ? WHERE id = ?').run(patch.username, accountId);
+      }
+      if (patch.displayName !== undefined) this.db.prepare('UPDATE accounts SET display_name = ? WHERE id = ?').run(patch.displayName, accountId);
+      if (patch.avatar !== undefined) this.db.prepare('UPDATE accounts SET avatar_json = ? WHERE id = ?').run(JSON.stringify(patch.avatar), accountId);
+      if (patch.privacy !== undefined) this.db.prepare('UPDATE accounts SET profile_json = ? WHERE id = ?').run(JSON.stringify(patch.privacy), accountId);
+      this.db.exec('COMMIT');
+      return { account: await this.getAccount(accountId) };
+    } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+  }
+  async profileByUsername(username) {
+    return this.db.prepare('SELECT * FROM accounts WHERE username_lower = ?').get(username.toLowerCase()) ?? null;
+  }
+  sharedLeagues(first, second) {
+    return this.db.prepare(`SELECT l.id,l.name FROM leagues l JOIN league_members mine ON mine.league_id = l.id
+      JOIN league_members theirs ON theirs.league_id = l.id WHERE mine.account_id = ? AND theirs.account_id = ?
+      AND mine.left_at IS NULL AND theirs.left_at IS NULL AND l.archived_at IS NULL ORDER BY l.name,l.id`).all(first, second);
+  }
   async saveSession(tokenHash, accountId, expiresAt) {
     this.db.prepare('INSERT INTO sessions (token_hash,account_id,expires_at) VALUES (?,?,?)').run(tokenHash, accountId, expiresAt);
   }
@@ -280,9 +342,13 @@ export class SqliteStore {
   async deletePreset(accountId, id) {
     return this.db.prepare('DELETE FROM table_presets WHERE account_id = ? AND id = ?').run(accountId, id).changes > 0;
   }
-  async deleteAccount(accountId) {
+  async deleteAccount(accountId, time = Date.now()) {
     this.db.exec('BEGIN');
     try {
+      const identity = this.db.prepare('SELECT username_lower FROM accounts WHERE id = ?').get(accountId);
+      if (identity?.username_lower) this.db.prepare(`INSERT INTO username_history (username_lower,account_id,released_at) VALUES (?,?,?)
+        ON CONFLICT(username_lower) DO UPDATE SET account_id=excluded.account_id,released_at=excluded.released_at`)
+        .run(identity.username_lower, accountId, time);
       const owned = this.db.prepare(`SELECT league_id,id FROM league_members WHERE account_id = ? AND role = 'commissioner' AND left_at IS NULL`).all(accountId);
       for (const owner of owned) {
         const successor = this.db.prepare(`SELECT id FROM league_members WHERE league_id = ? AND id <> ? AND left_at IS NULL

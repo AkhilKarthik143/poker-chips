@@ -18,6 +18,7 @@ import { validateScoring, computeStandings, recordsFromResults } from './league.
 import { DEFAULT_PREFS, PREF_ENUMS, normalizePrefs, validatePrefs } from './prefs-schema.js';
 import { MAX_PRESETS, normalizePreset, validPreset } from './preset-schema.js';
 import { normalizeRebuyPolicy, validRebuyPolicy } from './rebuy-policy.js';
+import { THIRTY_DAYS, usernameError } from './identity.js';
 
 const SIX_HOURS = 6 * 60 * 60 * 1000;
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -211,6 +212,24 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     res.json({ ok: true });
   });
   app.get('/api/me', requireAccount, (req, res) => res.json({ displayName: req.account.display_name, email: req.account.email }));
+  const usernameLimits = new Map();
+  app.get('/api/username/check', apiOrigin, requireAccount, (req, res) => {
+    const session = hashToken(parseSessionCookie(req.headers.cookie));
+    const bucket = usernameLimits.get(session);
+    if (bucket && now() - bucket.start < 60_000 && bucket.count >= 30) { res.status(429).json({ error: 'Too many username checks.' }); return; }
+    if (!bucket || now() - bucket.start >= 60_000) usernameLimits.set(session, { start: now(), count: 1 });
+    else bucket.count++;
+    const reason = usernameError(req.query.u) || store.usernameAvailability(req.account.id, req.query.u, now(), THIRTY_DAYS);
+    res.json({ available: !reason, reason });
+  });
+  app.put('/api/me/profile', apiOrigin, requireAccount, async (req, res) => {
+    if (!req.body || Object.keys(req.body).length !== 1 || !Object.hasOwn(req.body, 'username') || usernameError(req.body.username)) {
+      res.status(400).json({ error: 'Invalid username.' }); return;
+    }
+    const result = await store.updateProfile(req.account.id, { username: req.body.username }, now(), THIRTY_DAYS);
+    if (result.reason) { res.status(409).json({ error: result.reason }); return; }
+    res.json({ username: result.account.username });
+  });
   app.patch('/api/me', apiOrigin, requireAccount, async (req, res) => {
     if (!req.body || Object.keys(req.body).length !== 1 || !validName(req.body.displayName)) {
       res.status(400).json({ error: 'Display name must be 1–20 safe characters.' }); return;
