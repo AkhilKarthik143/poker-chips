@@ -69,6 +69,7 @@ function themePreviewMarkup(choice) {
 function applyThemePreference(choice) {
   if (!THEME_CHOICES.includes(choice)) return;
   themePreference = choice;
+  window.TablematePrefs?.update({ theme: choice });
   const root = document.documentElement;
   const resolved = window.Tablemate.resolveTheme(choice, matchMedia('(prefers-color-scheme: dark)').matches);
   root.dataset.themePreference = choice;
@@ -489,9 +490,14 @@ const instructions = {
 };
 function option(p) { return `<option value="${escape(p.id)}">${escape(p.name)} · ${number(p.stack)}</option>`; }
 function alertControls() {
-  const preferences = window.Alerts?.preferences() || { sound: true, vibration: true, keepScreenOn: true };
-  const toggle = (key, label) => `<label class="preference-toggle"><input type="checkbox" data-alert-setting="${key}" ${preferences[key] ? 'checked' : ''}><span>${label}</span></label>`;
-  return `<section class="alert-controls" aria-label="Alerts and screen"><h3>Alerts & display</h3>${toggle('sound', 'Sound')}${window.Alerts?.vibrationSupported ? toggle('vibration', 'Vibration') : ''}${window.Alerts?.wakeLockSupported ? toggle('keepScreenOn', 'Keep screen on') : ''}<p class="helper">iPhone silent switch can mute sound.</p><button type="button" id="test-alert">Test alert</button></section>`;
+  return personalControls('seat');
+}
+function personalControls(scope) {
+  const prefs = window.TablematePrefs?.get();
+  if (!prefs) return '';
+  const check = (path, label, value) => `<label class="preference-toggle"><input type="checkbox" data-pref="${path}" ${value ? 'checked' : ''}><span>${label}</span></label>`;
+  const select = (path, label, value, choices) => `<label class="personal-field">${label}<select data-pref="${path}">${choices.map(([id, text]) => `<option value="${id}" ${value === id ? 'selected' : ''}>${text}</option>`).join('')}</select></label>`;
+  return `<details class="personal-settings" id="personal-${scope}"><summary>Personal settings</summary><div class="personal-settings-body"><p class="helper">Your preferences stay on this device in guest mode and sync when you sign in.</p><h4>Sound</h4>${check('sound.on', 'Turn and win sounds', prefs.sound.on)}${select('sound.pack', 'Sound pack', prefs.sound.pack, [['classic','Classic'],['soft','Soft'],['arcade','Arcade']])}<h4>Vibration</h4>${check('vibration.on', 'Vibrate for events', prefs.vibration.on)}${select('vibration.yourTurn','Your turn',prefs.vibration.yourTurn,[['off','Off'],['short','Short'],['double','Double tap'],['long','Long']])}${select('vibration.win','Win',prefs.vibration.win,[['off','Off'],['short','Short'],['double','Double tap'],['long','Long']])}<button type="button" data-pref-test>Test sound and vibration</button><h4>Display</h4>${select('motion','Motion',prefs.motion,[['auto','System'],['reduce','Reduced'],['full','Full']])}${select('contrast','Contrast',prefs.contrast,[['normal','Normal'],['high','High']])}${select('density','Layout',prefs.density,[['compact','Compact'],['comfortable','Comfortable'],['large','Large text']])}${check('leftHanded','Left-handed controls',prefs.leftHanded)}${check('wakeLock','Keep screen on at the table',prefs.wakeLock)}<h4>Seat defaults</h4>${select('defaultAvatar','Avatar',prefs.defaultAvatar,window.TablematePrefs.enums.avatar.map(id=>[id,id[0].toUpperCase()+id.slice(1)]))}${select('defaultSeatColor','Color',prefs.defaultSeatColor,window.TablematePrefs.enums.seatColor.map((id,i)=>[id,`Color ${i+1}`]))}<label class="personal-field">Nickname or pronunciation<input data-pref="note" maxlength="24" value="${escape(prefs.note)}" autocomplete="off"></label></div></details>`;
 }
 function rebuyRequestControls() {
   const pending = (state.rebuyRequests || []).find(item => item.id === state.playerId);
@@ -926,8 +932,6 @@ function wireTable(me, pot) {
   $('#cancel-rebuy-request')?.addEventListener('click', () => run('rebuy:cancel'));
   $('#open-tonight-players')?.addEventListener('click', openTonight);
   $('#open-tonight-dock')?.addEventListener('click', openTonight);
-  document.querySelectorAll('[data-alert-setting]').forEach(input => input.addEventListener('change', () => window.Alerts?.setPreference(input.dataset.alertSetting, input.checked)));
-  $('#test-alert')?.addEventListener('click', () => window.Alerts?.test());
   $('#toggle-push')?.addEventListener('click', () => togglePushNotifications().catch(error => toast(error.message)));
   document.querySelectorAll('[data-action]').forEach(el => el.addEventListener('click', () => run('action', { type: el.dataset.action })));
   $('#toggle-raise')?.addEventListener('click', () => { raiseOpen = !raiseOpen; render(); });
@@ -1007,6 +1011,15 @@ $('#account-logout').addEventListener('click', async () => {
 });
 $('#lobby-theme-picker').innerHTML = themePickerMarkup('lobby');
 wireThemePicker($('#lobby-theme-picker'));
+$('#lobby-personal').innerHTML = personalControls('lobby');
+document.addEventListener('tablemate-prefs-loaded', () => {
+  themePreference = document.documentElement.dataset.themePreference || 'felt';
+  $('#lobby-theme-picker').innerHTML = themePickerMarkup('lobby');
+  wireThemePicker($('#lobby-theme-picker'));
+  $('#lobby-personal').innerHTML = personalControls('lobby');
+  if (state) render();
+  toast('Loaded your saved settings');
+});
 applyInviteCodeFromQuery();
 setButtons(); socket.connect();
 })();

@@ -951,7 +951,7 @@ dialog.app-sheet :focus-visible { scroll-margin:20px; }
 }
 
 /* New room palettes: artwork is a background layer, never part of the controls. */
-.lobby{position:relative;isolation:isolate}.lobby>.intro,.lobby>.entry-panel{position:relative;z-index:1}.theme-art{display:none;position:absolute;z-index:0;right:44%;top:90px;width:220px;height:180px;pointer-events:none;opacity:.72}.theme-art svg{display:none;width:100%;height:100%;overflow:visible;pointer-events:none}
+.lobby{position:relative;isolation:isolate}:root:is([data-theme="miami-vice"],[data-theme="royal-flush"],[data-theme="retro-arcade"]) .lobby>.intro,:root:is([data-theme="miami-vice"],[data-theme="royal-flush"],[data-theme="retro-arcade"]) .lobby>.entry-panel{position:relative;z-index:1}.theme-art{display:none;position:absolute;z-index:0;right:44%;top:90px;width:220px;height:180px;pointer-events:none;opacity:.72}.theme-art svg{display:none;width:100%;height:100%;overflow:visible;pointer-events:none}
 :root[data-theme="miami-vice"] .theme-art,:root[data-theme="royal-flush"] .theme-art,:root[data-theme="retro-arcade"] .theme-art{display:block}
 :root[data-theme="miami-vice"] .art-miami,:root[data-theme="royal-flush"] .art-royal,:root[data-theme="retro-arcade"] .art-arcade{display:block}
 :root:is([data-theme="miami-vice"],[data-theme="royal-flush"],[data-theme="retro-arcade"]) .intro:after{display:none}
@@ -990,20 +990,54 @@ dialog.app-sheet :focus-visible { scroll-margin:20px; }
 :root[data-theme="miami-vice"] .table-stage{background:linear-gradient(145deg,#2b1b50,#312251)}
 :root[data-theme="miami-vice"] .actions [data-action="check"]{background:var(--dp-color-accent-secondary);color:var(--dp-color-accent-secondary-ink);border-color:var(--dp-color-accent-secondary)}
 :root[data-theme="miami-vice"] .actions [data-action="call"]{background:var(--dp-color-accent-fresh);color:var(--dp-color-accent-fresh-ink);border-color:var(--dp-color-accent-fresh)}
-:root[data-theme="miami-vice"] .actions [data-action="raise"]{background:var(--accent);color:var(--dp-color-accent-ink);border-color:var(--accent)}
+:root[data-theme="miami-vice"] .actions #toggle-raise{background:var(--accent);color:var(--dp-color-accent-ink);border-color:var(--accent)}
 :root[data-theme="royal-flush"] .intro h1 em{color:var(--dp-color-accent-warm)}
 :root[data-theme="royal-flush"] .entry-panel{box-shadow:9px 9px 0 var(--dp-color-accent-warm)}
 :root[data-theme="royal-flush"] .table-stage{background:linear-gradient(145deg,#29183d,#362454)}
 :root[data-theme="royal-flush"] .actions [data-action="check"]{background:var(--dp-color-accent-fresh);color:var(--dp-color-accent-fresh-ink);border-color:var(--dp-color-accent-fresh)}
 :root[data-theme="royal-flush"] .actions [data-action="call"]{background:var(--accent);color:var(--dp-color-accent-ink);border-color:var(--accent)}
-:root[data-theme="royal-flush"] .actions [data-action="raise"]{background:var(--dp-color-accent-warm);color:var(--dp-color-accent-warm-ink);border-color:var(--dp-color-accent-warm)}
+:root[data-theme="royal-flush"] .actions #toggle-raise{background:var(--dp-color-accent-warm);color:var(--dp-color-accent-warm-ink);border-color:var(--dp-color-accent-warm)}
 :root[data-theme="retro-arcade"] .intro h1 em{color:var(--dp-color-accent-secondary)}
 :root[data-theme="retro-arcade"] .entry-panel{box-shadow:9px 9px 0 var(--dp-color-accent-secondary)}
 :root[data-theme="retro-arcade"] .table-stage{background:linear-gradient(145deg,#19263d,#273751)}
 :root[data-theme="retro-arcade"] .actions [data-action="check"]{background:var(--dp-color-accent-secondary);color:var(--dp-color-accent-secondary-ink);border-color:var(--dp-color-accent-secondary)}
 :root[data-theme="retro-arcade"] .actions [data-action="call"]{background:var(--accent);color:var(--dp-color-accent-ink);border-color:var(--accent)}
-:root[data-theme="retro-arcade"] .actions [data-action="raise"]{background:#ff7991;color:#39202a;border-color:#ff7991}
+:root[data-theme="retro-arcade"] .actions #toggle-raise{background:#ff7991;color:#39202a;border-color:#ff7991}
 :root[data-theme="retro-arcade"] .entry-panel h2{letter-spacing:-.04em}
 @media(max-width:1100px){.theme-art{width:150px;right:45%;top:100px;opacity:.5}}
 @media(max-width:900px){.theme-art{display:none!important}}
 @media(prefers-reduced-motion:reduce){:root:is([data-theme="miami-vice"],[data-theme="royal-flush"],[data-theme="retro-arcade"]) button{transition:none}}
+
+/* Personal presentation settings. These selectors change presentation only. */
+.personal-settings{margin:18px 0;border-top:1px solid var(--border-seat-empty);padding-top:12px}
+.personal-settings>summary{cursor:pointer;min-height:44px;padding:10px 2px;font-weight:800}
+.personal-settings-body{display:grid;gap:9px;padding:8px 0 18px}
+.personal-settings-body h4{font-size:13px;text-transform:uppercase;letter-spacing:.09em;margin:14px 0 0;color:var(--text-secondary)}
+.personal-settings-body .preference-toggle,.personal-settings-body .personal-field{margin:2px 0;color:var(--text-primary)}
+.personal-settings-body .preference-toggle{display:flex;align-items:center;gap:10px;min-height:44px}
+.personal-settings-body .personal-field select,.personal-settings-body .personal-field input{margin-top:6px}
+.personal-settings-body button{min-height:44px}
+:root[data-density="compact"]{font-size:15px}
+:root[data-density="compact"] .panel-content,:root[data-density="compact"] .entry-panel{padding:12px}
+:root[data-density="large"]{font-size:18px}
+:root[data-density="large"] :is(button,input,select,summary){min-height:52px}
+:root[data-density="large"] .dock button{font-size:clamp(12px,2vw,17px)}
+:root[data-hand="left"] .actions>:nth-child(1){order:4}
+:root[data-hand="left"] .actions>:nth-child(2){order:3}
+:root[data-hand="left"] .actions>:nth-child(3){order:2}
+:root[data-hand="left"] .actions>:nth-child(4){order:1}
+:root[data-hand="left"] .raise-panel .amount-stepper{flex-direction:row-reverse}
+:root[data-motion="reduce"] *,:root[data-motion="reduce"] *::before,:root[data-motion="reduce"] *::after{animation-duration:.01ms!important;transition-duration:.01ms!important;scroll-behavior:auto!important}
+@media(prefers-reduced-motion:reduce){:root[data-motion="auto"] *,:root[data-motion="auto"] *::before,:root[data-motion="auto"] *::after{animation-duration:.01ms!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}
+:root[data-contrast="high"]{
+  color-scheme:dark;
+  --bg-page:#070d18;--bg-panel:#0b1627;--bg-stage:#0b1627;--bg-table:#15283c;--bg-felt-highlight:#1b3348;--bg-seat-empty:#112438;--bg-seat-occupied:#14283d;--bg-active-seat:#24364b;--bg-action-bar:#070d18;
+  --text-primary:#ffffff;--text-secondary:#f1f5ff;--text-disabled:#dce6f5;--text-on-felt:#ffffff;--text-on-felt-muted:#f1f5ff;
+  --border-seat-empty:#f1f5ff;--border-action-bar-top:#f1f5ff;--border-felt:#f1f5ff;--border-your-seat:#ffe071;
+  --accent:#ffe071;--accent-hover:#ffeb9d;--dp-color-outline:#f1f5ff;--dp-color-rule-muted:#dce6f5;--dp-color-focus:#ffe071;
+  --dp-color-panel:#0b1627;--dp-color-ground:#070d18;--dp-color-ink:#ffffff;--dp-color-ink-muted:#f1f5ff;
+  --dp-color-accent:#ffe071;--dp-color-accent-ink:#070d18;--dp-color-selection:#24364b;--dp-color-field-soft:#14283d;
+}
+:root[data-contrast="high"] :is(button,input,select,textarea){border-color:var(--border-seat-empty)}
+:root[data-contrast="high"] :is(button,input,select,summary,a):focus-visible{outline:3px solid #ffe071;outline-offset:3px}
+:root[data-contrast="high"] .primary{color:#070d18}

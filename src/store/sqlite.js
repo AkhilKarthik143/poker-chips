@@ -55,6 +55,10 @@ const leagueMigration = `
     season_id TEXT, night_id TEXT, actor_member_id TEXT NOT NULL,
     action TEXT NOT NULL, detail_json TEXT NOT NULL, at INTEGER NOT NULL);
 `;
+const settingsMigration = `
+  CREATE TABLE account_settings (account_id TEXT PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+    settings_json TEXT NOT NULL, updated_at INTEGER NOT NULL);
+`;
 
 export class SqliteStore {
   constructor(path) {
@@ -93,6 +97,14 @@ export class SqliteStore {
       try {
         this.db.exec(leagueMigration);
         this.db.prepare('UPDATE schema_version SET version = 3').run();
+        this.db.exec('COMMIT');
+      } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+    }
+    if (version < 4) {
+      this.db.exec('BEGIN');
+      try {
+        this.db.exec(settingsMigration);
+        this.db.prepare('UPDATE schema_version SET version = 4').run();
         this.db.exec('COMMIT');
       } catch (error) { this.db.exec('ROLLBACK'); throw error; }
     }
@@ -169,7 +181,17 @@ export class SqliteStore {
       ORDER BY n.ended_at DESC,n.id DESC`).all(accountId);
   }
   async exportAccount(accountId) {
-    return { account: await this.getAccount(accountId), nights: await this.listAccountNights(accountId) };
+    return { account: await this.getAccount(accountId), settings: await this.getSettings(accountId), nights: await this.listAccountNights(accountId) };
+  }
+  async getSettings(accountId) {
+    const row = this.db.prepare('SELECT settings_json FROM account_settings WHERE account_id = ?').get(accountId);
+    return row ? JSON.parse(row.settings_json) : null;
+  }
+  async saveSettings(accountId, settings, time) {
+    this.db.prepare(`INSERT INTO account_settings (account_id,settings_json,updated_at) VALUES (?,?,?)
+      ON CONFLICT(account_id) DO UPDATE SET settings_json=excluded.settings_json,updated_at=excluded.updated_at`)
+      .run(accountId, JSON.stringify(settings), time);
+    return settings;
   }
   async deleteAccount(accountId) {
     this.db.exec('BEGIN');

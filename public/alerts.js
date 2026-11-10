@@ -12,6 +12,15 @@ let wakeSentinel = null;
 let tableActive = false;
 let titleTimer = null;
 let originalTitle = document.title;
+let soundPack = 'classic';
+let yourTurnPattern = 'double';
+let winPattern = 'off';
+const tonePacks = {
+  classic: { wave: 'sine', volume: 0.25, turn: [660, 880], win: [523, 659, 784], warn: [440, 440] },
+  soft: { wave: 'sine', volume: 0.14, turn: [440, 554], win: [392, 494, 587], warn: [330, 330] },
+  arcade: { wave: 'square', volume: 0.09, turn: [523, 784], win: [392, 523, 784], warn: [330, 392] }
+};
+const vibrationPatterns = { off: [], short: [70], double: [90, 50, 90], long: [220] };
 
 function savePreferences() {
   if (alertStorage) window.Tablemate.savePrefs(alertStorage, alertStorageKey, alertPreferences);
@@ -53,12 +62,12 @@ function flashTitle() {
   document.title = '🔔 Your turn';
   titleTimer = setInterval(() => { showAlert = !showAlert; document.title = showAlert ? '🔔 Your turn' : originalTitle; }, 1000);
 }
-function playTone(frequency, startAt, duration) {
+function playTone(frequency, startAt, duration, wave, volume) {
   const oscillator = audioContext.createOscillator();
   const envelope = audioContext.createGain();
-  oscillator.type = 'sine'; oscillator.frequency.setValueAtTime(frequency, startAt);
+  oscillator.type = wave; oscillator.frequency.setValueAtTime(frequency, startAt);
   envelope.gain.setValueAtTime(0.0001, startAt);
-  envelope.gain.linearRampToValueAtTime(0.25, startAt + 0.01);
+  envelope.gain.linearRampToValueAtTime(volume, startAt + 0.01);
   envelope.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
   oscillator.connect(envelope); envelope.connect(audioContext.destination);
   oscillator.start(startAt); oscillator.stop(startAt + duration + 0.01);
@@ -67,7 +76,8 @@ function play(notes, duration, gap = 0.02) {
   if (!alertPreferences.sound) return;
   if (!audioContext || audioContext.state !== 'running') { showUnlockPill(); return; }
   const now = audioContext.currentTime;
-  notes.forEach((frequency, index) => playTone(frequency, now + index * (duration + gap), duration));
+  const pack = tonePacks[soundPack];
+  notes.forEach((frequency, index) => playTone(frequency, now + index * (duration + gap), duration, pack.wave, pack.volume));
 }
 function releaseWakeLock() {
   const current = wakeSentinel; wakeSentinel = null;
@@ -85,15 +95,20 @@ async function syncWakeLock() {
   } catch { /* Screen wake locks are optional and may be denied by the browser. */ }
 }
 function yourTurn() {
-  vibrate([90, 50, 90]);
-  play([660, 880], 0.12);
+  vibrate(vibrationPatterns[yourTurnPattern]);
+  play(tonePacks[soundPack].turn, 0.12);
   flashTitle();
 }
-function win() { play([523, 659, 784], 0.15); }
+function win() { vibrate(vibrationPatterns[winPattern]); play(tonePacks[soundPack].win, 0.15); }
 // TODO: connect warn() to an explicit turn-timer alert if the product adds one.
-function warn() { play([440, 440], 0.1, 0.06); }
-function vibrate(pattern) { if (alertPreferences.vibration && vibrationSupported) navigator.vibrate(pattern); }
-function tick() { vibrate(8); }
+function warn() { play(tonePacks[soundPack].warn, 0.1, 0.06); }
+function vibrate(pattern) { if (pattern.length && alertPreferences.vibration && vibrationSupported) navigator.vibrate(pattern); }
+function tick() { vibrate([8]); }
+function configure(value) {
+  if (Object.hasOwn(tonePacks, value.soundPack)) soundPack = value.soundPack;
+  if (Object.hasOwn(vibrationPatterns, value.yourTurnPattern)) yourTurnPattern = value.yourTurnPattern;
+  if (Object.hasOwn(vibrationPatterns, value.winPattern)) winPattern = value.winPattern;
+}
 function setPreference(name, value) {
   if (!Object.hasOwn(alertDefaults, name) || typeof value !== 'boolean') return;
   alertPreferences = { ...alertPreferences, [name]: value };
@@ -116,6 +131,6 @@ document.addEventListener('visibilitychange', () => {
 });
 window.addEventListener('focus', stopTitleFlash);
 
-window.Alerts = Object.freeze({ unlock, yourTurn, win, warn, setPreference, preferences: () => ({ ...alertPreferences }),
+window.Alerts = Object.freeze({ unlock, yourTurn, win, warn, configure, setPreference, preferences: () => ({ ...alertPreferences }),
   vibrationSupported, wakeLockSupported: Boolean(navigator.wakeLock), setTableActive, stopTitleFlash, reset, tick, test: yourTurn });
 })();

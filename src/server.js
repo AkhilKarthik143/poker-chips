@@ -14,6 +14,7 @@ import { createAuth, normalizeEmail } from './auth.js';
 import { aggregateStats, paginateNights } from './stats.js';
 import { LeagueStore } from './league-store.js';
 import { validateScoring, computeStandings, recordsFromResults } from './league.js';
+import { normalizePrefs, validatePrefs } from './prefs-schema.js';
 
 const SIX_HOURS = 6 * 60 * 60 * 1000;
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -146,6 +147,20 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     }
     const account = await store.updateAccount(req.account.id, normalizedName(req.body.displayName));
     res.json({ displayName: account.display_name });
+  });
+  const settingsLimits = new Map();
+  app.get('/api/me/settings', requireAccount, async (req, res) => res.json({ settings: await store.getSettings(req.account.id) }));
+  for (const method of ['put', 'patch']) app[method]('/api/me/settings', apiOrigin, requireAccount, async (req, res) => {
+    const key = req.account.id;
+    const bucket = settingsLimits.get(key);
+    if (bucket && now() - bucket.start < 60_000 && bucket.count >= 60) { res.status(429).json({ error: 'Too many settings updates.' }); return; }
+    const previous = method === 'patch' ? await store.getSettings(key) : null;
+    const candidate = previous ? { ...previous, ...req.body } : req.body;
+    if (!validatePrefs(candidate)) { res.status(400).json({ error: 'Invalid personal settings.' }); return; }
+    if (!bucket || now() - bucket.start >= 60_000) settingsLimits.set(key, { start: now(), count: 1 });
+    else bucket.count++;
+    const settings = await store.saveSettings(key, normalizePrefs(candidate), now());
+    res.json({ settings });
   });
   app.post('/api/nights/claim', apiOrigin, requireAccount, async (req, res) => {
     const claims = req.body?.claims;
