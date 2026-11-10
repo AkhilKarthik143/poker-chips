@@ -129,8 +129,12 @@ test('Google sign-in verifies a credential, links by subject and uses the normal
   const post = (path, body, headers = {}) => fetch(url + path, { method: 'POST',
     headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body) });
   assert.deepEqual(await (await fetch(url + '/api/config')).json(), { accounts: true, email: true, googleClientId: clientId });
-  assert.match((await fetch(url + '/login.html')).headers.get('content-security-policy'), /https:\/\/accounts\.google\.com\/gsi\/client/);
-  assert.doesNotMatch((await fetch(url + '/')).headers.get('content-security-policy'), /accounts\.google\.com/);
+  const loginPolicy = (await fetch(url + '/login.html')).headers.get('content-security-policy');
+  assert.match(loginPolicy, /https:\/\/accounts\.google\.com\/gsi\/client/);
+  assert.match(loginPolicy, /style-src 'self' 'unsafe-inline' https:\/\/accounts\.google\.com\/gsi\/style/,
+    'Google renders its compact button using injected styles');
+  const tablePolicy = (await fetch(url + '/')).headers.get('content-security-policy');
+  assert.doesNotMatch(tablePolicy, /accounts\.google\.com|'unsafe-inline'/);
   assert.equal((await post('/api/auth/google', { credential: 'bad' })).status, 400);
   assert.equal((await post('/api/auth/google', { credential: 'wrong.token.sig' })).status, 401);
   identities.set('unverified.token.sig', identities.get('unverified'));
