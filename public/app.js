@@ -23,6 +23,8 @@ let dragSeat = null;
 let queuedDragState = null;
 let alertWinHands = [];
 let rebuyRequestMessage = '';
+let savedPresets = [];
+let canSavePresets = false;
 const railMedia = matchMedia('(min-width:1200px)');
 railMedia.addEventListener('change', () => render());
 const ellipseObserver = new ResizeObserver(() => positionSeats());
@@ -533,6 +535,73 @@ function openCosmetics() {
   dialog.querySelector('#cosmetics-close').onclick = () => dialog.close();
   openSheet(dialog, { labelledBy: 'cosmetics-title' });
 }
+function policyFromForm() {
+  return $('#rebuy-policy-mode').value === 'auto'
+    ? { mode: 'auto', cap: Number($('#rebuy-policy-cap').value), maxPerPlayer: Number($('#rebuy-policy-limit').value) }
+    : { mode: 'host' };
+}
+function presetFromForm(name) {
+  return { name, startingStack: Number($('#starting-stack').value), smallBlind: Number($('#small-blind').value),
+    bigBlind: Number($('#big-blind').value), blindMinutes: Number($('#blind-minutes').value),
+    centsPer1000Chips: Math.round(Number($('#cash-value').value) * 100), rebuyPolicy: policyFromForm() };
+}
+function renderPresetChips() {
+  const all = [...window.TablematePresets.builtins.map((preset, index) => ({ ...preset, id: `builtin-${index}` })), ...savedPresets];
+  $('#preset-chips').innerHTML = all.map(preset => `<button type="button" data-preset-id="${escape(preset.id)}" aria-pressed="false">${escape(preset.name)}</button>`).join('');
+  $('#preset-account-actions').hidden = !canSavePresets;
+}
+function applyPreset(preset) {
+  for (const [id, value] of [['starting-stack', preset.startingStack], ['small-blind', preset.smallBlind], ['big-blind', preset.bigBlind],
+    ['blind-minutes', preset.blindMinutes], ['cash-value', (preset.centsPer1000Chips / 100).toFixed(2)]]) $(`#${id}`).value = value;
+  $('#rebuy-policy-mode').value = preset.rebuyPolicy.mode;
+  $('#rebuy-policy-cap').value = preset.rebuyPolicy.cap ?? preset.startingStack;
+  $('#rebuy-policy-limit').value = preset.rebuyPolicy.maxPerPlayer ?? 3;
+  $('#rebuy-policy-auto').hidden = preset.rebuyPolicy.mode !== 'auto';
+  document.querySelectorAll('[data-preset-id]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.presetId === preset.id)));
+}
+async function presetApi(method, path, body) {
+  const response = await fetch(`/api/me/presets${path}`, { method, headers: { 'Content-Type': 'application/json' },
+    ...(body ? { body: JSON.stringify(body) } : {}) });
+  if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || 'Could not save the preset.');
+  return response.json();
+}
+async function loadPresets() {
+  try { savedPresets = (await presetApi('GET', '')).presets; renderPresetChips(); }
+  catch (error) { toast(error.message); }
+}
+function openPresets(kind) {
+  const dialog = $('#presets-dialog');
+  const rows = savedPresets.map((preset, index) => `<li data-preset-row="${escape(preset.id)}"><strong>${escape(preset.name)}</strong><button type="button" data-preset-action="up" ${index ? '' : 'disabled'}>↑</button><button type="button" data-preset-action="down" ${index < savedPresets.length - 1 ? '' : 'disabled'}>↓</button><button type="button" data-preset-action="rename">Rename</button><button type="button" data-preset-action="delete" class="danger">Delete</button></li>`).join('');
+  dialog.innerHTML = `<div class="preset-manager"><h2 id="presets-title">${kind === 'save' ? 'Save a table preset' : 'Manage presets'}</h2>${kind === 'save' ? '<form id="preset-save-form"><label for="preset-name">Preset name</label><input id="preset-name" maxlength="20" required><button type="submit">Save preset</button></form>' : `<ol>${rows || '<li>No saved presets yet.</li>'}</ol>`}<p id="presets-error" role="alert"></p><button type="button" id="presets-close">Done</button></div>`;
+  dialog.querySelector('#presets-close').onclick = () => dialog.close();
+  dialog.querySelector('#preset-save-form')?.addEventListener('submit', async event => {
+    event.preventDefault();
+    try { await presetApi('POST', '', presetFromForm($('#preset-name').value.trim())); await loadPresets(); dialog.close(); toast('Preset saved.'); }
+    catch (error) { $('#presets-error').textContent = error.message; }
+  });
+  dialog.onclick = async event => {
+    const button = event.target.closest('[data-preset-action]');
+    if (!button) return;
+    const id = button.closest('[data-preset-row]').dataset.presetRow;
+    const index = savedPresets.findIndex(preset => preset.id === id);
+    const preset = savedPresets[index];
+    try {
+      if (button.dataset.presetAction === 'delete') await presetApi('DELETE', `/${id}`);
+      else if (button.dataset.presetAction === 'rename') {
+        const name = window.prompt('New preset name', preset.name);
+        if (name === null) return;
+        await presetApi('PATCH', `/${id}`, { preset: { ...preset, name: name.trim(), id: undefined, position: undefined, createdAt: undefined } });
+      } else {
+        const other = savedPresets[index + (button.dataset.presetAction === 'up' ? -1 : 1)];
+        if (!other) return;
+        await presetApi('PATCH', `/${id}`, { position: other.position });
+        await presetApi('PATCH', `/${other.id}`, { position: preset.position });
+      }
+      await loadPresets(); dialog.close(); openPresets('manage');
+    } catch (error) { $('#presets-error').textContent = error.message; }
+  };
+  openSheet(dialog, { labelledBy: 'presets-title' });
+}
 function rebuyRequestControls() {
   const pending = (state.rebuyRequests || []).find(item => item.id === state.playerId);
   if (pending) return `<section class="rebuy-request-controls"><h3>Rebuy request</h3><p role="status">Pending · ${number(pending.amount)} chips</p><button type="button" id="cancel-rebuy-request">Cancel request</button></section>`;
@@ -1040,11 +1109,29 @@ fetch('/api/config').then(response => response.json()).then(async config => {
   link.textContent = `${account.displayName} · My stats`;
   link.href = '/me.html';
   $('#account-logout').hidden = false;
+  canSavePresets = true;
+  loadPresets();
 }).catch(() => {});
 $('#account-logout').addEventListener('click', async () => {
   await fetch('/api/auth/logout', { method: 'POST' });
   window.location.assign('/');
 });
+renderPresetChips();
+$('#preset-chips').addEventListener('click', event => {
+  const button = event.target.closest('[data-preset-id]');
+  if (!button) return;
+  const preset = button.dataset.presetId.startsWith('builtin-')
+    ? window.TablematePresets.builtins[Number(button.dataset.presetId.slice(8))]
+    : savedPresets.find(item => item.id === button.dataset.presetId);
+  if (preset) applyPreset({ ...preset, id: button.dataset.presetId });
+});
+$('#create-fields').addEventListener('input', event => {
+  if (event.target.closest('#preset-chips')) return;
+  document.querySelectorAll('[data-preset-id]').forEach(button => button.setAttribute('aria-pressed', 'false'));
+});
+$('#rebuy-policy-mode').addEventListener('change', () => { $('#rebuy-policy-auto').hidden = $('#rebuy-policy-mode').value !== 'auto'; });
+$('#save-preset').addEventListener('click', () => openPresets('save'));
+$('#manage-presets').addEventListener('click', () => openPresets('manage'));
 $('#lobby-theme-picker').innerHTML = themePickerMarkup('lobby');
 wireThemePicker($('#lobby-theme-picker'));
 $('#lobby-personal').innerHTML = personalControls('lobby');

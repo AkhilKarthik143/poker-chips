@@ -59,6 +59,11 @@ const settingsMigration = `
   CREATE TABLE account_settings (account_id TEXT PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
     settings_json TEXT NOT NULL, updated_at INTEGER NOT NULL);
 `;
+const presetsMigration = `
+  CREATE TABLE table_presets (id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    name TEXT NOT NULL, settings_json TEXT NOT NULL, position INTEGER NOT NULL, created_at INTEGER NOT NULL);
+  CREATE INDEX table_presets_owner ON table_presets(account_id, position, created_at);
+`;
 
 export class SqliteStore {
   constructor(path) {
@@ -105,6 +110,14 @@ export class SqliteStore {
       try {
         this.db.exec(settingsMigration);
         this.db.prepare('UPDATE schema_version SET version = 4').run();
+        this.db.exec('COMMIT');
+      } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+    }
+    if (version < 5) {
+      this.db.exec('BEGIN');
+      try {
+        this.db.exec(presetsMigration);
+        this.db.prepare('UPDATE schema_version SET version = 5').run();
         this.db.exec('COMMIT');
       } catch (error) { this.db.exec('ROLLBACK'); throw error; }
     }
@@ -181,7 +194,7 @@ export class SqliteStore {
       ORDER BY n.ended_at DESC,n.id DESC`).all(accountId);
   }
   async exportAccount(accountId) {
-    return { account: await this.getAccount(accountId), settings: await this.getSettings(accountId), nights: await this.listAccountNights(accountId) };
+    return { account: await this.getAccount(accountId), settings: await this.getSettings(accountId), presets: await this.listPresets(accountId), nights: await this.listAccountNights(accountId) };
   }
   async getSettings(accountId) {
     const row = this.db.prepare('SELECT settings_json FROM account_settings WHERE account_id = ?').get(accountId);
@@ -192,6 +205,32 @@ export class SqliteStore {
       ON CONFLICT(account_id) DO UPDATE SET settings_json=excluded.settings_json,updated_at=excluded.updated_at`)
       .run(accountId, JSON.stringify(settings), time);
     return settings;
+  }
+  async listPresets(accountId) {
+    return this.db.prepare('SELECT id,name,settings_json,position,created_at FROM table_presets WHERE account_id = ? ORDER BY position,created_at,id').all(accountId)
+      .map(row => ({ id: row.id, ...JSON.parse(row.settings_json), name: row.name, position: row.position, createdAt: row.created_at }));
+  }
+  async getPreset(accountId, id) {
+    return (await this.listPresets(accountId)).find(item => item.id === id) ?? null;
+  }
+  async createPreset(accountId, id, preset, time) {
+    const count = this.db.prepare('SELECT COUNT(*) AS n FROM table_presets WHERE account_id = ?').get(accountId).n;
+    if (count >= 10) return null;
+    const position = this.db.prepare('SELECT COALESCE(MAX(position), -1) + 1 AS n FROM table_presets WHERE account_id = ?').get(accountId).n;
+    this.db.prepare('INSERT INTO table_presets (id,account_id,name,settings_json,position,created_at) VALUES (?,?,?,?,?,?)')
+      .run(id, accountId, preset.name, JSON.stringify(preset), position, time);
+    return this.getPreset(accountId, id);
+  }
+  async updatePreset(accountId, id, preset, position) {
+    const current = await this.getPreset(accountId, id);
+    if (!current) return null;
+    const next = preset || current;
+    this.db.prepare('UPDATE table_presets SET name = ?,settings_json = ?,position = ? WHERE account_id = ? AND id = ?')
+      .run(next.name, JSON.stringify(next), position ?? current.position, accountId, id);
+    return this.getPreset(accountId, id);
+  }
+  async deletePreset(accountId, id) {
+    return this.db.prepare('DELETE FROM table_presets WHERE account_id = ? AND id = ?').run(accountId, id).changes > 0;
   }
   async deleteAccount(accountId) {
     this.db.exec('BEGIN');

@@ -1059,3 +1059,12 @@ dialog.app-sheet :focus-visible { scroll-margin:20px; }
 .avatar-grid .seat-avatar{width:24px;height:24px;color:var(--accent)}
 .color-grid button:before{content:"";display:block;width:23px;height:23px;border-radius:50%;background:var(--seat-color);border:1px solid var(--border-seat-empty)}
 @media(max-width:699px){.seat-oval .oval-seat[class*="seat-color-"]{border-left-width:4px}.seat-avatar{width:14px;height:14px}}
+
+.preset-picker{margin:6px 0 14px}.preset-label{display:block;font-size:12px;font-weight:800;margin-bottom:9px;color:var(--text-secondary)}
+.preset-chips{display:flex;gap:6px;flex-wrap:wrap}.preset-chips button{min-height:38px;padding:6px 12px;border-radius:99px;font-size:12px}
+.preset-chips button[aria-pressed="true"]{border:2px solid var(--accent);background:var(--bg-seat-occupied)}
+#preset-account-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}#preset-account-actions button{min-height:44px;font-size:12px}
+.policy-create{border-top:1px solid var(--border-seat-empty);margin-top:18px;padding-top:4px}
+.preset-manager{display:grid;gap:12px;min-width:min(460px,85vw)}.preset-manager h2{margin-bottom:12px}
+.preset-manager ol{list-style:none;margin:0;padding:0}.preset-manager li{display:flex;align-items:center;gap:6px;padding:8px 0;border-bottom:1px solid var(--border-seat-empty)}
+.preset-manager li strong{margin-right:auto;overflow-wrap:anywhere}.preset-manager li button{min-width:40px;min-height:44px;padding:6px}

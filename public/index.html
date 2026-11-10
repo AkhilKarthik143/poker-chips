@@ -15,6 +15,7 @@
   <script src="/socket.io/socket.io.js" defer></script>
   <script src="/alerts.js" defer></script>
   <script src="/prefs.js" defer></script>
+  <script src="/presets.js" defer></script>
   <script src="/vendor/qrcode.js" defer></script>
   <script src="/app.js" defer></script>
 </head>
@@ -72,6 +73,7 @@
           <input id="room-code" name="code" placeholder="ABCDEFGH" maxlength="8" pattern="[A-HJ-NP-Za-hj-np-z]{8}" autocomplete="off" autocapitalize="characters" spellcheck="false">
         </div>
         <div id="create-fields">
+          <div class="preset-picker"><span class="preset-label">Start with a preset</span><div id="preset-chips" class="preset-chips"></div><div id="preset-account-actions" hidden><button type="button" id="save-preset">Save as preset</button><button type="button" id="manage-presets">Manage presets</button></div></div>
           <div class="form-grid">
             <div><label for="starting-stack">Starting stack</label><input id="starting-stack" type="number" value="1000" min="1" max="1000000000" step="1" required></div>
             <div><label for="small-blind">Small blind</label><input id="small-blind" type="number" value="5" min="1" step="1" required></div>
@@ -81,6 +83,7 @@
           <select id="blind-minutes"><option value="0">Keep them steady</option><option value="10">Double every 10 minutes</option><option value="15">Double every 15 minutes</option><option value="20">Double every 20 minutes</option><option value="30">Double every 30 minutes</option></select>
           <label for="cash-value">Cash value per 1,000 chips ($) · optional</label>
           <input id="cash-value" type="number" inputmode="decimal" min="0" max="100000" step="0.01" value="0">
+          <div class="policy-create"><label for="rebuy-policy-mode">Rebuy approval</label><select id="rebuy-policy-mode"><option value="host">Host approves</option><option value="auto">Auto-approve up to a cap</option></select><div id="rebuy-policy-auto" hidden><label for="rebuy-policy-cap">Auto-approve cap · chips</label><input id="rebuy-policy-cap" type="number" min="1" max="1000000000" value="1000"><label for="rebuy-policy-limit">Auto rebuys per player</label><input id="rebuy-policy-limit" type="number" min="0" max="20" value="3"></div></div>
         </div>
         <button id="entry-submit" class="primary entry-submit" type="submit">Create a table <span aria-hidden="true">↗</span></button>
         <p id="entry-caption" class="form-caption">You’re the host. House rules, your call.</p>
@@ -96,6 +99,7 @@
   <dialog id="tonight-dialog" aria-labelledby="tonight-title"></dialog>
   <dialog id="rebuy-requests-dialog" aria-labelledby="rebuy-requests-title"></dialog>
   <dialog id="cosmetics-dialog" aria-labelledby="cosmetics-title"></dialog>
+  <dialog id="presets-dialog" aria-labelledby="presets-title"></dialog>
   <div id="toast" class="toast" role="alert" hidden></div>
   <noscript>This table needs JavaScript to keep everyone’s chips in sync.</noscript>
   <footer id="site-footer" class="site-footer"><span>A LITTLE LESS SETUP. A LOT MORE POKER.</span><span>Made for the table.</span></footer>

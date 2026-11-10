@@ -15,6 +15,7 @@ import { aggregateStats, paginateNights } from './stats.js';
 import { LeagueStore } from './league-store.js';
 import { validateScoring, computeStandings, recordsFromResults } from './league.js';
 import { DEFAULT_PREFS, PREF_ENUMS, normalizePrefs, validatePrefs } from './prefs-schema.js';
+import { MAX_PRESETS, normalizePreset, validPreset } from './preset-schema.js';
 
 const SIX_HOURS = 6 * 60 * 60 * 1000;
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -161,6 +162,27 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     else bucket.count++;
     const settings = await store.saveSettings(key, normalizePrefs(candidate), now());
     res.json({ settings });
+  });
+  app.get('/api/me/presets', requireAccount, async (req, res) => res.json({ presets: await store.listPresets(req.account.id) }));
+  app.post('/api/me/presets', apiOrigin, requireAccount, async (req, res) => {
+    if (!validPreset(req.body)) { res.status(400).json({ error: 'Invalid table preset.' }); return; }
+    const preset = await store.createPreset(req.account.id, randomUUID(), normalizePreset(req.body), now());
+    if (!preset) { res.status(409).json({ error: `You can save up to ${MAX_PRESETS} presets.` }); return; }
+    res.status(201).json({ preset });
+  });
+  app.patch('/api/me/presets/:id', apiOrigin, requireAccount, async (req, res) => {
+    if (!req.body || Object.keys(req.body).length === 0 || Object.keys(req.body).some(key => !['preset', 'position'].includes(key))
+      || (req.body.preset !== undefined && !validPreset(req.body.preset))
+      || (req.body.position !== undefined && (!Number.isSafeInteger(req.body.position) || req.body.position < 0 || req.body.position >= MAX_PRESETS))) {
+      res.status(400).json({ error: 'Invalid table preset update.' }); return;
+    }
+    const preset = await store.updatePreset(req.account.id, req.params.id, req.body.preset ? normalizePreset(req.body.preset) : null, req.body.position);
+    if (!preset) { res.sendStatus(404); return; }
+    res.json({ preset });
+  });
+  app.delete('/api/me/presets/:id', apiOrigin, requireAccount, async (req, res) => {
+    if (!await store.deletePreset(req.account.id, req.params.id)) { res.sendStatus(404); return; }
+    res.json({ ok: true });
   });
   app.post('/api/nights/claim', apiOrigin, requireAccount, async (req, res) => {
     const claims = req.body?.claims;
