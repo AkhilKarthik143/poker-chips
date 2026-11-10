@@ -52,6 +52,16 @@ Tablemate is an **informal tally for friends, not a gambling or payments platfor
 
 Signed-in friends can create a league, join with an eight-letter invite code, and maintain a roster. The commissioner can set table rules and create a draft season; a co-commissioner can help with invites and night review. Only commissioners and co-commissioners can open the league's table. The server applies the league settings and keeps one live room per league. Guests may still join by room code as subs; their chips remain in the night history, but they do not enter standings. League pages, nights, records and audit entries are visible only to active members.
 
+| Action | Commissioner | Co-commissioner | Member | Guest/sub |
+| --- | --- | --- | --- | --- |
+| Read standings, nights, roster and rules | Yes | Yes | Yes | No |
+| Open tonight's league table | Yes | Yes | No | No |
+| Rotate invite code and review active-season nights | Yes | Yes | No | No |
+| Edit table rules, seasons and member roles | Yes | No | No | No |
+| Transfer commissioner | Yes | No | No | No |
+
+Ending a league night saves its final results, clears its live table code and lets a commissioner open the next night. If the save fails, the table stays open so the host can retry. Leaving or deleting an account keeps already recorded night results under the stable league member ID; deleted accounts display as **Former member**.
+
 The commissioner chooses a scoring format for each season: total net chips, per-night points (default table 10/7/5/3/2/1), net chips capped by a buy-in multiple, or ROI. Drop-worst (up to three nights, retaining at least one) and minimum attendance are optional except that ROI cannot drop nights. Scores are stored as integer hundredths; ROI uses integer basis points. For example, a first place night worth 10 and a second place night worth 7 produces 17.00 points. Ties split the occupied place points. Scoring rules lock on activation; only one season can be active. Closing a season stores its qualified champion and makes its results immutable.
 
 A completed league night is saved with stable member IDs. A commissioner or co-commissioner may void or restore an active-season night with a required reason; every such review is logged. Individual chip totals are not editable through league review. The roster supports commissioner transfer, co-commissioner promotion, removal, and invite-code rotation. The league page includes standings, nights, members and table/season rules.
