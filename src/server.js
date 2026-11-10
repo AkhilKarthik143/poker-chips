@@ -291,7 +291,8 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
   });
   app.get('/api/leagues/:id/nights', requireLeague, (req, res) => res.json({ nights: leagueStore.nights(req.league.id, req.query.season || null) }));
   app.get('/api/leagues/:id/audit', requireLeague, (req, res) => {
-    const page = Math.max(1, Number(req.query.page) || 1);
+    const page = req.query.page === undefined ? 1 : Number(req.query.page);
+    if (!Number.isSafeInteger(page) || page < 1 || page > 1_000_000) { res.status(400).json({ error: 'Invalid audit page.' }); return; }
     res.json({ entries: leagueStore.audit(req.league.id, 50, (page - 1) * 50), page });
   });
   app.get('/api/leagues/:id/records', requireLeague, (req, res) => res.json(recordsFromResults(leagueStore.results(req.league.id), leagueStore.roster(req.league.id))));

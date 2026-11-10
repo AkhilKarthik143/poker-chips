@@ -127,11 +127,17 @@ export class LeagueStore {
       .map(row => ({ ...row, counts: Boolean(row.counts), former: Boolean(row.former) }));
   }
   nights(leagueId, seasonId = null) {
-    const rows = this.db.prepare(`SELECT id,room_code AS roomCode,ended_at AS endedAt,hands,counts,season_id AS seasonId
-      FROM nights WHERE league_id = ? AND ended_at IS NOT NULL ${seasonId ? 'AND season_id = ?' : ''}
+    const rows = this.db.prepare(`SELECT n.id,n.room_code AS roomCode,n.ended_at AS endedAt,n.hands,n.counts,n.season_id AS seasonId,
+      (SELECT a.detail_json FROM league_audit a WHERE a.night_id = n.id AND a.action = 'void'
+        ORDER BY a.at DESC,a.id DESC LIMIT 1) AS voidDetail
+      FROM nights n WHERE n.league_id = ? AND n.ended_at IS NOT NULL ${seasonId ? 'AND n.season_id = ?' : ''}
       ORDER BY ended_at DESC,id DESC`).all(...(seasonId ? [leagueId, seasonId] : [leagueId]));
-    return rows.map(row => ({ ...row, counts: Boolean(row.counts), results: this.results(leagueId, row.seasonId).filter(result => result.nightId === row.id),
-      participants: this.db.prepare('SELECT name,net,buy_in AS buyIn FROM night_players WHERE night_id = ? ORDER BY name').all(row.id) }));
+    return rows.map(row => {
+      const { voidDetail, ...night } = row;
+      return { ...night, counts: Boolean(row.counts), voidReason: row.counts ? null : JSON.parse(voidDetail || '{}').reason || null,
+        results: this.results(leagueId, row.seasonId).filter(result => result.nightId === row.id),
+        participants: this.db.prepare('SELECT name,net,buy_in AS buyIn FROM night_players WHERE night_id = ? ORDER BY name').all(row.id) };
+    });
   }
   reviewNight(leagueId, nightId, counts, actorMemberId, reason, time, auditId) {
     const night = requireRow(this.db.prepare('SELECT * FROM nights WHERE league_id = ? AND id = ? AND ended_at IS NOT NULL').get(leagueId, nightId), 'Night not found.');

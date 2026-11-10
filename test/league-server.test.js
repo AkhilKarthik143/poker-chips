@@ -94,7 +94,10 @@ test('league roster, locked season, saved results, review trail and private room
   assert.equal((await api(`/api/leagues/${leagueId}/nights/${nightId}/void`, 'POST', { reason: 'Seat total corrected' }, aCookie)).status, 200);
   assert.equal((await api(`/api/leagues/${leagueId}/seasons/${seasonId}/standings`, 'GET', null, aCookie)).data.standings[0].score, 0);
   assert.equal((await api(`/api/leagues/${leagueId}/audit`, 'GET', null, aCookie)).data.entries[0].detail.reason, 'Seat total corrected');
+  assert.equal((await api(`/api/leagues/${leagueId}/nights`, 'GET', null, aCookie)).data.nights[0].voidReason, 'Seat total corrected');
+  assert.equal((await api(`/api/leagues/${leagueId}/audit?page=1.5`, 'GET', null, aCookie)).status, 400);
   assert.equal((await api(`/api/leagues/${leagueId}/nights/${nightId}/restore`, 'POST', { reason: 'Verified totals' }, aCookie)).status, 200);
+  assert.equal((await api(`/api/leagues/${leagueId}/nights`, 'GET', null, aCookie)).data.nights[0].voidReason, null);
   assert.equal((await api(`/api/leagues/${leagueId}/seasons/${seasonId}/close`, 'POST', {}, aCookie)).data.championMemberId, created.data.members[0].memberId);
   assert.notEqual((await api(`/api/leagues/${leagueId}/nights/${nightId}/void`, 'POST', { reason: 'Too late' }, aCookie)).status, 200);
 });
