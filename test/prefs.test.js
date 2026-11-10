@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
+import { TextEncoder } from 'node:util';
 import { createServer } from '../src/server.js';
 import { SqliteStore } from '../src/store/sqlite.js';
 import { PREF_ENUMS, DEFAULT_PREFS, MAX_PREFS_BYTES, validatePrefs } from '../src/prefs-schema.js';
@@ -24,7 +25,7 @@ function client(saved = {}, serverSettings = null) {
       return { ok: true, json: async () => ({}) };
     },
     matchMedia: () => ({ matches: false, addEventListener: () => {} }),
-    setTimeout: () => 0, clearTimeout: () => {}, structuredClone, Event: class Event {} };
+    setTimeout: () => 0, clearTimeout: () => {}, structuredClone, TextEncoder, Event: class Event {} };
   runInNewContext(source, context);
   return { api: context.window.TablematePrefs, values, calls, listeners, root };
 }
@@ -43,6 +44,7 @@ test('server and classic client share closed settings vocabulary and limits', ()
     { ...DEFAULT_PREFS, note: '\u0000' }, { ...DEFAULT_PREFS, note: 'é'.repeat(1024) }
   ]) assert.equal(validatePrefs(invalid), false);
   assert.equal(api.valid({ ...DEFAULT_PREFS, unknown: true }), false);
+  assert.equal(api.valid({ ...DEFAULT_PREFS, note: 'é'.repeat(1024) }), false);
 });
 
 test('old theme and alert keys migrate once; signed-in server value wins', async () => {
@@ -82,6 +84,9 @@ test('settings API validates session, origin and payload, and disappears without
   const cookie = verified.headers.get('set-cookie');
   assert.equal((await put(DEFAULT_PREFS, cookie, 'https://foreign.example')).status, 403);
   assert.equal((await put({ ...DEFAULT_PREFS, theme: 'rogue' }, cookie)).status, 400);
-  assert.equal((await put({ ...DEFAULT_PREFS, theme: 'retro-arcade' }, cookie)).status, 200);
+  assert.equal((await put({ ...DEFAULT_PREFS, theme: 'retro-arcade', sound: { on: true, pack: 'arcade' } }, cookie)).status, 200);
   assert.equal((await (await fetch(url + '/api/me/settings', { headers: { Cookie: cookie } })).json()).settings.theme, 'retro-arcade');
+  const patch = await fetch(url + '/api/me/settings', { method: 'PATCH', headers: { Cookie: cookie, 'Content-Type': 'application/json' }, body: JSON.stringify({ sound: { on: false } }) });
+  assert.equal(patch.status, 200);
+  assert.deepEqual((await patch.json()).settings.sound, { on: false, pack: 'arcade' });
 });

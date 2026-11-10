@@ -7,8 +7,8 @@ export const PREF_ENUMS = Object.freeze({
   seatColor: Array.from({ length: 12 }, (_, i) => `c${i + 1}`)
 });
 export const MAX_PREFS_BYTES = 2048;
-export const DEFAULT_PREFS = Object.freeze({ theme: 'felt', sound: { on: true, pack: 'classic' },
-  vibration: { on: true, yourTurn: 'double', win: 'off' }, wakeLock: true,
+export const DEFAULT_PREFS = Object.freeze({ theme: 'felt', sound: { on: false, pack: 'classic' },
+  vibration: { on: false, yourTurn: 'double', win: 'off' }, wakeLock: true,
   motion: 'auto', contrast: 'normal', density: 'comfortable', leftHanded: false,
   defaultAvatar: 'chip', defaultSeatColor: 'c1', note: '' });
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);

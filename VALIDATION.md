@@ -79,3 +79,12 @@ Validated locally on November 7, 2026, against ephemeral servers using Playwrigh
 | Browser errors during share/manual-entry checks | Pass; no uncaught page errors. |
 
 Physical phone camera scanning and the deployed Render hostname were not available in this local run. QR decoding was verified in Chromium; production invite URLs use the active page origin and still need a deployed-site check.
+
+## Theme and customization local work (November 10, 2026)
+
+- Branch `feature/customization` builds from passing `feature/leagues`; all work remains local and unpushed.
+- Final local gate: `npm run lint` zero warnings; `npm test` 85/85 passing; `node scripts/simulate-four.js` conserved 550 chips; `node scripts/check-contrast.js` passed eight themes and high contrast; `GET /healthz` returned `{ "ok": true }`.
+- Lint passes with zero warnings. The current suite covers settings schema/client enum parity and migration, no-DB routes, signed-in sync precedence, cosmetics Socket.IO validation/broadcast/revision/privacy, saved preset CRUD and ownership, host rebuy limits and mid-hand deferral. `node scripts/check-contrast.js` covers eight themes, seat colors and high-contrast tokens.
+- Playwright Chromium at 1440×900 and 390×844 captured the lobby and populated game for Miami Vice, Royal Flush and Retro Arcade. The browser reported no page errors or horizontal overflow. Felt screenshots and customization panels were also inspected. Art remained outside functional content; the mobile decorative layer is hidden.
+- League standings with a closed-season champion, nights, members and rules were captured at 360×740 and 390×844; all four tabs had no horizontal overflow or page errors. Signed-in preset save, rename and delete were also exercised in Chromium.
+- Account settings/saved presets were exercised against an in-memory SQLite server. Real Resend delivery and persistent disk behavior are not verified locally. Node 20 fallback and physical-device sound/vibration/ergonomics remain untested.

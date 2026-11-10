@@ -157,7 +157,9 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     const bucket = settingsLimits.get(key);
     if (bucket && now() - bucket.start < 60_000 && bucket.count >= 60) { res.status(429).json({ error: 'Too many settings updates.' }); return; }
     const previous = method === 'patch' ? await store.getSettings(key) : null;
-    const candidate = previous ? { ...previous, ...req.body } : req.body;
+    const candidate = previous && validatePrefs(req.body) ? { ...previous, ...req.body,
+      ...(req.body.sound ? { sound: { ...previous.sound, ...req.body.sound } } : {}),
+      ...(req.body.vibration ? { vibration: { ...previous.vibration, ...req.body.vibration } } : {}) } : req.body;
     if (!validatePrefs(candidate)) { res.status(400).json({ error: 'Invalid personal settings.' }); return; }
     if (!bucket || now() - bucket.start >= 60_000) settingsLimits.set(key, { start: now(), count: 1 });
     else bucket.count++;
@@ -590,7 +592,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
         ...(payload.maxPerPlayer === undefined ? {} : { maxPerPlayer: payload.maxPerPlayer }) };
       requireValue(validRebuyPolicy(policy), 'Invalid rebuy policy.');
       room.rebuyPolicy = normalizeRebuyPolicy(policy); room.lastActive = now();
-      processAutoRebuys(room); broadcast(room);
+      broadcast(room);
       return { state: view(room, id) };
     });
     on('host:endNight', payload => {

@@ -103,6 +103,14 @@ for (const name of themeNames) {
 }
 
 if (themes.size !== themeNames.length) failures.push(`Expected ${themeNames.length} themes, found ${themes.size}`);
+for (const surface of ['bg-page', 'bg-panel', 'bg-seat-occupied', 'bg-seat-empty', 'bg-table']) {
+  for (const ink of ['text-primary', 'text-secondary']) {
+    const ratio = contrast(highContrast, ink, surface);
+    if (ratio < 7) failures.push(`high contrast: ${ink} on ${surface} ${ratio.toFixed(2)}:1 (needs 7:1)`);
+  }
+  const border = contrast(highContrast, 'border-seat-empty', surface);
+  if (border < 4.5) failures.push(`high contrast: border on ${surface} ${border.toFixed(2)}:1 (needs 4.5:1)`);
+}
 if (failures.length) {
   process.stderr.write(`Contrast checks failed:\n${failures.map(item => `- ${item}`).join('\n')}\n`);
   process.exitCode = 1;

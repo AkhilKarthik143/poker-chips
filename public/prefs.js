@@ -1,4 +1,4 @@
-/* global window, document, localStorage, fetch, setTimeout, clearTimeout, matchMedia */
+/* global window, document, localStorage, fetch, setTimeout, clearTimeout, matchMedia, TextEncoder */
 (() => {
 const enums = Object.freeze({ theme: ['felt', 'midnight', 'burgundy', 'graphite', 'daylight', 'miami-vice', 'royal-flush', 'retro-arcade', 'system'],
   soundPack: ['classic', 'soft', 'arcade'], vibrationPattern: ['off', 'short', 'double', 'long'],
@@ -6,19 +6,24 @@ const enums = Object.freeze({ theme: ['felt', 'midnight', 'burgundy', 'graphite'
   avatar: ['chip', 'spade', 'heart', 'diamond', 'club', 'crown', 'star', 'moon', 'sun', 'bolt', 'anchor', 'gem',
     'flame', 'wave', 'dice', 'target', 'laurel', 'shield', 'comet', 'mountain', 'arcade', 'palm', 'key', 'horseshoe'],
   seatColor: Array.from({ length: 12 }, (_, i) => `c${i + 1}`) });
-const defaults = { theme: 'felt', sound: { on: true, pack: 'classic' }, vibration: { on: true, yourTurn: 'double', win: 'off' },
+const defaults = { theme: 'felt', sound: { on: false, pack: 'classic' }, vibration: { on: false, yourTurn: 'double', win: 'off' },
   wakeLock: true, motion: 'auto', contrast: 'normal', density: 'comfortable', leftHanded: false,
   defaultAvatar: 'chip', defaultSeatColor: 'c1', note: '' };
 const key = 'tablemate-prefs-v1'; const maxBytes = 2048;
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 function valid(value) {
-  if (!object(value) || Object.keys(value).some(field => !Object.hasOwn(defaults, field)) || JSON.stringify(value).length > maxBytes) return false;
+  if (!object(value) || Object.keys(value).some(field => !Object.hasOwn(defaults, field))) return false;
+  try { if (new TextEncoder().encode(JSON.stringify(value)).length > maxBytes) return false; }
+  catch { return false; }
   const input = { ...defaults, ...value };
-  return enums.theme.includes(input.theme) && object(input.sound) && Object.keys(input.sound).every(field => ['on', 'pack'].includes(field))
-    && typeof input.sound.on === 'boolean' && enums.soundPack.includes(input.sound.pack)
-    && object(input.vibration) && Object.keys(input.vibration).every(field => ['on', 'yourTurn', 'win'].includes(field))
-    && typeof input.vibration.on === 'boolean' && enums.vibrationPattern.includes(input.vibration.yourTurn)
-    && enums.vibrationPattern.includes(input.vibration.win) && typeof input.wakeLock === 'boolean'
+  if (!object(input.sound) || !object(input.vibration)) return false;
+  const sound = { ...defaults.sound, ...input.sound };
+  const vibration = { ...defaults.vibration, ...input.vibration };
+  return enums.theme.includes(input.theme) && Object.keys(input.sound).every(field => ['on', 'pack'].includes(field))
+    && typeof sound.on === 'boolean' && enums.soundPack.includes(sound.pack)
+    && Object.keys(input.vibration).every(field => ['on', 'yourTurn', 'win'].includes(field))
+    && typeof vibration.on === 'boolean' && enums.vibrationPattern.includes(vibration.yourTurn)
+    && enums.vibrationPattern.includes(vibration.win) && typeof input.wakeLock === 'boolean'
     && enums.motion.includes(input.motion) && enums.contrast.includes(input.contrast) && enums.density.includes(input.density)
     && typeof input.leftHanded === 'boolean' && enums.avatar.includes(input.defaultAvatar)
     && enums.seatColor.includes(input.defaultSeatColor) && typeof input.note === 'string' && input.note.length <= 24
@@ -32,8 +37,8 @@ function read() {
     const oldTheme = JSON.parse(localStorage.getItem('tablemate-theme-v1') || 'null');
     const oldAlerts = JSON.parse(localStorage.getItem('tablemate-alerts-v1') || 'null');
     const migrated = normalized({ theme: enums.theme.includes(oldTheme?.theme) ? oldTheme.theme : 'felt',
-      sound: { on: typeof oldAlerts?.sound === 'boolean' ? oldAlerts.sound : true, pack: 'classic' },
-      vibration: { on: typeof oldAlerts?.vibration === 'boolean' ? oldAlerts.vibration : true, yourTurn: 'double', win: 'off' },
+      sound: { on: typeof oldAlerts?.sound === 'boolean' ? oldAlerts.sound : false, pack: 'classic' },
+      vibration: { on: typeof oldAlerts?.vibration === 'boolean' ? oldAlerts.vibration : false, yourTurn: 'double', win: 'off' },
       wakeLock: typeof oldAlerts?.keepScreenOn === 'boolean' ? oldAlerts.keepScreenOn : true });
     localStorage.setItem(key, JSON.stringify(migrated)); return migrated;
   } catch { return normalized({}); }
@@ -83,6 +88,7 @@ document.addEventListener('change', event => {
   if (path.startsWith('sound.')) update({ sound: { [path.slice(6)]: value } });
   else if (path.startsWith('vibration.')) update({ vibration: { [path.slice(10)]: value } });
   else update({ [path]: value });
+  if (path === 'sound.on' && value === true) window.Alerts?.unlock?.();
 });
 document.addEventListener('click', event => { if (event.target.closest('[data-pref-test]')) window.Alerts?.test(); });
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (preferences.theme === 'system') apply(); });

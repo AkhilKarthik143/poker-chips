@@ -155,3 +155,13 @@ Failing tests were added before fixes. The initial six new groups failed as expe
 - Tests were written before implementation and failed for the missing operation; then pass for conservation, immutability, invalid input, timing, non-host authorization, broadcast and stale replay.
 
 - Bid typing fix: reproduced a cleared numeric field immediately becoming the minimum raise. Input now preserves the typed draft and only updates the slider preview. Native min/max/step constraints and server validation enforce valid completed bids at submission. Mobile browser regression clears the field, types 125 sequentially and submits it successfully.
+
+## Local account, league, theme and customization work (2026-11-10)
+
+- Confirmed `/Users/akhilsanapala/Downloads/poker-chips` is the repository with remote `AkhilKarthik143/poker-chips`. The sibling `/Downloads/poker` is a different repository. No push or PR was made; the user requested local changes only.
+- `feature/accounts-stats` adds persisted night snapshots, optional magic-link accounts, guest claims and personal stats. `feature/leagues` extends that base with commissioner/co-commissioner roster, season scoring, standings, audited review and champion history. `feature/customization` builds on the passing league branch.
+- Customization assumptions: optional public note means nickname/pronunciation only, limited to 24 characters; guest seat colors use the current seat index with collision fallback; built-in presets use host approval by default; auto rebuy counts are room-local and reset with a new room/night. Account settings and saved presets are hidden when accounts are disabled.
+- Stage commits on `feature/customization`: themes `461a820`, settings `396d97c`, seat cosmetics `03ff896`, presets `02ba2e6`, rebuy policy `e5700d8`. All commits remain local.
+- Theme art is static SVG in the lobby, scoped to Miami Vice, Royal Flush and Retro Arcade. It has no pointer events and is hidden on narrow screens. Felt receives no theme-art layer. The Poker table uses palette/styling changes without decorations over the felt.
+- Untested on real devices: iOS audio unlock and silent switch, hardware haptics, left-handed ergonomics, Android wake lock and Web Push delivery. Browser/device support is feature-detected.
+- Final local validation: lint with zero warnings; 85 tests passed; the four-player simulation conserved 550 chips; contrast passed eight palettes and the high-contrast seat palette; `/healthz` returned `{"ok":true}`. Playwright covered all three new-theme lobbies and four-player tables at desktop/mobile widths, signed-in preset management, and a closed league season on narrow screens. No browser page errors or horizontal overflow were observed.

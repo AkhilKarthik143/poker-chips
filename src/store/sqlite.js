@@ -185,16 +185,16 @@ export class SqliteStore {
       WHERE night_id = ? AND claim_hash = ? AND account_id IS NULL`).run(accountId, nightId, tokenHash);
     return result.changes;
   }
-  async listAccountNights(accountId) {
+  async listAccountNights(accountId, includeOpen = false) {
     return this.db.prepare(`SELECT n.id AS night_id,n.room_code,n.started_at,n.ended_at,
       p.buy_in,p.cash_out,p.net,p.hands_played,p.hands_won,p.vpip_hands,p.pfr_hands,
       p.raises,p.calls,p.checks,p.folds,p.all_ins,p.showdowns,p.showdown_wins
       FROM night_players p JOIN nights n ON n.id = p.night_id
-      WHERE p.account_id = ? AND n.ended_at IS NOT NULL
-      ORDER BY n.ended_at DESC,n.id DESC`).all(accountId);
+      WHERE p.account_id = ? ${includeOpen ? '' : 'AND n.ended_at IS NOT NULL'}
+      ORDER BY COALESCE(n.ended_at,n.updated_at) DESC,n.id DESC`).all(accountId);
   }
   async exportAccount(accountId) {
-    return { account: await this.getAccount(accountId), settings: await this.getSettings(accountId), presets: await this.listPresets(accountId), nights: await this.listAccountNights(accountId) };
+    return { account: await this.getAccount(accountId), settings: await this.getSettings(accountId), presets: await this.listPresets(accountId), nights: await this.listAccountNights(accountId, true) };
   }
   async getSettings(accountId) {
     const row = this.db.prepare('SELECT settings_json FROM account_settings WHERE account_id = ?').get(accountId);
@@ -208,7 +208,7 @@ export class SqliteStore {
   }
   async listPresets(accountId) {
     return this.db.prepare('SELECT id,name,settings_json,position,created_at FROM table_presets WHERE account_id = ? ORDER BY position,created_at,id').all(accountId)
-      .map(row => ({ id: row.id, ...JSON.parse(row.settings_json), name: row.name, position: row.position, createdAt: row.created_at }));
+      .map(row => ({ ...JSON.parse(row.settings_json), id: row.id, name: row.name, position: row.position, createdAt: row.created_at }));
   }
   async getPreset(accountId, id) {
     return (await this.listPresets(accountId)).find(item => item.id === id) ?? null;
@@ -224,7 +224,8 @@ export class SqliteStore {
   async updatePreset(accountId, id, preset, position) {
     const current = await this.getPreset(accountId, id);
     if (!current) return null;
-    const next = preset || current;
+    const next = preset || Object.fromEntries(['name', 'startingStack', 'smallBlind', 'bigBlind', 'blindMinutes', 'centsPer1000Chips', 'rebuyPolicy']
+      .map(key => [key, current[key]]));
     this.db.prepare('UPDATE table_presets SET name = ?,settings_json = ?,position = ? WHERE account_id = ? AND id = ?')
       .run(next.name, JSON.stringify(next), position ?? current.position, accountId, id);
     return this.getPreset(accountId, id);

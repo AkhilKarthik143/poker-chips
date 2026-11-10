@@ -1,6 +1,6 @@
 /* global window, document, navigator, setInterval, clearInterval */
 (() => {
-const alertDefaults = { sound: true, vibration: true, keepScreenOn: true };
+const alertDefaults = { sound: false, vibration: false, keepScreenOn: true };
 const alertStorageKey = 'tablemate-alerts-v1';
 const vibrationSupported = typeof navigator.vibrate === 'function';
 let alertStorage = null;
@@ -35,6 +35,7 @@ function showUnlockPill() {
 }
 function hideUnlockPill() { unlockPill?.remove(); unlockPill = null; }
 async function unlock() {
+  if (!alertPreferences.sound) return false;
   const Context = window.AudioContext || window.webkitAudioContext;
   if (!Context) return false;
   try {

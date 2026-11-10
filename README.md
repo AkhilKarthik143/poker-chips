@@ -4,6 +4,8 @@ Physical cards. Virtual chips. A mobile-first chip bank and authoritative bettin
 
 **[Play Tablemate on Render](https://poker-chips-o7n9.onrender.com/)**
 
+The account, league, theme and customization work described below is currently on local branches. The Render link may serve an earlier version until these commits are deployed.
+
 ## Play with a real deck
 
 1. The host creates a table, chooses a starting stack and blinds, and optionally enables a blind timer.
@@ -44,7 +46,7 @@ Guest play stays available with no setup. Set `TABLEMATE_DB_PATH=./data/tablemat
 
 The server saves a night after each completed hand, when the host sends `host:endNight`, and when an occupied room expires or empties. Active rooms and seat connections remain in memory and are lost on restart. A signed-in player is linked to their seat; a former guest can claim a saved night using the private seat token retained on that device. The **My stats** page shows lifetime totals and a net-over-time chart. Account export returns account details and night rows. Account deletion removes login sessions and account links from saved rows while keeping anonymous table totals for other players. Magic links last 15 minutes; sessions last 30 days. Email, session secrets, claim hashes and account IDs are never broadcast to table peers.
 
-Account APIs: `POST /api/auth/request`, `POST /api/auth/verify`, `POST /api/auth/logout`, `GET/PATCH/DELETE /api/me`, `GET /api/me/stats`, `POST /api/nights/claim`, and `GET /api/me/export`. Mutating APIs require the same origin; signed-in APIs require an HttpOnly session cookie.
+Account APIs: `POST /api/auth/request`, `POST /api/auth/verify`, `POST /api/auth/logout`, `GET/PATCH/DELETE /api/me`, `GET /api/me/stats`, `POST /api/nights/claim`, `GET /api/me/export`, `GET/PUT/PATCH /api/me/settings`, and `GET/POST /api/me/presets` plus `PATCH/DELETE /api/me/presets/:id`. Mutating APIs require the same origin; signed-in APIs require an HttpOnly session cookie. With no database/account service, settings and saved preset routes return 404.
 
 Tablemate is an **informal tally for friends, not a gambling or payments platform**. It never moves money.
 
@@ -64,7 +66,7 @@ League APIs under `/api/leagues`: create/list, join by invite, member detail, le
 - Short all-ins do not reopen betting for players who already acted unless cumulative increases reach a full raise. Players who have not acted can raise. Uncalled chips return automatically. No betting into an uncontested side pot.
 - Before the first hand, changing the starting stack resets all seated stacks. Afterward it only affects new seats; existing players use host-approved add-ons.
 - Join, leave, kick, rebuy and settings changes happen between hands. Sit-out affects the **next** hand; it does not fold the current one. The dealer skips sitting-out or busted players.
-- A player can request a rebuy during a hand; the host can approve it between hands or deny it. Requests do not invalidate an in-flight betting action. Players can also donate only their own chips between hands.
+- A player can request a rebuy during a hand. In host mode the host approves or denies it. In auto mode, eligible requests up to the configured cap are applied between hands, with a per-player auto limit; other requests remain for host review. Requests do not invalidate an in-flight betting action. Players can also donate only their own chips between hands.
 - Blind timers double blinds only at the start of a hand. Multiple elapsed levels are applied then. A new timer starts with the next hand after settings change.
 - Refresh or a dropped connection restores your seat using a random bearer token in localStorage. Do not clear browser storage mid-game. One active connection per seat; opening the seat in another tab moves control there. Tokens never appear in room broadcasts.
 - Disconnects preserve stacks and do not fold. If the **current player** is disconnected, the host can fold that seat from Host controls. If the host disconnects, reconnect the host’s browser; host authority is not granted to a guest. If the host explicitly leaves between hands, authority transfers to the first remaining seat.
@@ -75,10 +77,18 @@ League APIs under `/api/leagues`: create/list, join by invite, member detail, le
 
 The Players panel, between-hands dock and Leave confirmation show the nightly ledger. It tracks each seat’s buy-ins and rebuys, current stack or departed cash-out, and hands won/played. A player who leaves and rejoins is merged by their normalized, case-insensitive name. The app sorts net results and suggests deterministic transfers that settle the table; **Copy summary** is plain text for the group chat. A host can optionally set a cash value per 1,000 chips. These are informal estimates only: the app does not handle money and is not a gambling or payments platform.
 
+## Personal settings, seat style and table presets
+
+The lobby and **Your seat → Personal settings** offer three generated sound packs, fixed vibration patterns, reduced motion, high contrast, compact/comfortable/large layout, left-handed controls and screen wake lock. Sound still requires a browser user gesture; vibration and wake lock depend on device support. Guests keep preferences in local browser storage. Signed-in settings sync across devices through the account API: the server copy wins on sign-in, or the local copy is uploaded if the account has none. Only allowlisted values are stored. Personal settings are private; nothing in the settings blob is sent in table broadcasts.
+
+Each occupied seat has an avatar and color. **Your seat → Avatar & seat color** opens a picker with 24 local SVG icons and 12 numbered colors. A short nickname/pronunciation note can be shown in the Players panel. These three public seat fields are validated on the server; duplicate colors are rejected. A signed-in player's saved defaults seed a new seat, while guests get deterministic room defaults. Seat style changes do not affect betting, payouts, undo or table revisions.
+
+The create form offers **Casual**, **Turbo** and **High stakes** presets. Choosing one fills editable game settings and the rebuy policy. Signed-in accounts can save, rename, reorder and delete up to ten presets; guests can use all built-ins. The server validates every saved preset and applies the table's settings on creation. Rebuy policy stays at the room level and never enters game settings or undo history. Host controls can change it for the current night.
+
 ## Alerts, themes and turn notifications
 
-- **Your seat → Alerts & display** controls turn/win sounds, vibration where supported, and screen wake lock where available. Browser audio unlocks after a user gesture; an iPhone silent switch can mute it. The in-page features work without push configuration.
-- **Color theme** appears in the lobby and Your seat. Felt, Midnight, Burgundy, Graphite and Daylight are available, along with **Match system**. The choice is stored in local browser storage.
+- **Personal settings** controls generated turn/win sounds, vibration where supported, and screen wake lock where available. Browser audio unlocks after a user gesture; an iPhone silent switch can mute it. The in-page features work without push configuration.
+- **Color theme** appears in the lobby and Your seat. Felt, Midnight, Burgundy, Graphite, Daylight, Miami Vice, Royal Flush and Retro Arcade are available, along with **System**. The three new themes have static SVG/CSS environmental artwork outside the playing surface. The choice is cached locally and syncs when signed in.
 - Web Push is optional and disabled until the server has all three VAPID values. See [DEPLOY.md](DEPLOY.md) for key generation and configuration. Enable it from Your seat on the device that should receive alerts. On iPhone/iPad, add Tablemate to the Home Screen first. Subscriptions are kept in memory and must be enabled again after a server restart.
 
 ## Deploy to Render
@@ -93,7 +103,7 @@ Reference: [Render Blueprint specification](https://render.com/docs/blueprint-sp
 
 - `src/game.js` — pure immutable state transitions, validation, pots, payouts and undo; no I/O.
 - `src/server.js` — Express, Socket.IO, private seat tokens, authorization, cleanup and public state projection.
-- `public/` — vanilla HTML/CSS/JS; responsive table, five themes, in-page alerts, optional service worker and local icons. All assets are local.
+- `public/` — vanilla HTML/CSS/JS; responsive table, eight themes, in-page alerts, optional service worker and local icons. All assets are local.
 - `public/vendor/qrcode.js` — local MIT-licensed `qrcode-generator` browser build used for room invite QR codes.
 - `test/game.test.js` — rule examples, split/side pots and randomized chip conservation.
 - `test/server.test.js` — real Socket.IO clients; full hand and access/reconnect/cleanup coverage.
@@ -108,7 +118,7 @@ Every request includes a payload object and receives `{ok:true, ...}` or `{ok:fa
 
 | Event | Payload (in addition to revision where required) | Access |
 | --- | --- | --- |
-| `create` | `name`, optional `settings` | Unseated socket |
+| `create` | `name`, optional `settings`, `leagueId`, `rebuyPolicy` | Unseated socket |
 | `join` | `code`, `name`, optional confirmed `expectedBuyIn` | Unseated; between hands |
 | `table-preview` | `code` | Unseated; read-only |
 | `rejoin` | `code`, `playerId`, `token` | Valid private seat token |
@@ -118,6 +128,8 @@ Every request includes a payload object and receives `{ok:true, ...}` or `{ok:fa
 | `showdown-pick` | `potId`, `winnerIds` | Host |
 | `host-settings` | `settings`: startingStack/smallBlind/bigBlind/blindMinutes/optional centsPer1000Chips | Host, between hands |
 | `host:reorderSeats` | Full `order` array of player IDs | Host, between hands |
+| `host:rebuyPolicy` | `mode`: host/auto; `cap` and optional `maxPerPlayer` in auto mode | Host; authenticated, no revision bump |
+| `seat:cosmetics` | optional `avatar`, `color`, `note` (at least one) | Own seat; authenticated, no revision bump |
 | `rebuy` | `playerId`, `amount` | Host, between hands |
 | `sit-out` | `value`: boolean | Own seat |
 | `donate` | `recipientId`, `amount` | Own seat, between hands |
@@ -133,7 +145,7 @@ Every request includes a payload object and receives `{ok:true, ...}` or `{ok:fa
 | `push:unsubscribe` | — | Own seat |
 | `presence` | `hidden`: boolean | Own seat; reports page visibility |
 
-Gameplay and administration mutations (`start-hand`, `action`, `showdown-pick`, `host-settings`, `host:reorderSeats`, `rebuy`, `sit-out`, `donate`, `leave`, `kick`, `host-fold`, `undo`, and `rebuy:approve`) require the latest `revision` and the seat’s private `token`. `rebuy:request`, `rebuy:cancel`, `rebuy:deny`, Web Push and presence events are authenticated but do not change the revision; the client may still include its current revision. Entry events use their specific preview/join/rejoin checks. Seat tokens and push subscriptions never appear in state projections. The server limits each socket to 40 requests/second, payloads to 16 KiB and total live rooms to 1,000. Room codes invite players; seat tokens control an existing seat.
+Gameplay and administration mutations (`start-hand`, `action`, `showdown-pick`, `host-settings`, `host:reorderSeats`, `rebuy`, `sit-out`, `donate`, `leave`, `kick`, `host-fold`, `undo`, and `rebuy:approve`) require the latest `revision` and the seat’s private `token`. `seat:cosmetics`, `host:rebuyPolicy`, `rebuy:cancel`, `rebuy:deny`, Web Push and presence events are authenticated but do not change the revision; the client may still include its current revision. `rebuy:request` normally does not change the revision, but an immediately approved auto rebuy changes chips and increments it. Entry events use their specific preview/join/rejoin checks. Seat tokens, account IDs, settings blobs, presets and push subscriptions never appear in state projections. The server limits each socket to 40 requests/second, payloads to 16 KiB and total live rooms to 1,000. Room codes invite players; seat tokens control an existing seat.
 
 
 ## Visual seating
