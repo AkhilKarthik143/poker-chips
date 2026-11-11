@@ -116,7 +116,7 @@ public sealed class CreatorUI : MonoBehaviour
 
         RectTransform actions = Panel("Actions", footer, Paper);
         Place(actions, Vector2.zero, new Vector2(1, 0), new Vector2(12, 6), new Vector2(-12, 56));
-        string[] labels = { "Randomize", "Reset", "Save", "Back" };
+        string[] labels = { "Shuffle", "Reset", "Save", "Back" };
         Action[] handlers = { Randomize, Reset, Save, () => bridge.Navigate("/me.html") };
         for (int index = 0; index < labels.Length; index++)
         {
@@ -137,8 +137,8 @@ public sealed class CreatorUI : MonoBehaviour
         if (landscape)
         {
             Place(footer, new Vector2(.47f, 0), Vector2.one, Vector2.zero, new Vector2(0, -76));
-            compositor.transform.position = new Vector3(-.42f, 0, 0);
-            Camera.main.orthographicSize = .7f;
+            compositor.transform.position = new Vector3(-.7f, 0, 0);
+            Camera.main.orthographicSize = 1f;
         }
         else
         {

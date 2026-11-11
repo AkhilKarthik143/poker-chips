@@ -3,6 +3,7 @@ Temp/
 Logs/
 obj/
 Builds/
+UserSettings/
 *.csproj
 *.sln
 .vs/

@@ -1,5 +1,5 @@
 export default [{
-  ignores: ['node_modules/**', 'public/vendor/**'],
+  ignores: ['node_modules/**', 'public/vendor/**', 'public/avatar-creator/**', 'unity/AvatarCreator/Builds/**', 'unity/AvatarCreator/Library/**'],
 }, {
   files: ['**/*.js'],
   languageOptions: { ecmaVersion: 2022, sourceType: 'module',

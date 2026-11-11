@@ -12,7 +12,7 @@ public static class BuildScript
     public static void BuildWebGL()
     {
         EditorUserBuildSettings.SwitchActiveBuildTarget(BuildTargetGroup.WebGL, BuildTarget.WebGL);
-        Directory.CreateDirectory("Assets/Scenes");
+        Directory.CreateDirectory(Path.Combine(Application.dataPath, "Scenes"));
         Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
         const string scenePath = "Assets/Scenes/AvatarCreator.unity";
         if (!EditorSceneManager.SaveScene(scene, scenePath)) throw new Exception("Could not save runtime scene.");
@@ -31,10 +31,12 @@ public static class BuildScript
         PlayerSettings.WebGL.initialMemorySize = 128;
         PlayerSettings.WebGL.memoryGrowthMode = WebGLMemoryGrowthMode.Geometric;
         PlayerSettings.WebGL.maximumMemorySize = 512;
+        // Dynamically loaded avatar Resources produced class ID 115 errors with engine stripping in WebGL.
+        PlayerSettings.stripEngineCode = false;
         PlayerSettings.SetManagedStrippingLevel(NamedBuildTarget.WebGL, ManagedStrippingLevel.High);
         UnityEditor.WebGL.UserBuildSettings.codeOptimization = UnityEditor.WebGL.WasmCodeOptimization.DiskSize;
 
-        string output = Path.GetFullPath("Builds/WebGL");
+        string output = Path.GetFullPath(Path.Combine(Application.dataPath, "..", "Builds", "WebGL"));
         Directory.CreateDirectory(output);
         BuildReport report = BuildPipeline.BuildPlayer(new BuildPlayerOptions {
             scenes = new[] { scenePath }, locationPathName = output,

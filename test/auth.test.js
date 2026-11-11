@@ -1,9 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { fileURLToPath } from 'node:url';
 import { io as connect } from 'socket.io-client';
 import { createServer } from '../src/server.js';
 import { SqliteStore } from '../src/store/sqlite.js';
 import { createAuth } from '../src/auth.js';
+
+const absentAvatarCreatorRoot = fileURLToPath(new URL('./fixtures/no-creator-build/', import.meta.url));
 
 test('new accounts get distinct safe default display names', async () => {
   const links = [];
@@ -26,7 +29,8 @@ test('magic link is single-use, session is private and logout invalidates it', a
   let time = 1_000;
   const sent = [];
   const store = new SqliteStore(':memory:');
-  const server = createServer({ store, now: () => time, mailer: { enabled: true, send: async (_email, link) => sent.push(link) } });
+  const server = createServer({ store, now: () => time, mailer: { enabled: true, send: async (_email, link) => sent.push(link) },
+    avatarCreatorRoot: absentAvatarCreatorRoot });
   const address = await server.listen();
   const url = `http://127.0.0.1:${address.port}`;
   const sockets = [];
@@ -122,7 +126,7 @@ test('Google sign-in verifies a credential, links by subject and uses the normal
       assert.equal(audience, clientId);
       if (!identities.has(credential)) throw new Error('invalid signature');
       return identities.get(credential);
-    }, logError: () => {} });
+    }, logError: () => {}, avatarCreatorRoot: absentAvatarCreatorRoot });
   const { port } = await server.listen();
   const url = `http://127.0.0.1:${port}`;
   t.after(() => server.close());
@@ -166,7 +170,8 @@ test('Google sign-in verifies a credential, links by subject and uses the normal
 test('Google-only accounts work without mail delivery', async t => {
   const server = createServer({ store: new SqliteStore(':memory:'), googleClientId: '12345-test.apps.googleusercontent.com',
     mailer: { enabled: false, send: async () => {} },
-    verifyGoogleIdToken: async () => ({ sub: 'subject-1', email: 'guest@gmail.com', email_verified: true }) });
+    verifyGoogleIdToken: async () => ({ sub: 'subject-1', email: 'guest@gmail.com', email_verified: true }),
+    avatarCreatorRoot: absentAvatarCreatorRoot });
   const { port } = await server.listen();
   const url = `http://127.0.0.1:${port}`;
   t.after(() => server.close());

@@ -155,12 +155,14 @@ Layered character avatars are implemented and hosted locally in `poker-chips`, w
 - U6: Account profile and onboarding show the full creator only when its build is installed, while retaining the simple builder and a low-memory opt-in. A v2 character has a text description on the profile. Ten distinct 64-pixel seat canvases rendered at 360 and 390 CSS pixels in Chromium with no card intersections, horizontal overflow or page errors. Lint and 111 tests pass.
 - U7: Added a conditional GameCI WebGL workflow, explicit asset/enum/source npm checks and build/deploy/fallback documentation. The workflow parses as YAML; lint, 111 tests, asset checks and Unity source checks pass locally. The workflow cannot execute its Unity build until license secrets are configured and this branch is pushed by the user.
 - Defensive validation: A missing PNG leaves a neutral placeholder and can retry after recovery; a slow PNG shows the placeholder until composition completes. Signed-out creator access redirects to login; a failed save reports its error. Tests now total 112. The explicit no-DB run also passes 112 tests, and the local demo smoke on port 3101 confirms health, strict lobby CSP, missing-build 404, disabled capability and PNG serving.
+- Follow-up on `feature/friends`: Installed Unity 6000.3.26f1 arm64 and WebGL Build Support through Unity CLI. The standalone Unity Roslyn compiler accepts all 10 C# files against the installed Unity and uGUI assemblies. Batch build exits 198 before project import because no Unity Editor license is active. Made the generated scene and WebGL output paths absolute to the project so the installer works regardless of the invoking shell directory. No WebGL build has been installed or browser-tested yet.
+- Unity Personal was activated by the account owner. The real Editor import found missing JSON serialization and Unity Web Request built-in packages; adding them produced a successful 6000.3.26f1 WebGL build. Installed the build in `public/avatar-creator/`. Chromium at desktop and mobile sizes loaded the editor, changed hair, saved via `PUT /api/me/profile` (200), and read back the v2 spec; touch emulation passed the same save path. Disabling engine stripping removed repeated class ID 115 console errors. The desktop portrait was reduced to fit beside the controls, and the Shuffle label no longer wraps. The local demo on port 3101 now reports `avatarCreator: true` and serves the creator with scoped CSP.
 
 ### Assumption log
-- Target Unity 6.3 LTS (6000.3); no Editor is installed. Unity's own documentation identifies 6.3 as the latest LTS. Exact patch will be pinned to a known published release until an Editor build verifies it. (Investigation/U4)
+- Target Unity 6.3 LTS (6000.3). Exact patch 6000.3.26f1 is installed locally with WebGL Build Support and an active Unity Personal license. (Investigation/U4/follow-up)
 
 ### Blockers
-- (stage, what failed, approaches tried)
+- None for the desktop/mobile Chromium build and save path. Physical-device verification remains open.
 
 ### Untested for real
-- **Unity build not verified:** Unity Editor import, C# compilation and WebGL build (no Unity Editor installed), WebGL on iOS and Android browsers, real memory use, and screen-reader use of the Unity canvas.
+- **Remaining device checks:** WebGL on physical iOS and Android browsers, real mobile memory use, and screen-reader use of the Unity canvas. Editor import, WebGL packaging and Chromium browser saving were verified locally.
