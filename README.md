@@ -144,7 +144,7 @@ The lobby and **Your seat → Personal settings** offer three generated sound pa
 
 Each occupied seat has an avatar and color. **Your seat → Avatar & seat color** opens a picker with 24 local SVG icons and 12 numbered colors. A short nickname/pronunciation note can be shown in the Players panel. These three public seat fields are validated on the server; duplicate colors are rejected. A signed-in player's saved defaults seed a new seat, while guests get deterministic room defaults. Seat style changes do not affect betting, payouts, undo or table revisions.
 
-The create form offers **Casual**, **Turbo** and **High stakes** presets. Choosing one fills editable game settings and the rebuy policy. Signed-in accounts can save, rename, reorder and delete up to ten presets; guests can use all built-ins. The server validates every saved preset and applies the table's settings on creation. Rebuy policy stays at the room level and never enters game settings or undo history. Host controls can change it for the current night.
+The create form keeps its basic table fields up front. **Table presets & rebuy rules** expands to offer **Casual**, **Turbo** and **High stakes** presets and the rebuy approval mode. Choosing a preset fills editable game settings and the rebuy policy. Signed-in accounts can save, rename, reorder and delete up to ten presets; guests can use all built-ins. The server validates every saved preset and applies the table's settings on creation. Rebuy policy stays at the room level and never enters game settings or undo history. Host controls can change it for the current night.
 
 ## Alerts, themes and turn notifications
 

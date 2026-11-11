@@ -1147,6 +1147,44 @@ body:not(.in-game) .toast{top:auto;bottom:16px}
 #local-login{margin-top:14px}
 #local-login a{white-space:normal}
 @media(max-width:380px){.home-account{align-items:stretch;flex-direction:column}.home-account a{align-self:flex-start}}
+.table-more-options{margin-top:18px;border-top:1px solid var(--dp-color-rule-muted);border-bottom:1px solid var(--dp-color-rule-muted)}
+.table-more-options summary{display:flex;align-items:center;gap:10px;min-height:50px;padding:9px 0;color:var(--dp-color-ink);font-size:14px;font-weight:800;cursor:pointer;list-style:none}
+.table-more-options summary::-webkit-details-marker{display:none}
+.table-more-options summary::before{content:'▸';display:inline-block;color:var(--dp-color-accent);font-size:18px;transition:transform .15s}
+.table-more-options[open] summary::before{transform:rotate(90deg)}
+.table-more-options summary span{margin-left:auto;color:var(--dp-color-ink-muted);font-size:11px;font-weight:700}
+.table-more-body{padding:0 0 18px}
+.table-more-body .preset-picker{margin:8px 0 14px}
+.table-more-body .policy-create{margin-top:16px}
+#lobby .home-account{margin:18px 0 12px}
+@media(min-width:901px) and (max-width:1449px){
+  .lobby{align-items:start;padding-top:46px}
+  .lobby>.intro{padding-top:80px}
+}
+@media(min-width:1450px){
+  .tablemate-app .masthead{max-width:1944px;padding-right:4vw;padding-left:4vw}
+  .lobby{max-width:1944px;grid-template-columns:minmax(0,1.1fr) minmax(650px,.9fr);align-items:start;gap:clamp(70px,5.6vw,110px);padding:46px clamp(40px,4vw,78px) 70px}
+  .lobby>.intro{padding-top:140px}
+  .intro h1{max-width:840px;margin-top:40px;margin-bottom:40px;font-size:clamp(110px,7.7vw,150px);line-height:.92}
+  .intro-copy{max-width:620px;font-size:26px}
+  .how-it-works{max-width:890px;margin-top:54px;padding:30px 34px;gap:22px}
+  .how-it-works p{font-size:19px}
+  .how-it-works strong{font-size:22px}
+  .how-it-works>div>span{width:60px;height:60px;font-size:18px}
+  .small-note{margin-top:44px;padding:12px 20px;font-size:14px}
+  .lobby>.entry-panel{padding:40px 42px 0}
+  .entry-panel h2{font-size:clamp(36px,2.2vw,44px)}
+  .tabs button{min-height:58px;font-size:18px}
+  #entry-form label{margin-top:20px;font-size:18px}
+  #entry-form .form-grid label{font-size:17px}
+  #entry-form input,#entry-form select{min-height:64px;font-size:20px}
+  #entry-form .entry-submit{min-height:68px;font-size:20px}
+  #entry-form .form-caption{font-size:16px}
+  .theme-picker-section h3{font-size:18px}
+  .theme-choice{min-height:86px;font-size:14px}
+  .theme-preview{width:66px;height:40px}
+  .tablemate-app .site-footer{max-width:1944px}
+}
 .google-signin{display:grid;justify-items:center;gap:8px;margin:22px 0 12px}
 .google-signin>button{width:100%;max-width:360px;min-height:44px;margin:0}
 .google-signin>p{font-size:12px;color:var(--dp-color-ink-muted);text-align:center}
