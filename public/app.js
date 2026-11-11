@@ -1184,7 +1184,7 @@ fetch('/api/config').then(response => response.json()).then(async config => {
   const account = await response.json();
   $('#friends-link').hidden = false; refreshFriendsCount();
   if (!$('#name').value.trim()) $('#name').value = account.displayName;
-  link.textContent = `${account.displayName} · My stats`;
+  link.textContent = 'My account';
   link.href = '/me.html';
   $('#home-account').querySelector('span').textContent = `Welcome back, ${account.displayName}. Your nights and settings are saved.`;
   $('#home-account-link').textContent = 'My account';
@@ -1223,7 +1223,6 @@ document.addEventListener('tablemate-prefs-loaded', () => {
   wireThemePicker($('#lobby-theme-picker'));
   $('#lobby-personal').innerHTML = personalControls('lobby');
   if (state) render();
-  toast('Loaded your saved settings');
 });
 applyInviteCodeFromQuery();
 setButtons(); socket.connect();
