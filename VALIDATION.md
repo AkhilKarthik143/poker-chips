@@ -1,5 +1,11 @@
 # Validation record
 
+## Photo avatars and extra hairstyles (November 11, 2026)
+
+- Added five hairstyle pairs (pixie, afro, braids, ponytail and mohawk) to the shared SVG catalog. Generated assets now total 52 layers. The real Unity 6000.3.26f1 WebGL creator was rebuilt and installed locally. Chromium screenshots at 1280×800 and 390×844 show all eleven hair choices and usable mobile scrolling in ignored `artifacts/qa/unity-more-hair-*.png`; the eight non-bald styles rendered distinctly in `artifacts/qa/new-hairstyles-grid.png`.
+- Authenticated profile and onboarding screens accept JPEG, PNG and WebP photos up to 8 MiB. Server processing auto-orients, square crops to 256×256, strips metadata and stores the WebP in SQLite. Replacing, removing or deleting an account revokes its old image key. Three new tests cover validation, persistence, export, deletion, forgery rejection and table sharing privacy. Chromium profile runs at 390×844 and 1280×800 exercised upload, preview and removal without page errors or horizontal overflow; screenshots are in ignored `artifacts/qa/photo-profile-*.png`.
+- `npm test` passed 119/119, `npm run lint` passed with zero warnings, `npm run avatars:check` verified 52 web/Unity layers, `npm run unity:check` passed, and `git diff --check` passed. The local server on port 3101 was restarted and serves the updated creator. Physical-device photo selection and Unity use remain untested.
+
 ## Friends system local work (November 10, 2026)
 
 - Branch `feature/friends` is based on the completed local `feature/unity-avatars` branch. Migration 8 stores unique unordered pairs, blocks and unread request/acceptance events in the existing SQLite account database. No account IDs, emails or session secrets are included in friend search, lists, notifications or seat sheets.

@@ -47,6 +47,13 @@ $('#welcome-name-form').addEventListener('submit', async event => {
   catch (error) { message(error.message); }
 });
 $('#keep-avatar').addEventListener('click', () => step(4));
+$('#welcome-avatar-photo').addEventListener('change', async event => {
+  const input = event.currentTarget; const file = input.files?.[0]; if (!file) return;
+  const status = $('#welcome-avatar-photo-status'); input.disabled = true; status.textContent = 'Uploading photo…';
+  try { account = await window.TablematePhotoAvatar.upload(file); status.textContent = 'Photo saved.'; step(4); }
+  catch (error) { status.textContent = error.message; }
+  finally { input.value = ''; input.disabled = false; }
+});
 $('#welcome-privacy-form').addEventListener('submit', async event => {
   event.preventDefault();
   const privacy = { profileVisibility: $('#welcome-visibility').value,
@@ -77,7 +84,8 @@ async function load() {
       $('#welcome-character-link').hidden = false;
       $('#welcome-character-link').textContent = lowMemory ? 'Use full creator' : 'Customize character';
     }
-    $('#welcome-character-note').hidden = !(resumeAvatar && account.avatar?.v === 2);
+    $('#welcome-character-note').hidden = !((resumeAvatar && account.avatar?.v === 2) || account.avatar?.v === 3);
+    if (account.avatar?.v === 3) $('#welcome-character-note').textContent = 'Your photo is saved. Keep it, or choose a simple icon below.';
     document.querySelector('main').hidden = false;
     $('#welcome-name').value = account.displayName;
     $('#welcome-visibility').value = account.privacy.profileVisibility;

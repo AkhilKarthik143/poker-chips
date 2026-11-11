@@ -37,6 +37,8 @@ export function validAvatar(value) {
   return Object.keys(value).length === 6 && Object.entries(AVATAR_ENUMS).every(([key, values]) =>
     Object.hasOwn(value, key) && values.includes(value[key]));
 }
+export const validPhotoAvatar = value => object(value) && value.v === 3 &&
+  Object.keys(value).length === 2 && /^[0-9a-f]{32}$/.test(value.key);
 export function validPrivacy(value) {
   return object(value) && Object.keys(value).length === 3 && ['private', 'leagues'].includes(value.profileVisibility)
     && typeof value.showUsernameAtTables === 'boolean' && typeof value.showAvatarAtTables === 'boolean';
@@ -62,7 +64,7 @@ export function defaultAvatarV2(seed) {
     frame: choice(AVATAR_PARTS.parts.frame) };
 }
 export const avatarForAccount = account => {
-  try { const value = JSON.parse(account.avatar_json || 'null'); return validAvatar(value) ? value : defaultAvatarV2(account.id); }
+  try { const value = JSON.parse(account.avatar_json || 'null'); return validAvatar(value) || validPhotoAvatar(value) ? value : defaultAvatarV2(account.id); }
   catch { return defaultAvatarV2(account.id); }
 };
 export const privacyForAccount = account => {

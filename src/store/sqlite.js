@@ -104,6 +104,14 @@ const friendsMigration = `
   );
   CREATE INDEX friend_events_inbox ON friend_events(account_id,read_at,created_at);
 `;
+const photoMigration = `
+  CREATE TABLE avatar_photos (
+    account_id TEXT PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+    photo_key TEXT NOT NULL UNIQUE,
+    image_webp BLOB NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+`;
 
 export class SqliteStore {
   constructor(path) {
@@ -183,6 +191,14 @@ export class SqliteStore {
       try {
         this.db.exec(friendsMigration);
         this.db.prepare('UPDATE schema_version SET version = 8').run();
+        this.db.exec('COMMIT');
+      } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+    }
+    if (version < 9) {
+      this.db.exec('BEGIN');
+      try {
+        this.db.exec(photoMigration);
+        this.db.prepare('UPDATE schema_version SET version = 9').run();
         this.db.exec('COMMIT');
       } catch (error) { this.db.exec('ROLLBACK'); throw error; }
     }
@@ -300,11 +316,29 @@ export class SqliteStore {
         } else this.db.prepare('UPDATE accounts SET username = ? WHERE id = ?').run(patch.username, accountId);
       }
       if (patch.displayName !== undefined) this.db.prepare('UPDATE accounts SET display_name = ? WHERE id = ?').run(patch.displayName, accountId);
-      if (patch.avatar !== undefined) this.db.prepare('UPDATE accounts SET avatar_json = ? WHERE id = ?').run(JSON.stringify(patch.avatar), accountId);
+      if (patch.avatar !== undefined) {
+        this.db.prepare('DELETE FROM avatar_photos WHERE account_id = ?').run(accountId);
+        this.db.prepare('UPDATE accounts SET avatar_json = ? WHERE id = ?').run(JSON.stringify(patch.avatar), accountId);
+      }
       if (patch.privacy !== undefined) this.db.prepare('UPDATE accounts SET profile_json = ? WHERE id = ?').run(JSON.stringify(patch.privacy), accountId);
       this.db.exec('COMMIT');
       return { account: await this.getAccount(accountId) };
     } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+  }
+  async setAvatarPhoto(accountId, key, image, time) {
+    this.db.exec('BEGIN');
+    try {
+      this.db.prepare(`INSERT INTO avatar_photos (account_id,photo_key,image_webp,updated_at) VALUES (?,?,?,?)
+        ON CONFLICT(account_id) DO UPDATE SET photo_key=excluded.photo_key,image_webp=excluded.image_webp,updated_at=excluded.updated_at`)
+        .run(accountId, key, image, time);
+      this.db.prepare('UPDATE accounts SET avatar_json = ? WHERE id = ?').run(JSON.stringify({ v: 3, key }), accountId);
+      this.db.exec('COMMIT');
+      return this.getAccount(accountId);
+    } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+  }
+  async getAvatarPhoto(key) {
+    const row = this.db.prepare('SELECT image_webp FROM avatar_photos WHERE photo_key = ?').get(key);
+    return row ? Buffer.from(row.image_webp) : null;
   }
   async profileByUsername(username) {
     return this.db.prepare('SELECT * FROM accounts WHERE username_lower = ?').get(username.toLowerCase()) ?? null;
@@ -336,7 +370,9 @@ export class SqliteStore {
       ORDER BY COALESCE(n.ended_at,n.updated_at) DESC,n.id DESC`).all(accountId);
   }
   async exportAccount(accountId) {
-    return { account: await this.getAccount(accountId), googleIdentities: this.db.prepare('SELECT google_sub FROM google_identities WHERE account_id = ?').all(accountId).map(row => row.google_sub),
+    const photo = this.db.prepare('SELECT image_webp FROM avatar_photos WHERE account_id = ?').get(accountId);
+    return { account: await this.getAccount(accountId), avatarPhoto: photo ? { mimeType: 'image/webp', base64: Buffer.from(photo.image_webp).toString('base64') } : null,
+      googleIdentities: this.db.prepare('SELECT google_sub FROM google_identities WHERE account_id = ?').all(accountId).map(row => row.google_sub),
       settings: await this.getSettings(accountId), presets: await this.listPresets(accountId), nights: await this.listAccountNights(accountId, true),
       friendships: this.db.prepare(`SELECT a.username,r.status,r.created_at,r.accepted_at,
         (r.requester_id = ?) AS sent_by_me FROM friend_relations r JOIN accounts a

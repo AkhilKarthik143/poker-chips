@@ -19,6 +19,7 @@ import { DEFAULT_PREFS, PREF_ENUMS, normalizePrefs, validatePrefs } from './pref
 import { MAX_PRESETS, normalizePreset, validPreset } from './preset-schema.js';
 import { normalizeRebuyPolicy, validRebuyPolicy } from './rebuy-policy.js';
 import { THIRTY_DAYS, usernameError, validAvatar, validPrivacy, avatarForAccount, privacyForAccount, defaultAvatarV2 } from './identity.js';
+import { AVATAR_PHOTO_MIME, MAX_AVATAR_PHOTO_BYTES, processAvatarPhoto } from './avatar-photo.js';
 import { hasUnityBuild, unityStatic } from './static-unity.js';
 import { FriendError, FriendsStore } from './friends-store.js';
 
@@ -230,6 +231,18 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     return { ...(privacy.showAvatarAtTables ? { avatar: avatarForAccount(account) } : {}),
       ...(privacy.showUsernameAtTables && account.username ? { username: account.username } : {}) };
   };
+  const syncSeatIdentity = (accountId, account) => {
+    for (const room of rooms.values()) {
+      let changed = false;
+      for (const [playerId, seatedAccountId] of room.accounts) if (seatedAccountId === accountId) {
+        const socket = io.sockets.sockets.get(room.connections.get(playerId));
+        if (signedInSeat(room, playerId, socket)) room.identities.set(playerId, tableIdentity(account));
+        else room.identities.delete(playerId);
+        changed = true;
+      }
+      if (changed) broadcast(room);
+    }
+  };
   app.get('/api/me', requireAccount, (req, res) => res.json(selfProfile(req.account)));
   const friendSearchLimits = new Map();
   const friendSendLimits = new Map();
@@ -367,17 +380,42 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     const patch = { ...body, ...(body.displayName !== undefined ? { displayName: normalizedName(body.displayName) } : {}) };
     const result = await store.updateProfile(req.account.id, patch, now(), THIRTY_DAYS);
     if (result.reason) { res.status(409).json({ error: result.reason }); return; }
-    for (const room of rooms.values()) {
-      let changed = false;
-      for (const [playerId, accountId] of room.accounts) if (accountId === req.account.id) {
-        const socket = io.sockets.sockets.get(room.connections.get(playerId));
-        if (signedInSeat(room, playerId, socket)) room.identities.set(playerId, tableIdentity(result.account));
-        else room.identities.delete(playerId);
-        changed = true;
-      }
-      if (changed) broadcast(room);
-    }
+    syncSeatIdentity(req.account.id, result.account);
     res.json(selfProfile(result.account));
+  });
+  const photoUploadLimits = new Map();
+  app.post('/api/me/avatar-photo', apiOrigin, requireAccount, (req, res, next) => {
+    const mime = req.get('Content-Type')?.split(';')[0].toLowerCase();
+    if (!Object.hasOwn(AVATAR_PHOTO_MIME, mime || '')) { res.status(415).json({ error: 'Choose a JPEG, PNG or WebP photo.' }); return; }
+    if (Number(req.get('Content-Length')) > MAX_AVATAR_PHOTO_BYTES) { res.status(413).json({ error: 'Photo must be 8 MB or smaller.' }); return; }
+    const bucket = photoUploadLimits.get(req.account.id);
+    if (bucket && now() - bucket.start < 60_000 && bucket.count >= 6) { res.status(429).json({ error: 'Too many photo uploads. Try again in a minute.' }); return; }
+    if (!bucket || now() - bucket.start >= 60_000) photoUploadLimits.set(req.account.id, { start: now(), count: 1 }); else bucket.count++;
+    next();
+  }, express.raw({ type: () => true, limit: MAX_AVATAR_PHOTO_BYTES }), async (req, res) => {
+    try {
+      const image = await processAvatarPhoto(req.body, req.get('Content-Type').split(';')[0].toLowerCase());
+      const account = await store.setAvatarPhoto(req.account.id, randomBytes(16).toString('hex'), image, now());
+      syncSeatIdentity(req.account.id, account);
+      res.json(selfProfile(account));
+    } catch (error) {
+      if (error.message === 'Choose a valid JPEG, PNG or WebP photo.') { res.status(400).json({ error: error.message }); return; }
+      throw error;
+    }
+  });
+  app.delete('/api/me/avatar-photo', apiOrigin, requireAccount, async (req, res) => {
+    if (avatarForAccount(req.account).v !== 3) { res.status(409).json({ error: 'No photo avatar to remove.' }); return; }
+    const result = await store.updateProfile(req.account.id, { avatar: defaultAvatarV2(req.account.id) }, now(), THIRTY_DAYS);
+    syncSeatIdentity(req.account.id, result.account);
+    res.json(selfProfile(result.account));
+  });
+  app.get('/avatar-photos/:key.webp', async (req, res) => {
+    if (!accountsEnabled || !/^[0-9a-f]{32}$/.test(req.params.key)) { res.sendStatus(404); return; }
+    const image = await store.getAvatarPhoto?.(req.params.key);
+    if (!image) { res.sendStatus(404); return; }
+    res.set('Cache-Control', 'private, no-store');
+    res.set('Cross-Origin-Resource-Policy', 'same-origin');
+    res.type('webp').send(image);
   });
   const hiddenProfile = res => res.status(404).json({ error: 'Profile not found.' });
   app.get('/api/u/:username', requireAccount, async (req, res) => {
@@ -600,6 +638,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
   });
   app.use('/avatar-creator', unityStatic(avatarCreatorRoot, avatarCreator));
   app.use((error, _req, res, _next) => {
+    if (error.type === 'entity.too.large') { res.status(413).json({ error: 'Upload or request is too large.' }); return; }
     if (error instanceof RequestError) { res.status(400).json({ error: error.message }); return; }
     logError(error); res.status(500).json({ error: 'Something went wrong.' });
   });

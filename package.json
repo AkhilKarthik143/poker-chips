@@ -5,7 +5,7 @@
   "description": "Physical cards. Virtual chips. An in-person Hold’em betting engine.",
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": ">=20.9.0"
   },
   "scripts": {
     "start": "node src/server.js",
@@ -21,6 +21,7 @@
     "express": "^5.2.1",
     "google-auth-library": "^10.9.1",
     "qrcode-generator": "^2.0.4",
+    "sharp": "^0.35.5",
     "socket.io": "^4.8.3",
     "web-push": "^4.0.0"
   },

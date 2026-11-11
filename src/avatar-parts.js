@@ -12,7 +12,12 @@ export const AVATAR_PARTS = Object.freeze({
       "curls",
       "bob",
       "sweep",
-      "waves"
+      "waves",
+      "pixie",
+      "afro",
+      "braids",
+      "ponytail",
+      "mohawk"
     ],
     "body": [
       "base"
@@ -49,7 +54,12 @@ export const AVATAR_PARTS = Object.freeze({
       "curls",
       "bob",
       "sweep",
-      "waves"
+      "waves",
+      "pixie",
+      "afro",
+      "braids",
+      "ponytail",
+      "mohawk"
     ],
     "glasses": [
       "none",
@@ -98,6 +108,21 @@ export const AVATAR_PARTS = Object.freeze({
           "tintable": true
         },
         "waves": {
+          "tintable": true
+        },
+        "pixie": {
+          "tintable": true
+        },
+        "afro": {
+          "tintable": true
+        },
+        "braids": {
+          "tintable": true
+        },
+        "ponytail": {
+          "tintable": true
+        },
+        "mohawk": {
           "tintable": true
         }
       }
@@ -209,6 +234,21 @@ export const AVATAR_PARTS = Object.freeze({
           "tintable": true
         },
         "waves": {
+          "tintable": true
+        },
+        "pixie": {
+          "tintable": true
+        },
+        "afro": {
+          "tintable": true
+        },
+        "braids": {
+          "tintable": true
+        },
+        "ponytail": {
+          "tintable": true
+        },
+        "mohawk": {
           "tintable": true
         }
       }

@@ -46,6 +46,31 @@
           "id": "waves",
           "file": "svg/hairBack/waves.svg",
           "tintable": true
+        },
+        {
+          "id": "pixie",
+          "file": "svg/hairBack/pixie.svg",
+          "tintable": true
+        },
+        {
+          "id": "afro",
+          "file": "svg/hairBack/afro.svg",
+          "tintable": true
+        },
+        {
+          "id": "braids",
+          "file": "svg/hairBack/braids.svg",
+          "tintable": true
+        },
+        {
+          "id": "ponytail",
+          "file": "svg/hairBack/ponytail.svg",
+          "tintable": true
+        },
+        {
+          "id": "mohawk",
+          "file": "svg/hairBack/mohawk.svg",
+          "tintable": true
         }
       ]
     },
@@ -206,6 +231,31 @@
         {
           "id": "waves",
           "file": "svg/hairFront/waves.svg",
+          "tintable": true
+        },
+        {
+          "id": "pixie",
+          "file": "svg/hairFront/pixie.svg",
+          "tintable": true
+        },
+        {
+          "id": "afro",
+          "file": "svg/hairFront/afro.svg",
+          "tintable": true
+        },
+        {
+          "id": "braids",
+          "file": "svg/hairFront/braids.svg",
+          "tintable": true
+        },
+        {
+          "id": "ponytail",
+          "file": "svg/hairFront/ponytail.svg",
+          "tintable": true
+        },
+        {
+          "id": "mohawk",
+          "file": "svg/hairFront/mohawk.svg",
           "tintable": true
         }
       ]

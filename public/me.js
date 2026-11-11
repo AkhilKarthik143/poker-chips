@@ -10,6 +10,7 @@ function renderAvatarPreview() {
   if (!profileAccount) return;
   $('#profile-avatar-preview').replaceChildren(window.TablemateAvatar.renderAvatar(profileAccount.avatar, 72, profileAccount.displayName));
   $('#avatar-description').textContent = window.TablemateAvatar.describe(profileAccount.avatar);
+  $('#remove-avatar-photo').hidden = profileAccount.avatar?.v !== 3;
 }
 function renderProfileForm() {
   if (!profileAccount) return;
@@ -57,6 +58,24 @@ $('#edit-avatar').addEventListener('click', () => {
   dialog.showModal(); dialog.querySelector('#avatar-builder-body button')?.focus();
 });
 $('#close-avatar-builder').addEventListener('click', () => $('#avatar-builder-dialog').close());
+$('#avatar-photo').addEventListener('change', async event => {
+  const input = event.currentTarget; const file = input.files?.[0]; if (!file) return;
+  const status = $('#avatar-photo-status'); input.disabled = true; status.textContent = 'Uploading photo…';
+  try {
+    profileAccount = await window.TablematePhotoAvatar.upload(file);
+    renderAvatarPreview(); status.textContent = 'Photo avatar saved.';
+  } catch (error) { status.textContent = error.message; }
+  finally { input.value = ''; input.disabled = false; }
+});
+$('#remove-avatar-photo').addEventListener('click', async event => {
+  const button = event.currentTarget; const status = $('#avatar-photo-status');
+  button.disabled = true; status.textContent = 'Removing photo…';
+  try {
+    profileAccount = await window.TablematePhotoAvatar.remove();
+    renderAvatarPreview(); status.textContent = 'Photo removed. Your character avatar is back.';
+  } catch (error) { status.textContent = error.message; }
+  finally { button.disabled = false; }
+});
 $('#profile-form').addEventListener('submit', async event => {
   event.preventDefault();
   const username = $('#profile-username').value.trim();

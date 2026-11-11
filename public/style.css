@@ -1064,11 +1064,12 @@ dialog.app-sheet :focus-visible { scroll-margin:20px; }
 .avatar-grid .seat-avatar{width:24px;height:24px;color:var(--accent)}
 .profile-avatar{display:inline-block;flex:none;vertical-align:middle;overflow:visible}
 .profile-avatar-v2{border-radius:50%;image-rendering:auto}
+.profile-avatar-photo{border:2px solid var(--dp-color-outline);border-radius:50%;object-fit:cover;background:var(--bg-seat-empty)}
 .seat-oval .character-seat{height:120px}
 .character-seat .oval-name{margin-top:22px}
-.character-seat .oval-name .profile-avatar-v2{position:absolute;top:-28px;left:50%;z-index:1;width:56px;height:56px;transform:translateX(-50%);pointer-events:none;filter:drop-shadow(0 2px 2px color-mix(in srgb,var(--text-primary) 25%,transparent))}
+.character-seat .oval-name :is(.profile-avatar-v2,.profile-avatar-photo){position:absolute;top:-28px;left:50%;z-index:1;width:56px;height:56px;transform:translateX(-50%);pointer-events:none;filter:drop-shadow(0 2px 2px color-mix(in srgb,var(--text-primary) 25%,transparent))}
 .character-seat .seat-roles{z-index:2}
-@media(min-width:700px){.seat-oval .character-seat{height:128px}.character-seat .oval-name{margin-top:30px}.character-seat .oval-name .profile-avatar-v2{top:-34px;width:64px;height:64px}}
+@media(min-width:700px){.seat-oval .character-seat{height:128px}.character-seat .oval-name{margin-top:30px}.character-seat .oval-name :is(.profile-avatar-v2,.profile-avatar-photo){top:-34px;width:64px;height:64px}}
 .character-creator-link{display:inline-flex;align-items:center;justify-content:center;min-height:44px;margin:8px 0 0 8px;padding:8px 12px;border:2px solid var(--dp-color-outline);border-radius:8px;background:var(--dp-color-accent-fresh);color:var(--dp-color-accent-fresh-ink);font-weight:800;text-decoration:none;text-align:center}
 .character-creator-link[hidden]{display:none}
 .account-nav{min-width:0;flex-wrap:wrap;justify-content:flex-end;gap:4px 10px}
@@ -1114,7 +1115,10 @@ body:not(.in-game) .toast{top:auto;bottom:16px}
 .avatar-builder-grid button[aria-checked="true"]{outline:3px solid var(--accent);outline-offset:1px}
 .avatar-builder-grid button:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
 .avatar-builder-actions{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}.avatar-builder-actions button{min-height:44px}
-.profile-identity-row{display:flex;align-items:center;gap:18px}.profile-identity-row p{margin:0 0 10px}.profile-identity-row button{min-height:44px}
+.profile-identity-row{display:flex;align-items:flex-start;gap:18px}.profile-identity-row p{margin:0 0 10px}.profile-identity-row button{min-height:44px}
+.profile-identity-row>div:last-child{flex:1;min-width:0}
+.avatar-photo-actions{max-width:390px;margin-top:16px}.avatar-photo-actions label{font-weight:700}.avatar-photo-actions input[type=file]{max-width:100%;font-size:13px}.avatar-photo-actions .helper{margin:8px 0;color:var(--text-secondary);font-size:13px;line-height:1.5}.avatar-photo-actions [role=status]{min-height:1.5em;margin:8px 0}
+@media(max-width:600px){.profile-identity-row{align-items:flex-start;flex-wrap:wrap}.profile-identity-row>div:last-child{flex-basis:100%}}
 #avatar-builder-dialog{width:min(620px,calc(100vw - 24px));max-height:min(88vh,820px);overflow:auto;padding:20px;border:2px solid var(--border-seat-empty);border-radius:18px;background:var(--bg-panel);color:var(--text-primary)}
 #avatar-builder-dialog::backdrop{background:#101827ba}#close-avatar-builder{min-height:44px}
 .identity-form{display:grid;gap:10px;margin-top:18px}.identity-form>label{font-weight:700}.identity-form input:not([type=checkbox]),.identity-form select,.welcome-step input:not([type=checkbox]),.welcome-step select{width:100%;min-height:44px;padding:10px;border:2px solid var(--border-seat-empty);border-radius:9px;background:var(--bg-panel);color:var(--text-primary);font:inherit}

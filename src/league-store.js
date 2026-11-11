@@ -1,5 +1,5 @@
 import { RequestError } from './validation.js';
-import { avatarForAccount } from './identity.js';
+import { avatarForAccount, privacyForAccount } from './identity.js';
 
 const requireRow = (value, message = 'League item not found.') => { if (!value) throw new RequestError(message); return value; };
 export class LeagueStore {
@@ -17,10 +17,11 @@ export class LeagueStore {
   roster(leagueId) {
     return this.db.prepare(`SELECT m.id AS memberId,COALESCE(a.display_name,m.display_name) AS displayName,
       m.role,m.joined_at AS joinedAt,m.left_at AS leftAt,m.account_id IS NULL AS former,
-      a.username,a.id AS accountSeed,a.avatar_json AS avatarJson
+      a.username,a.id AS accountSeed,a.avatar_json AS avatarJson,a.profile_json AS profileJson
       FROM league_members m LEFT JOIN accounts a ON a.id = m.account_id WHERE m.league_id = ? ORDER BY m.joined_at,m.id`).all(leagueId)
-      .map(({ accountSeed, avatarJson, ...row }) => ({ ...row, former: Boolean(row.former),
-        avatar: accountSeed ? avatarForAccount({ id: accountSeed, avatar_json: avatarJson }) : null }));
+      .map(({ accountSeed, avatarJson, profileJson, ...row }) => ({ ...row, former: Boolean(row.former),
+        avatar: accountSeed && privacyForAccount({ profile_json: profileJson }).profileVisibility === 'leagues'
+          ? avatarForAccount({ id: accountSeed, avatar_json: avatarJson }) : null }));
   }
   mine(accountId) {
     return this.db.prepare(`SELECT l.id,l.name,m.role FROM leagues l JOIN league_members m ON m.league_id = l.id
@@ -124,14 +125,15 @@ export class LeagueStore {
   results(leagueId, seasonId = null) {
     const query = `SELECT r.night_id AS nightId,r.member_id AS memberId,COALESCE(a.display_name,m.display_name) AS displayName,
       r.rank,r.net,r.buy_in AS buyIn,n.ended_at AS endedAt,n.counts,
-      m.account_id IS NULL AS former,a.username,a.id AS accountSeed,a.avatar_json AS avatarJson
+      m.account_id IS NULL AS former,a.username,a.id AS accountSeed,a.avatar_json AS avatarJson,a.profile_json AS profileJson
       FROM league_night_results r JOIN nights n ON n.id = r.night_id
       JOIN league_members m ON m.id = r.member_id LEFT JOIN accounts a ON a.id = m.account_id
       WHERE r.league_id = ? ${seasonId ? 'AND r.season_id = ?' : ''}
       ORDER BY n.ended_at,r.rank,m.display_name`;
     return this.db.prepare(query).all(...(seasonId ? [leagueId, seasonId] : [leagueId]))
-      .map(({ accountSeed, avatarJson, ...row }) => ({ ...row, counts: Boolean(row.counts), former: Boolean(row.former),
-        avatar: accountSeed ? avatarForAccount({ id: accountSeed, avatar_json: avatarJson }) : null }));
+      .map(({ accountSeed, avatarJson, profileJson, ...row }) => ({ ...row, counts: Boolean(row.counts), former: Boolean(row.former),
+        avatar: accountSeed && privacyForAccount({ profile_json: profileJson }).profileVisibility === 'leagues'
+          ? avatarForAccount({ id: accountSeed, avatar_json: avatarJson }) : null }));
   }
   nights(leagueId, seasonId = null) {
     const rows = this.db.prepare(`SELECT n.id,n.room_code AS roomCode,n.ended_at AS endedAt,n.hands,n.counts,n.season_id AS seasonId,

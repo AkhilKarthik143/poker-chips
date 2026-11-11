@@ -13,7 +13,12 @@ window.TablemateAvatarParts = Object.freeze({
       "curls",
       "bob",
       "sweep",
-      "waves"
+      "waves",
+      "pixie",
+      "afro",
+      "braids",
+      "ponytail",
+      "mohawk"
     ],
     "body": [
       "base"
@@ -50,7 +55,12 @@ window.TablemateAvatarParts = Object.freeze({
       "curls",
       "bob",
       "sweep",
-      "waves"
+      "waves",
+      "pixie",
+      "afro",
+      "braids",
+      "ponytail",
+      "mohawk"
     ],
     "glasses": [
       "none",
@@ -99,6 +109,21 @@ window.TablemateAvatarParts = Object.freeze({
           "tintable": true
         },
         "waves": {
+          "tintable": true
+        },
+        "pixie": {
+          "tintable": true
+        },
+        "afro": {
+          "tintable": true
+        },
+        "braids": {
+          "tintable": true
+        },
+        "ponytail": {
+          "tintable": true
+        },
+        "mohawk": {
           "tintable": true
         }
       }
@@ -210,6 +235,21 @@ window.TablemateAvatarParts = Object.freeze({
           "tintable": true
         },
         "waves": {
+          "tintable": true
+        },
+        "pixie": {
+          "tintable": true
+        },
+        "afro": {
+          "tintable": true
+        },
+        "braids": {
+          "tintable": true
+        },
+        "ponytail": {
+          "tintable": true
+        },
+        "mohawk": {
           "tintable": true
         }
       }
