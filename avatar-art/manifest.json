@@ -1,0 +1,428 @@
+{
+  "version": 2,
+  "size": 256,
+  "slots": [
+    {
+      "slot": "bg",
+      "zOrder": 0,
+      "parts": [
+        {
+          "id": "disc",
+          "file": "svg/bg/disc.svg",
+          "tintable": true
+        }
+      ]
+    },
+    {
+      "slot": "hairBack",
+      "zOrder": 10,
+      "parts": [
+        {
+          "id": "bald",
+          "file": "svg/hairBack/bald.svg",
+          "tintable": true
+        },
+        {
+          "id": "crop",
+          "file": "svg/hairBack/crop.svg",
+          "tintable": true
+        },
+        {
+          "id": "curls",
+          "file": "svg/hairBack/curls.svg",
+          "tintable": true
+        },
+        {
+          "id": "bob",
+          "file": "svg/hairBack/bob.svg",
+          "tintable": true
+        },
+        {
+          "id": "sweep",
+          "file": "svg/hairBack/sweep.svg",
+          "tintable": true
+        },
+        {
+          "id": "waves",
+          "file": "svg/hairBack/waves.svg",
+          "tintable": true
+        },
+        {
+          "id": "pixie",
+          "file": "svg/hairBack/pixie.svg",
+          "tintable": true
+        },
+        {
+          "id": "afro",
+          "file": "svg/hairBack/afro.svg",
+          "tintable": true
+        },
+        {
+          "id": "braids",
+          "file": "svg/hairBack/braids.svg",
+          "tintable": true
+        },
+        {
+          "id": "ponytail",
+          "file": "svg/hairBack/ponytail.svg",
+          "tintable": true
+        },
+        {
+          "id": "mohawk",
+          "file": "svg/hairBack/mohawk.svg",
+          "tintable": true
+        }
+      ]
+    },
+    {
+      "slot": "body",
+      "zOrder": 20,
+      "parts": [
+        {
+          "id": "base",
+          "file": "svg/body/base.svg",
+          "tintable": true
+        }
+      ]
+    },
+    {
+      "slot": "outfit",
+      "zOrder": 30,
+      "parts": [
+        {
+          "id": "tee",
+          "file": "svg/outfit/tee.svg",
+          "tintable": true
+        },
+        {
+          "id": "hoodie",
+          "file": "svg/outfit/hoodie.svg",
+          "tintable": true
+        },
+        {
+          "id": "jacket",
+          "file": "svg/outfit/jacket.svg",
+          "tintable": true
+        },
+        {
+          "id": "vest",
+          "file": "svg/outfit/vest.svg",
+          "tintable": true
+        },
+        {
+          "id": "jersey",
+          "file": "svg/outfit/jersey.svg",
+          "tintable": true
+        },
+        {
+          "id": "blazer",
+          "file": "svg/outfit/blazer.svg",
+          "tintable": true
+        }
+      ]
+    },
+    {
+      "slot": "mouth",
+      "zOrder": 40,
+      "parts": [
+        {
+          "id": "smile",
+          "file": "svg/mouth/smile.svg",
+          "tintable": false
+        },
+        {
+          "id": "grin",
+          "file": "svg/mouth/grin.svg",
+          "tintable": false
+        },
+        {
+          "id": "smirk",
+          "file": "svg/mouth/smirk.svg",
+          "tintable": false
+        },
+        {
+          "id": "neutral",
+          "file": "svg/mouth/neutral.svg",
+          "tintable": false
+        }
+      ]
+    },
+    {
+      "slot": "eyes",
+      "zOrder": 50,
+      "parts": [
+        {
+          "id": "round",
+          "file": "svg/eyes/round.svg",
+          "tintable": false
+        },
+        {
+          "id": "happy",
+          "file": "svg/eyes/happy.svg",
+          "tintable": false
+        },
+        {
+          "id": "sleepy",
+          "file": "svg/eyes/sleepy.svg",
+          "tintable": false
+        },
+        {
+          "id": "wink",
+          "file": "svg/eyes/wink.svg",
+          "tintable": false
+        }
+      ]
+    },
+    {
+      "slot": "facialHair",
+      "zOrder": 60,
+      "parts": [
+        {
+          "id": "none",
+          "file": "svg/facialHair/none.svg",
+          "tintable": true
+        },
+        {
+          "id": "stubble",
+          "file": "svg/facialHair/stubble.svg",
+          "tintable": true
+        },
+        {
+          "id": "mustache",
+          "file": "svg/facialHair/mustache.svg",
+          "tintable": true
+        },
+        {
+          "id": "beard",
+          "file": "svg/facialHair/beard.svg",
+          "tintable": true
+        }
+      ]
+    },
+    {
+      "slot": "hairFront",
+      "zOrder": 70,
+      "parts": [
+        {
+          "id": "bald",
+          "file": "svg/hairFront/bald.svg",
+          "tintable": true
+        },
+        {
+          "id": "crop",
+          "file": "svg/hairFront/crop.svg",
+          "tintable": true
+        },
+        {
+          "id": "curls",
+          "file": "svg/hairFront/curls.svg",
+          "tintable": true
+        },
+        {
+          "id": "bob",
+          "file": "svg/hairFront/bob.svg",
+          "tintable": true
+        },
+        {
+          "id": "sweep",
+          "file": "svg/hairFront/sweep.svg",
+          "tintable": true
+        },
+        {
+          "id": "waves",
+          "file": "svg/hairFront/waves.svg",
+          "tintable": true
+        },
+        {
+          "id": "pixie",
+          "file": "svg/hairFront/pixie.svg",
+          "tintable": true
+        },
+        {
+          "id": "afro",
+          "file": "svg/hairFront/afro.svg",
+          "tintable": true
+        },
+        {
+          "id": "braids",
+          "file": "svg/hairFront/braids.svg",
+          "tintable": true
+        },
+        {
+          "id": "ponytail",
+          "file": "svg/hairFront/ponytail.svg",
+          "tintable": true
+        },
+        {
+          "id": "mohawk",
+          "file": "svg/hairFront/mohawk.svg",
+          "tintable": true
+        }
+      ]
+    },
+    {
+      "slot": "glasses",
+      "zOrder": 80,
+      "parts": [
+        {
+          "id": "none",
+          "file": "svg/glasses/none.svg",
+          "tintable": false
+        },
+        {
+          "id": "shades",
+          "file": "svg/glasses/shades.svg",
+          "tintable": false
+        },
+        {
+          "id": "rounds",
+          "file": "svg/glasses/rounds.svg",
+          "tintable": false
+        }
+      ]
+    },
+    {
+      "slot": "hat",
+      "zOrder": 90,
+      "parts": [
+        {
+          "id": "none",
+          "file": "svg/hat/none.svg",
+          "tintable": false
+        },
+        {
+          "id": "visor",
+          "file": "svg/hat/visor.svg",
+          "tintable": false
+        },
+        {
+          "id": "cowboy",
+          "file": "svg/hat/cowboy.svg",
+          "tintable": false
+        },
+        {
+          "id": "beanie",
+          "file": "svg/hat/beanie.svg",
+          "tintable": false
+        }
+      ]
+    },
+    {
+      "slot": "frame",
+      "zOrder": 100,
+      "parts": [
+        {
+          "id": "none",
+          "file": "svg/frame/none.svg",
+          "tintable": false
+        },
+        {
+          "id": "plain",
+          "file": "svg/frame/plain.svg",
+          "tintable": false
+        },
+        {
+          "id": "double",
+          "file": "svg/frame/double.svg",
+          "tintable": false
+        }
+      ]
+    }
+  ],
+  "palette": [
+    {
+      "id": "c1",
+      "hex": "#ffb3c1",
+      "name": "Rose"
+    },
+    {
+      "id": "c2",
+      "hex": "#a2f5dd",
+      "name": "Mint"
+    },
+    {
+      "id": "c3",
+      "hex": "#ffe18e",
+      "name": "Gold"
+    },
+    {
+      "id": "c4",
+      "hex": "#bdb7ff",
+      "name": "Lavender"
+    },
+    {
+      "id": "c5",
+      "hex": "#9ee6ff",
+      "name": "Sky"
+    },
+    {
+      "id": "c6",
+      "hex": "#ffc59c",
+      "name": "Peach"
+    },
+    {
+      "id": "c7",
+      "hex": "#d3f4a8",
+      "name": "Lime"
+    },
+    {
+      "id": "c8",
+      "hex": "#f4b9ed",
+      "name": "Orchid"
+    },
+    {
+      "id": "c9",
+      "hex": "#b7d0ff",
+      "name": "Periwinkle"
+    },
+    {
+      "id": "c10",
+      "hex": "#f7e6b5",
+      "name": "Cream"
+    },
+    {
+      "id": "c11",
+      "hex": "#a5f1f4",
+      "name": "Aqua"
+    },
+    {
+      "id": "c12",
+      "hex": "#ffc9c9",
+      "name": "Blush"
+    }
+  ],
+  "skinTones": [
+    {
+      "id": "s1",
+      "hex": "#ffe4c8"
+    },
+    {
+      "id": "s2",
+      "hex": "#f5cfaa"
+    },
+    {
+      "id": "s3",
+      "hex": "#e9b989"
+    },
+    {
+      "id": "s4",
+      "hex": "#dba477"
+    },
+    {
+      "id": "s5",
+      "hex": "#c7885d"
+    },
+    {
+      "id": "s6",
+      "hex": "#a96f4d"
+    },
+    {
+      "id": "s7",
+      "hex": "#87573d"
+    },
+    {
+      "id": "s8",
+      "hex": "#60402f"
+    }
+  ]
+}

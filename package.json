@@ -5,17 +5,24 @@
   "description": "Physical cards. Virtual chips. An in-person Hold’em betting engine.",
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": ">=20.9.0"
   },
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
+    "preview": "node scripts/preview.js",
     "lint": "eslint . --max-warnings 0",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "avatars:build": "node scripts/avatar-assets.js",
+    "avatars:check": "node scripts/avatar-assets.js --check && node scripts/gen-avatar-enums.js --check",
+    "unity:check": "node scripts/check-unity-sources.js"
   },
   "dependencies": {
+    "better-sqlite3": "^13.0.3",
     "express": "^5.2.1",
+    "google-auth-library": "^10.9.1",
     "qrcode-generator": "^2.0.4",
+    "sharp": "^0.35.5",
     "socket.io": "^4.8.3",
     "web-push": "^4.0.0"
   },

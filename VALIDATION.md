@@ -1,5 +1,65 @@
 # Validation record
 
+## Separate preview website (November 11, 2026)
+
+- `npm run preview` serves a separate localhost:3102 instance with an ignored SQLite database and a feature hub at `/preview/`. Sample data includes four accounts, one active season, four completed nights and friend activity. A disposable account path opens onboarding. The normal localhost:3101 account remains isolated by hostname and database.
+- Playwright Chromium opened the hub at 1280×800 and 390×844, followed feature links, signed in as Alex, viewed populated league standings and friends, entered fresh onboarding, selected a theme and saw it on the table. No page errors or horizontal overflow. Screenshots are in ignored `artifacts/qa/preview-site-*.png`.
+- A Cloudflare Quick Tunnel exposed the local preview over HTTPS. Browser checks through the public URL loaded the hub, images, sample account, friends, standings and a connected Socket.IO table. The preview hides normal email/Google sign-in and rejects email-link requests, so the public tunnel cannot issue local development links. The tunnel link is temporary and requires the local server and tunnel to stay running.
+
+## Photo avatars and extra hairstyles (November 11, 2026)
+
+- Added five hairstyle pairs (pixie, afro, braids, ponytail and mohawk) to the shared SVG catalog. Generated assets now total 52 layers. The real Unity 6000.3.26f1 WebGL creator was rebuilt and installed locally. Chromium screenshots at 1280×800 and 390×844 show all eleven hair choices and usable mobile scrolling in ignored `artifacts/qa/unity-more-hair-*.png`; the eight non-bald styles rendered distinctly in `artifacts/qa/new-hairstyles-grid.png`.
+- Authenticated profile and onboarding screens accept JPEG, PNG and WebP photos up to 8 MiB. Server processing auto-orients, square crops to 256×256, strips metadata and stores the WebP in SQLite. Replacing, removing or deleting an account revokes its old image key. Three new tests cover validation, persistence, export, deletion, forgery rejection and table sharing privacy. Chromium profile runs at 390×844 and 1280×800 exercised upload, preview and removal without page errors or horizontal overflow; screenshots are in ignored `artifacts/qa/photo-profile-*.png`.
+- `npm test` passed 119/119, `npm run lint` passed with zero warnings, `npm run avatars:check` verified 52 web/Unity layers, `npm run unity:check` passed, and `git diff --check` passed. The local server on port 3101 was restarted and serves the updated creator. Physical-device photo selection and Unity use remain untested.
+
+## Friends system local work (November 10, 2026)
+
+- Branch `feature/friends` is based on the completed local `feature/unity-avatars` branch. Migration 8 stores unique unordered pairs, blocks and unread request/acceptance events in the existing SQLite account database. No account IDs, emails or session secrets are included in friend search, lists, notifications or seat sheets.
+- Store and HTTP/Socket.IO tests cover discovery, duplicate and reciprocal requests, accept/decline/cancel, removal, blocking, authorization, search limits, malformed requests, no-database 404, restart persistence, username changes, account deletion, table guest exclusion, hidden table usernames and social actions without poker revision changes.
+- Playwright Chromium exercised two signed-in accounts: search and send, unread home badge, accept, synchronized lists, table seat sheet, a request from that sheet, and copied a verified room link. Screenshots at 360×740 Felt and System (dark) and 390×844 Retro Arcade are in ignored `artifacts/qa/friends-*.png`. No browser errors, horizontal overflow or friend-action buttons below 44px height were observed.
+- Tablemate does not deliver an invitation to a friend's account. It checks that a room exists and has space before offering the existing copy/device-share URL. Real physical phone share sheets and multi-device notifications outside Chromium remain untested.
+
+## Layered character avatars local work (November 10, 2026)
+
+- Branch `feature/unity-avatars` builds on `feature/account-identity`; all commits remain local. The later `feature/friends` branch has Unity Editor 6000.3.26f1 and WebGL Build Support installed. After activating Unity Personal, the real WebGL build passed. Unity's import found two missing built-in modules; adding JSON serialization and Unity Web Request to the package manifest resolved them. The generated build was installed into `public/avatar-creator/` (about 9 MB on disk). The build disables engine stripping after Chromium reported class ID 115 errors; the rebuilt version produced zero console errors.
+- The manifest defines 42 SVG layers across 11 slots. Playwright/Chromium generated matching 256×256 RGBA PNGs for web and Unity Resources (169 KB total). `npm run avatars:check` byte-compares both copies, checks dimensions and grayscale tintable layers, and verifies generated server/browser/C# enum parity.
+- Strict v1/v2 profile validation, version rejection, v2 room projection, compositor caching and pixel differences, scoped WebGL CSP, asset headers, build detection and safe return paths have automated coverage. A missing PNG leaves a placeholder and can retry after recovery; a slow layer keeps the placeholder visible until it loads. Signed-out creator access redirects to login and a failed profile save reports its error. With no build, the creator route returns 404 and `/api/config.avatarCreator` is false.
+- Chromium rendered ten distinct v2 avatars at 360×740 and 390×844: all ten 64×64 canvases had opaque center pixels, no seat cards intersected, there was no horizontal overflow, and no page errors occurred. The table screenshots are in ignored `artifacts/qa/avatar-table-360.png` and `artifacts/qa/avatar-table-390.png`.
+- With the installed build, the full creator link is available to signed-in accounts. Isolated-account Chromium runs at 1280×800 and 390×844 loaded Unity, rendered the editor, changed hair to `bob`, saved through `PUT /api/me/profile` (200), and read back a version 2 avatar. A separate mobile emulation run with touch input also saved `bob` with no console errors. Screenshots are in ignored `artifacts/qa/unity-final-*.png` and `unity-touch-390.png`. The Unity canvas cannot supply an accessible part picker; the profile text description and simple builder remain available. Physical mobile devices and screen-reader use are still untested.
+- With the generated build installed, lint passed after excluding Unity's generated loader; all 116 tests passed after the auth tests were isolated from the optional build flag. `npm run avatars:check`, `npm run unity:check`, and `git diff --check` passed. The live demo on port 3101 reports `avatarCreator: true` and returns 200 with the scoped CSP for `/avatar-creator/`.
+- Lint passed with zero warnings and 112 tests passed both normally and with database environment variables unset. The four-player chip-conservation simulation passed. The local demo on port 3101 returned health 200, lobby CSP, creator 404, capability off and PNG 200. The only `style=` match outside creator code was the pre-existing vendored QR source. This branch has no changes to `src/game.js` relative to `feature/account-identity`.
+
+## Accounts follow-up acceptance (November 10, 2026)
+
+- Current descendant branch `feature/customization` retains the `feature/accounts-stats` stage commits. `npm ci`, lint, 96 tests, four-player chip-conservation simulation, `git diff --check`, and `/healthz` passed. Node 24.20.0 used `node:sqlite`.
+- File-backed SQLite smoke passed magic-link request/verify, private account and stats routes, a two-seat completed hand, zero-sum saved rows and updated personal stats. The temporary database was removed.
+- Playwright Chromium captured `me.html` empty at 360×740 and populated at 360×740 and 390×844. No page errors or horizontal overflow. A 25px Back to table link was repaired to 44px and rechecked at both widths; the other visible controls were at least 44px.
+- The old A6 group leaderboard was replaced by the later league feature. The optional Postgres adapter is absent; real email, Google, Node 20, physical-device and Render-disk behavior remain untested.
+
+## Optional accounts and history local work (November 10, 2026)
+
+- Node 24.20.0; SQLite `:memory:` smoke and upsert test pass. The Node 20 `better-sqlite3` path is installed but has not been run under Node 20 locally.
+- Lint passes with zero warnings; 73 tests pass, including undo-safe action counters, saved-night idempotence and failure isolation, magic-link single use, session privacy, guest claim, and stats aggregation. `node scripts/simulate-four.js` passes.
+- No database configured: `/api/config` reports accounts off; auth and account routes return 404 and guest socket tests pass.
+- Real email delivery, cookie behavior behind Render, and persistent-disk behavior have not been exercised here.
+
+## League local work (November 10, 2026)
+
+- `feature/leagues` is based on the passing `feature/accounts-stats` branch. Lint and 76 tests pass.
+- League integration test covers invite membership, member-only responses, season activation and rule freeze, server-owned league table settings, a guest sub, saved results, standings, void/restore with an audit reason, and champion close.
+- Pure scoring tests cover fixed-point points, ties, net, capped net, ROI, drop-worst, qualification, rank movement and records.
+- Live multi-device phone use, persistent Render storage and Postgres parity remain untested.
+
+## League follow-up audit (November 10, 2026)
+
+- Existing `feature/leagues` was based on `feature/accounts-stats`; `npm ci`, lint and all 76 baseline tests passed. Follow-up commits `6ceabad`, `b9d308e`, `08523cb`, `f434ad7` and `9f1fcdb` passed their lint/test gates. Final league branch: 82 tests pass with zero lint warnings.
+- Added a table-driven permission matrix across 11 league endpoints, scoring fixtures for capped net, ROI zero buy-in, ties and drop-worst, and checks for 30-member capacity, no-database 404s, account-deletion history, privacy leakage, two live leagues, sole-owner deletion, an empty-season close, co-commissioner review and closed-result immutability.
+- A file-backed SQLite smoke on port 3102 passed: health, two verified accounts, invite join, points season activation, a two-player hand, end-night persistence, cleared live code, standings and night history. The temporary smoke database was removed.
+- Playwright Chromium captured all four league tabs at 360px (commissioner) and 390px (member). There were no page errors or horizontal scrollbars; visible controls met 44px tap targets. The member Rules view showed saved table settings, Nights showed a guest/sub and void reason, and Copy standings kept point units.
+- `src/game.js` was not changed by the league follow-up; its diff from `main` comes from the earlier accounts/stats ledger work. No inline script or style was added. The vendored QR source already contains generated `style=` strings.
+- Untested for real: physical phone browsers, actual email delivery, a live multi-device league night, Render persistent disk and Postgres. No Postgres adapter exists in this local repository.
+- The league follow-ups were merged into the local `feature/customization` demo branch. Its final gate passed: lint, 94 tests and `node scripts/simulate-four.js`; the league page had no overflow at 360px or 390px, and active league-tab text met 4.5:1 contrast in all eight themes.
+
 Validated locally on November 7, 2026 (America/Los_Angeles), on Node 24.20.0. The deployment target remains Node 20+ as configured in `render.yaml`.
 
 ## Executed checks
@@ -65,3 +125,27 @@ Validated locally on November 7, 2026, against ephemeral servers using Playwrigh
 | Browser errors during share/manual-entry checks | Pass; no uncaught page errors. |
 
 Physical phone camera scanning and the deployed Render hostname were not available in this local run. QR decoding was verified in Chromium; production invite URLs use the active page origin and still need a deployed-site check.
+
+## Theme and customization local work (November 10, 2026)
+
+- Branch `feature/customization` builds from passing `feature/leagues`; all work remains local and unpushed.
+- Final local gate: `npm run lint` zero warnings; `npm test` 85/85 passing; `node scripts/simulate-four.js` conserved 550 chips; `node scripts/check-contrast.js` passed eight themes and high contrast; `GET /healthz` returned `{ "ok": true }`.
+- Lint passes with zero warnings. The current suite covers settings schema/client enum parity and migration, no-DB routes, signed-in sync precedence, cosmetics Socket.IO validation/broadcast/revision/privacy, saved preset CRUD and ownership, host rebuy limits and mid-hand deferral. `node scripts/check-contrast.js` covers eight themes, seat colors and high-contrast tokens.
+- Playwright Chromium at 1440×900 and 390×844 captured the lobby and populated game for Miami Vice, Royal Flush and Retro Arcade. The browser reported no page errors or horizontal overflow. Felt screenshots and customization panels were also inspected. Art remained outside functional content; the mobile decorative layer is hidden.
+- League standings with a closed-season champion, nights, members and rules were captured at 360×740 and 390×844; all four tabs had no horizontal overflow or page errors. Signed-in preset save, rename and delete were also exercised in Chromium.
+- Account settings/saved presets were exercised against an in-memory SQLite server. Real Resend delivery and persistent disk behavior are not verified locally. Node 20 fallback and physical-device sound/vibration/ergonomics remain untested.
+
+## Account identity local work (November 10, 2026)
+
+- Branch `feature/account-identity` starts from passing `feature/customization` (96 tests). SQLite migration v7 adds username, released-name history, avatar and privacy columns. No remote was changed.
+- Stage gates: I1 lint and 99 tests; I2 lint and 101 tests; I3 lint and 103 tests plus contrast; I4/I5 lint and 105 tests. Final gate: lint with zero warnings, 105 tests, four-player chip-conservation simulation, and contrast across eight themes. The explicit no-DB test run also passed 105/105.
+- Username tests cover server/client parity, case-insensitive uniqueness, cooldown and exact 30-day boundary, owner revert, post-deletion hold, concurrent claim, rate limit and no-DB 404. Profile tests cover owner/shared-league/private/guest visibility, byte-identical hidden/missing 404 bodies, atomic update validation, table opt-in and removal on sign-out. Avatar tests cover closed enums, parity, deterministic SVG, unknown keys and the server's deterministic fallback.
+- A file-backed two-account smoke passed local sign-in, competing username claims, avatar saves, identical hidden/missing profile 404s, private two-seat Socket.IO views and `/healthz`; the temporary SQLite database was removed. Playwright Chromium exercised the complete local magic-link onboarding flow, builder save, profile page, profile builder dialog and a populated ten-seat table with ten account avatars. At 360×740 Felt and 390×844 Retro Arcade, ten full-page screenshots showed no overlap, horizontal overflow, uncaught page errors or visible interactive targets below 44×44 pixels. Screenshots are under ignored `artifacts/qa/identity-*.png`.
+- The contrast script checks avatar icon ink against all twelve avatar backgrounds in each of eight themes and high-contrast mode. Real inboxes, physical phone browsers, screen readers and production Google sign-in remain untested.
+
+## Public preview lobby restoration (November 11, 2026)
+
+- Restored the wide Daylight lobby composition against the supplied reference screenshot. The core create form appears first; presets and rebuy rules expand on demand, and the account prompt sits below the theme picker.
+- Chromium checked the public preview and app at 1944×1788 and 390×844. Daylight selection carried from the preview into the lobby; both pages had no horizontal overflow or uncaught page errors. The app connected, Create enabled, presets expanded, Join showed the room-code field, and the header Sign in link remained available.
+- A populated four-player game was inspected at desktop and mobile widths without horizontal overflow or page errors. `npm run lint` and `npm test` passed (120/120).
+- The pasted homepage layout was used to tune the 901–1449px two-column spacing at the reference screenshot's scale. Between 1450px and 1944px, the grid, typography and panel spacing now grow smoothly instead of jumping at the breakpoint. Chromium checks at 320px, 390px, 1296px (1.5×), 1450px and 1944px found no horizontal overflow or page errors; Create enabled after connecting. Lint and 120 tests passed.

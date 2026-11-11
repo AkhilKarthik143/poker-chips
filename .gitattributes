@@ -1,0 +1,3 @@
+# Unity regenerates these YAML files with intentional blank values and trailing spaces.
+unity/AvatarCreator/**/*.meta whitespace=-trailing-space
+unity/AvatarCreator/ProjectSettings/*.asset whitespace=-trailing-space

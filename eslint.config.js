@@ -1,9 +1,9 @@
 export default [{
-  ignores: ['node_modules/**', 'public/vendor/**'],
+  ignores: ['node_modules/**', 'public/vendor/**', 'public/avatar-creator/**', 'unity/AvatarCreator/Builds/**', 'unity/AvatarCreator/Library/**'],
 }, {
   files: ['**/*.js'],
   languageOptions: { ecmaVersion: 2022, sourceType: 'module',
-    globals: Object.fromEntries(['process', 'Buffer', 'URL', 'URLSearchParams', 'structuredClone', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'fetch'].map(name => [name, 'readonly'])) },
+    globals: Object.fromEntries(['process', 'Buffer', 'URL', 'URLSearchParams', 'structuredClone', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'fetch', 'BigInt'].map(name => [name, 'readonly'])) },
   rules: {
     'no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
     'no-constant-condition': 'error',
@@ -19,7 +19,7 @@ export default [{
   languageOptions: { globals: Object.fromEntries([
     'window', 'document', 'navigator', 'localStorage', 'sessionStorage', 'matchMedia', 'ResizeObserver',
     'IntersectionObserver', 'crypto', 'requestAnimationFrame', 'cancelAnimationFrame', 'CSS', 'Event',
-    'CustomEvent', 'HTMLElement', 'AudioContext', 'visualViewport', 'performance', 'Notification', 'location'
+    'CustomEvent', 'HTMLElement', 'AudioContext', 'visualViewport', 'performance', 'Notification', 'location', 'FormData'
   ].map(name => [name, 'readonly'])) }
 }, {
   files: ['public/sw.js'],

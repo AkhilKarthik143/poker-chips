@@ -1,5 +1,9 @@
 :root {
   color-scheme: light;
+  --avatar-c1:#ffb3c1; --avatar-c2:#a2f5dd; --avatar-c3:#ffe18e; --avatar-c4:#bdb7ff;
+  --avatar-c5:#9ee6ff; --avatar-c6:#ffc59c; --avatar-c7:#d3f4a8; --avatar-c8:#f4b9ed;
+  --avatar-c9:#b7d0ff; --avatar-c10:#f7e6b5; --avatar-c11:#a5f1f4; --avatar-c12:#ffc9c9;
+  --avatar-ink-dark:#172031; --avatar-ink-light:#ffffff;
   --bg-page:#fffdf5; --bg-panel:#ffffff; --bg-table:#e9fff5; --bg-seat-empty:#e9fff5; --bg-seat-occupied:#f1ebff; --bg-action-bar:#ffffff;
   --border-seat-empty:#252b3a; --border-your-seat:#6434df; --border-action-bar-top:#252b3a;
   --text-primary:#253044; --text-secondary:#4e586b; --text-disabled:#4e586b; --accent:#6434df; --accent-hover:#5125c3;
@@ -17,6 +21,7 @@
 }
 
 :root[data-theme="felt"], [data-theme-preview="felt"] {
+  --seat-c1:#6434df; --seat-c2:#12615a; --seat-c3:#96364c; --seat-c4:#5a4d04; --seat-c5:#155c86; --seat-c6:#6f3291; --seat-c7:#86501a; --seat-c8:#125b69; --seat-c9:#8a2d5c; --seat-c10:#315b25; --seat-c11:#6d3d28; --seat-c12:#2e548f;
   color-scheme:light;
   --bg-page:#fffdf5; --bg-panel:#ffffff; --bg-table:#e9fff5; --bg-seat-empty:#e9fff5; --bg-seat-occupied:#f1ebff; --bg-action-bar:#ffffff;
   --border-seat-empty:#252b3a; --border-your-seat:#6434df; --border-action-bar-top:#252b3a;
@@ -28,6 +33,7 @@
   --dp-color-accent-warm:#ffd05b; --dp-color-accent-warm-ink:#253044; --dp-color-accent-fresh:#9bf1cd; --dp-color-accent-fresh-ink:#253044; --dp-color-rule-muted:#b8b6c5;
 }
 :root[data-theme="midnight"], [data-theme-preview="midnight"] {
+  --seat-c1:#ffb3c1; --seat-c2:#a2f5dd; --seat-c3:#ffe18e; --seat-c4:#bdb7ff; --seat-c5:#9ee6ff; --seat-c6:#ffc59c; --seat-c7:#d3f4a8; --seat-c8:#f4b9ed; --seat-c9:#b7d0ff; --seat-c10:#f7e6b5; --seat-c11:#a5f1f4; --seat-c12:#ffc9c9;
   color-scheme:dark;
   --bg-page:#0b1424; --bg-panel:#172743; --bg-stage:#112238; --bg-table:#115879; --bg-felt-highlight:#18739a;
   --bg-seat-empty:#193c50; --bg-seat-occupied:#1c3150; --bg-selected:#273d6a; --bg-active-seat:#1d465a; --bg-action-bar:#0b1424;
@@ -47,6 +53,7 @@
   --dp-typography-display:"Host Grotesk","Trebuchet MS",sans-serif; --dp-typography-reading:"Instrument Sans","Avenir Next",sans-serif;
 }
 :root[data-theme="burgundy"], [data-theme-preview="burgundy"] {
+  --seat-c1:#ffb3c1; --seat-c2:#a2f5dd; --seat-c3:#ffe18e; --seat-c4:#bdb7ff; --seat-c5:#9ee6ff; --seat-c6:#ffc59c; --seat-c7:#d3f4a8; --seat-c8:#f4b9ed; --seat-c9:#b7d0ff; --seat-c10:#f7e6b5; --seat-c11:#a5f1f4; --seat-c12:#ffc9c9;
   color-scheme:dark;
   --bg-page:#25131b; --bg-panel:#432532; --bg-stage:#39232e; --bg-table:#5a3040; --bg-felt-highlight:#713b50;
   --bg-seat-empty:#57303a; --bg-seat-occupied:#4e2b3a; --bg-selected:#643447; --bg-active-seat:#5a482d; --bg-action-bar:#2b1821;
@@ -66,6 +73,7 @@
   --dp-typography-display:"Host Grotesk","Trebuchet MS",sans-serif; --dp-typography-reading:"Instrument Sans","Avenir Next",sans-serif;
 }
 :root[data-theme="graphite"], [data-theme-preview="graphite"] {
+  --seat-c1:#ffb3c1; --seat-c2:#a2f5dd; --seat-c3:#ffe18e; --seat-c4:#bdb7ff; --seat-c5:#9ee6ff; --seat-c6:#ffc59c; --seat-c7:#d3f4a8; --seat-c8:#f4b9ed; --seat-c9:#b7d0ff; --seat-c10:#f7e6b5; --seat-c11:#a5f1f4; --seat-c12:#ffc9c9;
   color-scheme:dark;
   --bg-page:#181b21; --bg-panel:#303640; --bg-stage:#262e38; --bg-table:#283a3f; --bg-felt-highlight:#324b4e;
   --bg-seat-empty:#2c4543; --bg-seat-occupied:#343d47; --bg-selected:#414953; --bg-active-seat:#523824; --bg-action-bar:#20252d;
@@ -85,6 +93,7 @@
   --dp-typography-display:"Host Grotesk","Trebuchet MS",sans-serif; --dp-typography-reading:"Instrument Sans","Avenir Next",sans-serif;
 }
 :root[data-theme="daylight"], [data-theme-preview="daylight"] {
+  --seat-c1:#6434df; --seat-c2:#12615a; --seat-c3:#96364c; --seat-c4:#5a4d04; --seat-c5:#155c86; --seat-c6:#6f3291; --seat-c7:#86501a; --seat-c8:#125b69; --seat-c9:#8a2d5c; --seat-c10:#315b25; --seat-c11:#6d3d28; --seat-c12:#2e548f;
   color-scheme:light;
   --bg-page:#f7f8f3; --bg-panel:#ffffff; --bg-stage:#e9f1f4; --bg-table:#9ae0c8; --bg-felt-highlight:#85d8c0;
   --bg-seat-empty:#e6f8f1; --bg-seat-occupied:#ffffff; --bg-selected:#e5eeff; --bg-active-seat:#ffe5a0; --bg-action-bar:#ffffff;
@@ -101,5 +110,65 @@
   --dp-color-field-soft:#e6f8f1; --dp-color-selection:#e5eeff; --dp-color-rule-muted:#afbcc9; --dp-color-disabled-ink:#586779;
   --dp-color-disabled-outline:#8796a6; --dp-color-placeholder:#4c5c70; --dp-color-felt:#9ae0c8; --dp-color-disabled-surface:#e6f8f1;
   --dp-color-danger-ink:#fff8f2; --dp-color-active-ink:#fff9e9;
+  --dp-typography-display:"Host Grotesk","Trebuchet MS",sans-serif; --dp-typography-reading:"Instrument Sans","Avenir Next",sans-serif;
+}
+:root[data-theme="miami-vice"], [data-theme-preview="miami-vice"] {
+  --seat-c1:#ffb3c1; --seat-c2:#a2f5dd; --seat-c3:#ffe18e; --seat-c4:#bdb7ff; --seat-c5:#9ee6ff; --seat-c6:#ffc59c; --seat-c7:#d3f4a8; --seat-c8:#f4b9ed; --seat-c9:#b7d0ff; --seat-c10:#f7e6b5; --seat-c11:#a5f1f4; --seat-c12:#ffc9c9;
+  color-scheme:dark;
+  --bg-page:#160e31; --bg-panel:#322056; --bg-stage:#251844; --bg-table:#126b70; --bg-felt-highlight:#197c80;
+  --bg-seat-empty:#284453; --bg-seat-occupied:#392a62; --bg-selected:#4c316a; --bg-active-seat:#4b315c; --bg-action-bar:#1e1239;
+  --border-seat-empty:#c4b0f1; --border-your-seat:#4adfd1; --border-action-bar-top:#c4b0f1; --border-felt:#71f1e1;
+  --text-primary:#fff4fd; --text-secondary:#f0dbf6; --text-disabled:#e8d8f2; --text-on-felt:#fff9fd; --text-on-felt-muted:#e7fffc;
+  --accent:#ff75c8; --accent-hover:#ff9bd8;
+  --status-ready:#77ead2; --status-active:#ffd28c; --status-folded:#b8a9cc; --status-allin:#ff9a91; --status-away:#c5b7da;
+  --net-up:#8bf1d9; --net-down:#ffb0a4;
+  --card-face-bg:#fff9f7; --card-face-red:#b53749; --card-face-black:#201431; --card-back-bg:#8b55d8;
+  --dp-color-ground:#160e31; --dp-color-ground-glow:#8d3c91; --dp-color-panel:#322056; --dp-color-ink:#fff4fd; --dp-color-ink-muted:#f0dbf6;
+  --dp-color-outline:#c4b0f1; --dp-color-focus:#71f1e1; --dp-color-accent:#ff75c8; --dp-color-accent-ink:#321236;
+  --dp-color-accent-secondary:#4adfd1; --dp-color-accent-secondary-ink:#102f3d;
+  --dp-color-accent-warm:#ffd28c; --dp-color-accent-warm-ink:#35221a; --dp-color-accent-fresh:#71f1e1; --dp-color-accent-fresh-ink:#123b3e;
+  --dp-color-field-soft:#284453; --dp-color-selection:#4c316a; --dp-color-rule-muted:#a897ce; --dp-color-disabled-ink:#e8d8f2;
+  --dp-color-disabled-outline:#a897ce; --dp-color-placeholder:#f0dbf6; --dp-color-felt:#126b70; --dp-color-disabled-surface:#284453;
+  --dp-color-danger-ink:#3f1e25; --dp-color-active-ink:#3d291d;
+  --dp-typography-display:"Host Grotesk","Trebuchet MS",sans-serif; --dp-typography-reading:"Instrument Sans","Avenir Next",sans-serif;
+}
+:root[data-theme="royal-flush"], [data-theme-preview="royal-flush"] {
+  --seat-c1:#ffb3c1; --seat-c2:#a2f5dd; --seat-c3:#ffe18e; --seat-c4:#bdb7ff; --seat-c5:#9ee6ff; --seat-c6:#ffc59c; --seat-c7:#d3f4a8; --seat-c8:#f4b9ed; --seat-c9:#b7d0ff; --seat-c10:#f7e6b5; --seat-c11:#a5f1f4; --seat-c12:#ffc9c9;
+  color-scheme:dark;
+  --bg-page:#1b1230; --bg-panel:#302049; --bg-stage:#27183d; --bg-table:#463087; --bg-felt-highlight:#573a9a;
+  --bg-seat-empty:#3d2d61; --bg-seat-occupied:#3a2858; --bg-selected:#4c3374; --bg-active-seat:#50375a; --bg-action-bar:#211434;
+  --border-seat-empty:#dcc5f6; --border-your-seat:#f2cb76; --border-action-bar-top:#dcc5f6; --border-felt:#f2cb76;
+  --text-primary:#fbf6ff; --text-secondary:#e9dcf3; --text-disabled:#daccdf; --text-on-felt:#fcf9ff; --text-on-felt-muted:#eee3fa;
+  --accent:#c7a5ff; --accent-hover:#d7bdff;
+  --status-ready:#a5e2c8; --status-active:#f2cb76; --status-folded:#bbaccb; --status-allin:#ff9b92; --status-away:#c2b2d4;
+  --net-up:#a5e2c8; --net-down:#ffaca1;
+  --card-face-bg:#fffaf4; --card-face-red:#b7374d; --card-face-black:#20172f; --card-back-bg:#7451b4;
+  --dp-color-ground:#1b1230; --dp-color-ground-glow:#8764a8; --dp-color-panel:#302049; --dp-color-ink:#fbf6ff; --dp-color-ink-muted:#e9dcf3;
+  --dp-color-outline:#dcc5f6; --dp-color-focus:#f2cb76; --dp-color-accent:#c7a5ff; --dp-color-accent-ink:#2c1b42;
+  --dp-color-accent-secondary:#c7a5ff; --dp-color-accent-secondary-ink:#2c1b42;
+  --dp-color-accent-warm:#f2cb76; --dp-color-accent-warm-ink:#342514; --dp-color-accent-fresh:#a5e2c8; --dp-color-accent-fresh-ink:#18382e;
+  --dp-color-field-soft:#3d2d61; --dp-color-selection:#4c3374; --dp-color-rule-muted:#ae97cd; --dp-color-disabled-ink:#daccdf;
+  --dp-color-disabled-outline:#ae97cd; --dp-color-placeholder:#e9dcf3; --dp-color-felt:#463087; --dp-color-disabled-surface:#3d2d61;
+  --dp-color-danger-ink:#3c1a25; --dp-color-active-ink:#372713;
+  --dp-typography-display:"Host Grotesk","Trebuchet MS",sans-serif; --dp-typography-reading:"Instrument Sans","Avenir Next",sans-serif;
+}
+:root[data-theme="retro-arcade"], [data-theme-preview="retro-arcade"] {
+  --seat-c1:#ffb3c1; --seat-c2:#a2f5dd; --seat-c3:#ffe18e; --seat-c4:#bdb7ff; --seat-c5:#9ee6ff; --seat-c6:#ffc59c; --seat-c7:#d3f4a8; --seat-c8:#f4b9ed; --seat-c9:#b7d0ff; --seat-c10:#f7e6b5; --seat-c11:#a5f1f4; --seat-c12:#ffc9c9;
+  color-scheme:dark;
+  --bg-page:#101827; --bg-panel:#26334b; --bg-stage:#1b2940; --bg-table:#214b48; --bg-felt-highlight:#2d5b54;
+  --bg-seat-empty:#274347; --bg-seat-occupied:#2e3b57; --bg-selected:#354d5a; --bg-active-seat:#3d4d43; --bg-action-bar:#172239;
+  --border-seat-empty:#b7e4e6; --border-your-seat:#c5f96b; --border-action-bar-top:#b7e4e6; --border-felt:#62dceb;
+  --text-primary:#f7faff; --text-secondary:#e4edf7; --text-disabled:#d2e0ef; --text-on-felt:#f7faff; --text-on-felt-muted:#e0f8f5;
+  --accent:#c5f96b; --accent-hover:#d5ff92;
+  --status-ready:#8be8d4; --status-active:#c5f96b; --status-folded:#b5c2d3; --status-allin:#ff9aaa; --status-away:#c0cada;
+  --net-up:#9feac6; --net-down:#ffacba;
+  --card-face-bg:#fcfcf7; --card-face-red:#b23954; --card-face-black:#182037; --card-back-bg:#337fb2;
+  --dp-color-ground:#101827; --dp-color-ground-glow:#3a6d79; --dp-color-panel:#26334b; --dp-color-ink:#f7faff; --dp-color-ink-muted:#e4edf7;
+  --dp-color-outline:#b7e4e6; --dp-color-focus:#c5f96b; --dp-color-accent:#c5f96b; --dp-color-accent-ink:#1c2d30;
+  --dp-color-accent-secondary:#62dceb; --dp-color-accent-secondary-ink:#15323d;
+  --dp-color-accent-warm:#ffd36e; --dp-color-accent-warm-ink:#302a1b; --dp-color-accent-fresh:#91e7d5; --dp-color-accent-fresh-ink:#173b36;
+  --dp-color-field-soft:#274347; --dp-color-selection:#354d5a; --dp-color-rule-muted:#a1bcc9; --dp-color-disabled-ink:#d2e0ef;
+  --dp-color-disabled-outline:#a1bcc9; --dp-color-placeholder:#e4edf7; --dp-color-felt:#214b48; --dp-color-disabled-surface:#274347;
+  --dp-color-danger-ink:#3f1b2d; --dp-color-active-ink:#29361c;
   --dp-typography-display:"Host Grotesk","Trebuchet MS",sans-serif; --dp-typography-reading:"Instrument Sans","Avenir Next",sans-serif;
 }

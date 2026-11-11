@@ -1,5 +1,31 @@
 # Decisions and progress
 
+## Accounts spec follow-up audit (2026-11-10)
+
+- The pasted A1–A9 task was originally implemented on the existing `feature/accounts-stats` branch, which starts from `feature/ux-overhaul`. The active `feature/customization` branch descends from it and contains the later league replacement for A6. I kept that branch structure and did not recreate the old standalone groups schema or push changes.
+- Baseline on the active branch: Node 24.20.0 with `node:sqlite`, `npm ci` passed, lint clean, 95 tests passing, and the four-player simulation passed. The settle-up prerequisite fields are already present. A1–A5, A8 and A9 are implemented; A6 was superseded by the user's league direction. A7 remains optional and skipped because no Postgres server is available to test it.
+- A3 follow-up: default display names now receive a numeric suffix if another account already uses the same name. The suffix is bounded to the 20-character display-name limit; email and Google creation paths share the rule. The existing account for a returning email is reused.
+- A5 browser acceptance: Playwright Chromium captured empty and populated `me.html` at 360×740 and populated at 390×844 under `/tmp/tablemate-account-qa`. There were no browser errors or horizontal scrollbars. The Back to table link was only 25px tall; it now has a 44px tap target at both widths. Other visible profile controls met the 44px target in the recorded checks.
+- A2–A5 file-backed smoke: a real temporary SQLite file passed magic-link request/verify, `/healthz`, `/api/me`, `/api/me/stats`, a two-seat completed hand, saved zero-sum night rows, and updated lifetime stats. The temporary database was removed. Final gate after the fixes: lint with zero warnings, 96 tests passing, four-player simulation passed, `git diff --check` clean.
+- Assumption: the user's later league specification replaces A6's simple group leaderboard, so no separate `/api/groups` routes should be added. Assumption: numeric suffixes apply to defaults on creation; members may still choose the same nickname later.
+- Untested for real: Resend delivery, Google sign-in against a live Google client, Node 20 fallback on Node 20, physical phone browsers, Render persistent disk, and Postgres. `DATABASE_URL` is documented as unsupported in this local build. No blockers for the required stages under the league replacement.
+
+## Leagues on the correct checkout (2026-11-10)
+
+- Branch `feature/leagues` starts from passing `feature/accounts-stats`. SQLite migration v3 adds league, roster, season, night-result and audit tables; no legacy groups existed to migrate.
+- Assumption: a guest sub can win a pot and appears in night history, but only signed-in members receive a league result row. A night needs two member participants to score.
+- Season scoring is immutable after activation; nights are stamped with the active season at room creation. Closing stores a champion and prevents later result rewrites or review.
+- Commissioner/member/co permissions are server checked. League IDs are top-level socket inputs and never part of game settings or room broadcasts.
+- Integration test and scoring fixtures pass; browser viewport and real-device verification remain pending. No remote push.
+
+## Correct poker-chips checkout: accounts and history (2026-11-10)
+
+- Branch `feature/accounts-stats` starts at clean `feature/ux-overhaul` commit `66fd4e8`; the remote is `AkhilKarthik143/poker-chips`. No push or PR.
+- Baseline: Node 24.20.0, lint clean, 66 tests passing. A1 adds undo-safe per-night action and showdown counters (67 tests). A2 adds SQLite saved nights and no-op feature-off store, with a Node 20 `better-sqlite3` fallback (70 tests). A3 adds magic-link accounts and session-bound seats (72 tests). A4/A5/A8 add guest-night claims, personal stats, chart, export and deletion (73 tests).
+- Assumption: the league task replaces the old A6 group leaderboard. Group UI and schema will be implemented as leagues on the next local branch.
+- Privacy: account IDs, emails, session tokens and claim hashes stay out of socket state. Store failures are logged without stopping a hand. Guest features remain usable without a database.
+- Untested for real: Resend email delivery, Node 20 fallback under an actual Node 20 runtime, phone browser cookies, Render persistent disk, real Postgres. `DATABASE_URL` support is deferred because the Postgres adapter is optional in the supplied account spec.
+
 ## Tablemate UX overhaul (2026-11)
 
 ### Final summary
@@ -139,3 +165,13 @@ Failing tests were added before fixes. The initial six new groups failed as expe
 - Tests were written before implementation and failed for the missing operation; then pass for conservation, immutability, invalid input, timing, non-host authorization, broadcast and stale replay.
 
 - Bid typing fix: reproduced a cleared numeric field immediately becoming the minimum raise. Input now preserves the typed draft and only updates the slider preview. Native min/max/step constraints and server validation enforce valid completed bids at submission. Mobile browser regression clears the field, types 125 sequentially and submits it successfully.
+
+## Local account, league, theme and customization work (2026-11-10)
+
+- Confirmed `/Users/akhilsanapala/Downloads/poker-chips` is the repository with remote `AkhilKarthik143/poker-chips`. The sibling `/Downloads/poker` is a different repository. No push or PR was made; the user requested local changes only.
+- `feature/accounts-stats` adds persisted night snapshots, optional magic-link accounts, guest claims and personal stats. `feature/leagues` extends that base with commissioner/co-commissioner roster, season scoring, standings, audited review and champion history. `feature/customization` builds on the passing league branch.
+- Customization assumptions: optional public note means nickname/pronunciation only, limited to 24 characters; guest seat colors use the current seat index with collision fallback; built-in presets use host approval by default; auto rebuy counts are room-local and reset with a new room/night. Account settings and saved presets are hidden when accounts are disabled.
+- Stage commits on `feature/customization`: themes `461a820`, settings `396d97c`, seat cosmetics `03ff896`, presets `02ba2e6`, rebuy policy `e5700d8`. All commits remain local.
+- Theme art is static SVG in the lobby, scoped to Miami Vice, Royal Flush and Retro Arcade. It has no pointer events and is hidden on narrow screens. Felt receives no theme-art layer. The Poker table uses palette/styling changes without decorations over the felt.
+- Untested on real devices: iOS audio unlock and silent switch, hardware haptics, left-handed ergonomics, Android wake lock and Web Push delivery. Browser/device support is feature-detected.
+- Final local validation: lint with zero warnings; 85 tests passed; the four-player simulation conserved 550 chips; contrast passed eight palettes and the high-contrast seat palette; `/healthz` returned `{"ok":true}`. Playwright covered all three new-theme lobbies and four-player tables at desktop/mobile widths, signed-in preset management, and a closed league season on narrow screens. No browser page errors or horizontal overflow were observed.

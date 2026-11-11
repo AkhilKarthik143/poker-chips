@@ -16,6 +16,7 @@ const able = state => live(state).filter(p => p.stack > 0);
 const clockwise = (players, seat) => [...players].sort((a, b) => ((a.seat - seat + 9) % 10) - ((b.seat - seat + 9) % 10));
 const next = (players, seat) => clockwise(players, seat)[0];
 const sumBets = state => state.players.reduce((sum, p) => sum + p.contributed, 0);
+export const STAT_FIELDS = ['vpipHands', 'pfrHands', 'raises', 'calls', 'checks', 'folds', 'allIns', 'showdowns', 'showdownWins'];
 function log(state, text) {
   state.log.push({ hand: state.handNumber, street: state.street, text, pot: sumBets(state) });
   state.log = state.log.slice(-200);
@@ -132,7 +133,8 @@ export function addPlayer(state, id, name) {
     const seat = Array.from({ length: 10 }, (_, i) => i).find(i => !s.players.some(p => p.seat === i));
     s.players.push({ id, name: name.trim(), seat, stack: s.settings.startingStack, initialBuyIn: s.settings.startingStack, buyIn: s.settings.startingStack,
       rebuyCount: 0, totalRebuyChips: 0, rebuyHistory: [], handsPlayed: 0, handsDealt: 0, handsWon: 0, sittingOut: false,
-      inHand: false, folded: false, streetBet: 0, contributed: 0, actedAt: null });
+      inHand: false, folded: false, streetBet: 0, contributed: 0, actedAt: null,
+      ...Object.fromEntries(STAT_FIELDS.map(field => [field, 0])), vpipThisHand: false, pfrThisHand: false });
     s.totalChips += s.settings.startingStack;
     s.seatOrder = [...s.players].sort((a, b) => a.seat - b.seat).map(p => p.id);
     log(s, `${name.trim()} joined the table.`);
@@ -204,7 +206,8 @@ export function removePlayer(state, id) {
     const p = player(s, id);
     s.departed.push({ id: p.id, name: p.name, initialBuyIn: p.initialBuyIn, buyIn: p.buyIn, rebuyCount: p.rebuyCount,
       totalRebuyChips: p.totalRebuyChips, rebuyHistory: structuredClone(p.rebuyHistory), cashOut: p.stack, handsWon: p.handsWon,
-      handsPlayed: p.handsPlayed, handsDealt: p.handsDealt });
+      handsPlayed: p.handsPlayed, handsDealt: p.handsDealt,
+      ...Object.fromEntries(STAT_FIELDS.map(field => [field, p[field]])) });
     s.totalChips -= p.stack;
     s.players = s.players.filter(p => p.id !== id);
     s.seatOrder = s.seatOrder.filter(playerId => playerId !== id);
@@ -252,7 +255,7 @@ export function startHand(state, now = 0) {
         p.handsPlayed++;
         p.handsDealt++;
       }
-      Object.assign(p, { folded: false, streetBet: 0, contributed: 0, actedAt: null });
+      Object.assign(p, { folded: false, streetBet: 0, contributed: 0, actedAt: null, vpipThisHand: false, pfrThisHand: false });
     });
     const entrants = live(s);
     s.dealerSeat = next(entrants, s.dealerSeat).seat;
@@ -302,6 +305,9 @@ function finish(state, awards) {
     log(state, `${player(state, award.id).name} wins ${award.amount} chips (${award.label}).`);
   }
   for (const id of new Set(awards.filter(award => award.amount > 0).map(award => award.id))) player(state, id).handsWon++;
+  if (state.pots.length) {
+    for (const id of new Set(awards.filter(award => award.amount > 0).map(award => award.id))) player(state, id).showdownWins++;
+  }
   state.players.forEach(p => { p.contributed = 0; p.streetBet = 0; });
   state.street = 'complete';
   state.turn = null;
@@ -327,6 +333,7 @@ function progress(state, afterSeat) {
   if (index === 3) {
     state.street = 'showdown';
     state.pots = calculatePots(state);
+    live(state).forEach(p => { p.showdowns++; });
     log(state, 'Showdown. Reveal physical cards; host selects winners for each pot.');
     return;
   }
@@ -357,16 +364,21 @@ export function act(state, id, intent) {
     const type = intent.type;
     if (type === 'fold') {
       p.folded = true;
+      p.folds++;
       // A hand counts as played only once the player stays past preflop.
       if (s.street === 'preflop') p.handsPlayed--;
       log(s, `${p.name} folds.`);
     } else if (type === 'check') {
       check(legal.canCheck, 'You must call or fold.');
+      p.checks++;
       p.actedAt = s.currentBet;
       log(s, `${p.name} checks.`);
     } else if (type === 'call' || (type === 'all-in' && p.stack <= legal.fullToCall)) {
       check(legal.canCall, 'There is no bet to call.');
       const paid = pay(s, p, legal.toCall);
+      p.calls++;
+      if (s.street === 'preflop' && !p.vpipThisHand) { p.vpipHands++; p.vpipThisHand = true; }
+      if (p.stack === 0) p.allIns++;
       p.actedAt = s.currentBet;
       log(s, `${p.name} calls ${paid}${p.stack === 0 ? ' · all-in' : ''}.`);
     } else if (type === 'raise' || type === 'all-in') {
@@ -378,6 +390,12 @@ export function act(state, id, intent) {
       check(increase >= s.minRaise || target === legal.maxRaiseTo, `Minimum raise is to ${legal.minRaiseTo}.`);
       if (increase >= s.minRaise) s.minRaise = increase;
       pay(s, p, target - p.streetBet);
+      p.raises++;
+      if (s.street === 'preflop') {
+        if (!p.vpipThisHand) { p.vpipHands++; p.vpipThisHand = true; }
+        if (!p.pfrThisHand) { p.pfrHands++; p.pfrThisHand = true; }
+      }
+      if (p.stack === 0) p.allIns++;
       s.currentBet = target;
       p.actedAt = target;
       log(s, `${p.name} ${type === 'all-in' || p.stack === 0 ? 'goes all-in' : 'raises'} to ${target}.`);

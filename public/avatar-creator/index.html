@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Character creator · Tablemate</title><link rel="stylesheet" href="style.css">
+<script src="return-path.js" defer></script><script src="loader.js" defer></script></head>
+<body><main class="creator-shell"><header><a class="wordmark" href="/">tablemate<span>.</span></a><p>CHARACTER STUDIO</p></header>
+<div id="creator-build" data-loader="WebGL.loader.js" data-data="WebGL.data.gz"
+  data-framework="WebGL.framework.js.gz" data-code="WebGL.wasm.gz">
+  <canvas id="unity-canvas" aria-label="Visual character creator"></canvas>
+</div>
+<div id="creator-loading" class="loading" role="status"><p>Loading your character studio…</p><progress id="creator-progress" max="1" value="0"></progress></div>
+<p id="creator-error" class="error" role="alert" hidden></p>
+<footer><a id="simple-builder" href="/me.html">Use simple builder</a><p>The simple builder is also the accessible option for screen readers.</p></footer>
+</main></body></html>

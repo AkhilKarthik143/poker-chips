@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createTable, addPlayer, configure, startHand, act, calculatePots, pickWinners, legalActions, undo, reorderSeats,
+import { createTable, addPlayer, configure, startHand, act, calculatePots, pickWinners, legalActions, undo, reorderSeats, STAT_FIELDS,
   rebuy, donate, setSitOut, removePlayer, settlement, assertConservation } from '../src/game.js';
 function table(stacks = [1000, 1000, 1000], options = {}) {
   let s = createTable(options);
@@ -33,6 +33,26 @@ test('heads-up dealer posts small blind and acts first preflop, last postflop', 
   assert.equal(s.smallBlindId, '0'); assert.equal(s.turn, '0');
   s = play(s, 'call'); s = play(s, 'check');
   assert.equal(s.street, 'flop'); assert.equal(s.turn, '1');
+});
+test('voluntary preflop stats count once and action counters follow undo and departure', () => {
+  let s = startHand(table());
+  assert.deepEqual(s.players.map(p => p.vpipHands), [0, 0, 0], 'posting blinds is not voluntary');
+  s = play(s, 'raise', 30); // Player 0 raises.
+  s = play(s, 'raise', 50); // Player 1 raises.
+  s = play(s, 'call'); // Player 2 calls.
+  const beforeSecondRaise = s;
+  s = play(s, 'raise', 70);
+  assert.deepEqual([s.players[0].vpipHands, s.players[0].pfrHands, s.players[0].raises], [1, 1, 2]);
+  s = undo(s);
+  assert.deepEqual(s.players, beforeSecondRaise.players, 'undo restores counters and hand flags');
+  s = play(s, 'raise', 70);
+  s = play(s, 'call'); s = play(s, 'call');
+  s = award(checkDown(s));
+  assert.deepEqual(s.players.map(p => p.showdowns), [1, 1, 1]);
+  assert.equal(s.players.reduce((sum, p) => sum + p.showdownWins, 0), 1);
+  s = removePlayer(s, '0');
+  assert.deepEqual([s.departed[0].vpipHands, s.departed[0].pfrHands, s.departed[0].raises], [1, 1, 2]);
+  assertConservation(s);
 });
 test('minimum raises, invalid actions, immutability and out-of-turn checks', () => {
   const original = startHand(table());
@@ -131,7 +151,8 @@ test('night ledger tracks buy-in, rebuys, entrants and departed cash-out without
   s = award(checkDown(s));
   s = removePlayer(s, 'c');
   assert.deepEqual(s.departed, [{ id: 'c', name: 'Casey', initialBuyIn: 200, buyIn: 200, rebuyCount: 0, totalRebuyChips: 0,
-    rebuyHistory: [], cashOut: 200, handsWon: 0, handsPlayed: 0, handsDealt: 0 }]);
+    rebuyHistory: [], cashOut: 200, handsWon: 0, handsPlayed: 0, handsDealt: 0,
+    ...Object.fromEntries(STAT_FIELDS.map(field => [field, 0])) }]);
   assert.equal(s.totalChips, 450); assertConservation(s);
 });
 test('completed rebuys record their source and time once in the settlement tracker', () => {

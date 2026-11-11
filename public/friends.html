@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#fffdf5"><title>Friends · Tablemate</title>
+<script src="/helpers.js"></script><script src="/theme-init.js"></script>
+<link rel="stylesheet" href="/tokens.css"><link rel="stylesheet" href="/style.css">
+<script src="/avatar-parts.js" defer></script><script src="/avatar-v2.js" defer></script><script src="/avatar.js" defer></script><script src="/friends.js" defer></script>
+</head><body><header class="masthead"><a class="wordmark" href="/">tablemate<span class="wordmark-dot">.</span></a><nav class="account-nav" aria-label="Account"><a href="/">Table</a><a href="/me.html">My stats</a></nav></header>
+<main class="profile-page friends-page"><div class="profile-heading"><p class="eyebrow">YOUR PEOPLE</p><h1>Friends</h1><p>Find your regulars and make the next table easier to share.</p></div>
+<section id="friend-notifications" class="profile-panel" aria-labelledby="friend-notification-title" hidden><h2 id="friend-notification-title">Updates</h2><div id="friend-notification-list"></div><button id="friend-notifications-read" type="button">Mark updates read</button></section>
+<section id="friend-invite-panel" class="profile-panel" aria-labelledby="friend-invite-title" hidden><h2 id="friend-invite-title">Share this table</h2><p id="friend-invite-copy">Copy or share the room link with a friend. Tablemate does not send it for you.</p><button id="friend-share-room" type="button">Share table link</button><input id="friend-invite-url" aria-label="Table invite link" readonly hidden><p id="friend-invite-status" role="status" aria-live="polite"></p></section>
+<section class="profile-panel" aria-labelledby="my-friends-title"><h2 id="my-friends-title">My friends</h2><div id="friend-list" class="friend-list" aria-live="polite">Loading friends…</div></section>
+<section class="profile-panel" aria-labelledby="friend-requests-title"><h2 id="friend-requests-title">Friend requests</h2><h3>Incoming</h3><div id="friend-incoming" class="friend-list">Loading requests…</div><h3>Sent</h3><div id="friend-outgoing" class="friend-list">Loading requests…</div></section>
+<section class="profile-panel" aria-labelledby="find-friends-title"><h2 id="find-friends-title">Find friends</h2><label for="friend-search">Search by username</label><input id="friend-search" type="search" autocomplete="off" maxlength="20" placeholder="Start typing a username"><p class="helper">Search starts after two characters. Only usernames, display names and public avatars appear.</p><div id="friend-search-results" class="friend-list" role="status" aria-live="polite">Enter at least two characters to search.</div></section>
+<details class="profile-panel"><summary>Blocked users</summary><p class="helper">Blocked users cannot send you requests. Unblocking does not restore a friendship.</p><div id="friend-blocked" class="friend-list"></div></details>
+<p id="friend-status" role="status" aria-live="polite"></p><p class="profile-footnote">Friends are separate from leagues and table seats. An informal tally for friends.</p>
+</main></body></html>

@@ -5,8 +5,8 @@ const $ = selector => document.querySelector(selector);
 const socket = window.io({ autoConnect: false });
 const STORAGE_KEY = 'tablemate-seat-v1';
 const THEME_STORAGE_KEY = 'tablemate-theme-v1';
-const THEME_CHOICES = ['felt', 'midnight', 'burgundy', 'graphite', 'daylight', 'system'];
-const THEME_COLORS = { felt: '#fffdf5', midnight: '#0b1424', burgundy: '#201018', graphite: '#17191d', daylight: '#f4f7fb' };
+const THEME_CHOICES = window.Tablemate.themes;
+const THEME_COLORS = window.Tablemate.themeColors;
 let themePreference = document.documentElement.dataset.themePreference || 'felt';
 let state = null;
 let identity = null;
@@ -23,6 +23,8 @@ let dragSeat = null;
 let queuedDragState = null;
 let alertWinHands = [];
 let rebuyRequestMessage = '';
+let savedPresets = [];
+let canSavePresets = false;
 const railMedia = matchMedia('(min-width:1200px)');
 railMedia.addEventListener('change', () => render());
 const ellipseObserver = new ResizeObserver(() => positionSeats());
@@ -37,18 +39,36 @@ const sliderAmount = (position, min, max, blind) => {
   return Math.min(max, Math.max(min, amount));
 };
 const escape = value => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+const avatarIcon = id => `<svg class="seat-avatar" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><use href="/avatars.svg#${escape(id || 'chip')}"></use></svg>`;
+const tableAvatar = (id, cosmetic, name, size = 20) => {
+  const spec = state.identities?.[id]?.avatar;
+  if (spec?.v === 2 && window.TablemateAvatar?.valid(spec) && window.AvatarV2) return window.AvatarV2.markup(spec, size, name);
+  if (spec?.v === 3 && window.TablemateAvatar?.validPhoto(spec)) return window.TablemateAvatar.renderAvatar(spec, size, name).outerHTML;
+  return spec && window.TablemateAvatar?.valid(spec) ? window.TablemateAvatar.renderAvatar(spec, Math.min(size, 24), name).outerHTML : avatarIcon(cosmetic.avatar);
+};
+const tableUsername = id => state.identities?.[id]?.username ? `<span class="identity-username">@${escape(state.identities[id].username)}</span>` : '';
 try { identity = JSON.parse(localStorage.getItem(STORAGE_KEY)); } catch { identity = null; }
 function saveIdentity(value) {
   identity = value;
   try { if (value) localStorage.setItem(STORAGE_KEY, JSON.stringify(value)); else localStorage.removeItem(STORAGE_KEY); }
   catch { toast('Browser storage is unavailable. Keep this tab open to preserve your seat.'); }
 }
+function rememberNight(result, name) {
+  try {
+    const key = 'tablemate-nights-v1';
+    const saved = JSON.parse(localStorage.getItem(key) || '[]');
+    const nights = Array.isArray(saved) ? saved : [];
+    const entry = { nightId: result.state.nightId, token: result.token, name, at: Date.now() };
+    localStorage.setItem(key, JSON.stringify([entry, ...nights.filter(item => item.nightId !== entry.nightId)].slice(0, 20)));
+  } catch { /* Guest play works without storage. */ }
+}
 function toast(message) {
   $('#toast').textContent = message; $('#toast').hidden = false;
   clearTimeout(toastTimer); toastTimer = setTimeout(() => { $('#toast').hidden = true; }, 5500);
 }
 function themePickerMarkup(scope) {
-  const labels = { felt: 'Felt', midnight: 'Midnight', burgundy: 'Burgundy', graphite: 'Graphite', daylight: 'Daylight', system: 'System' };
+  const labels = { felt: 'Felt', midnight: 'Midnight', burgundy: 'Burgundy', graphite: 'Graphite', daylight: 'Daylight',
+    'miami-vice': 'Miami Vice', 'royal-flush': 'Royal Flush', 'retro-arcade': 'Retro Arcade', system: 'System' };
   return `<section class="theme-picker-section" aria-label="Appearance"><h3>Color theme</h3><div class="theme-picker" role="radiogroup" aria-label="Color theme">${THEME_CHOICES.map(choice => `<button type="button" id="theme-${scope}-${choice}" class="theme-choice" role="radio" aria-checked="${themePreference === choice}" tabindex="${themePreference === choice ? '0' : '-1'}" data-theme-choice="${choice}">${themePreviewMarkup(choice)}<span class="theme-card-name">${labels[choice]}</span><span class="theme-check" aria-hidden="true">✓</span></button>`).join('')}</div></section>`;
 }
 function themePreviewMarkup(choice) {
@@ -59,6 +79,7 @@ function themePreviewMarkup(choice) {
 function applyThemePreference(choice) {
   if (!THEME_CHOICES.includes(choice)) return;
   themePreference = choice;
+  window.TablematePrefs?.update({ theme: choice });
   const root = document.documentElement;
   const resolved = window.Tablemate.resolveTheme(choice, matchMedia('(prefers-color-scheme: dark)').matches);
   root.dataset.themePreference = choice;
@@ -172,7 +193,7 @@ function receive(value) {
   if (dragSeat) { queuedDragState = value; return; }
   const previousState = state;
   const previousRequestIds = new Set((previousState?.rebuyRequests || []).map(item => item.id));
-  const receivedRequest = previousState && value.hostId === value.playerId && (value.rebuyRequests || []).some(item => item.id !== value.playerId && !previousRequestIds.has(item.id));
+  const receivedRequest = previousState && value.permissions?.manage && (value.rebuyRequests || []).some(item => item.id !== value.playerId && !previousRequestIds.has(item.id));
   const alertResult = window.Tablemate.alertTransition(previousState, value, value.playerId, ready, alertWinHands);
   alertWinHands = alertResult.seenHands;
   const previousOrder = state?.seatOrder || [];
@@ -253,9 +274,16 @@ $('#entry-form').addEventListener('submit', async event => {
   busy = true; setButtons();
   try {
     const data = { name: $('#name').value.trim() };
-    if (mode === 'create') data.settings = { startingStack: Number($('#starting-stack').value), smallBlind: Number($('#small-blind').value), bigBlind: Number($('#big-blind').value), blindMinutes: Number($('#blind-minutes').value), centsPer1000Chips: Math.round(Number($('#cash-value').value) * 100) };
+    if (mode === 'create') {
+      data.settings = { startingStack: Number($('#starting-stack').value), smallBlind: Number($('#small-blind').value), bigBlind: Number($('#big-blind').value), blindMinutes: Number($('#blind-minutes').value), centsPer1000Chips: Math.round(Number($('#cash-value').value) * 100) };
+      data.rebuyPolicy = policyFromForm();
+      const leagueId = new URL(window.location.href).searchParams.get('league');
+      if (leagueId) data.leagueId = leagueId;
+    }
     else { data.code = $('#room-code').value.trim().toUpperCase(); await previewJoin(data); return; }
     const result = await request(mode, data);
+    if (result.existing) { toast(`League table ${result.roomCode} is already open. Join with that code.`); return; }
+    rememberNight(result, data.name);
     saveIdentity({ code: result.roomCode, playerId: result.playerId, token: result.token });
     receive(result.state); status('At the table', true);
   } catch (error) { toast(error.message); }
@@ -322,11 +350,12 @@ async function previewJoin(data) {
   const info = await request('table-preview', { code: data.code });
   showDialog(`Join table ${data.code}`, `<p>${info.players}/10 players · Blinds ${number(info.smallBlind)}/${number(info.bigBlind)}</p><label for="join-buy-in">Buy-in · virtual chips</label><input id="join-buy-in" value="${info.startingStack}" readonly><p class="helper">The host sets the buy-in for every new player. Confirm to take the next open seat.</p>`, async () => {
     const result = await request('join', { ...data, expectedBuyIn: info.startingStack });
+    rememberNight(result, data.name);
     saveIdentity({ code: result.roomCode, playerId: result.playerId, token: result.token }); receive(result.state); status('At the table', true);
   }, 'Confirm & join');
 }
 function inviteDialog() {
-  const host = state.hostId === state.playerId;
+  const host = state.permissions?.manage;
   const inviteUrl = window.Tablemate.roomInviteUrl(window.location.origin, state.roomCode);
   if (!inviteUrl) return toast('Could not create an invite link for this room.');
   showDialog(`Invite to table ${state.roomCode}`, `<section class="room-invite" aria-label="Invite friends">
@@ -357,6 +386,7 @@ function inviteDialog() {
       </div>
     </div>
   </section>
+  ${state.signedIn ? `<a class="invite-friends-link" href="/friends.html?code=${escape(state.roomCode)}">Find a friend to share this link with</a>` : ''}
   <label for="invite-buy-in">Buy-in · virtual chips</label>
   <input id="invite-buy-in" type="number" min="1" max="1000000000" value="${state.settings.startingStack}" ${host ? '' : 'readonly'}>
   <p class="helper">${host ? 'Before the first hand, changing the buy-in updates every seated player. Later, it applies to new players only.' : 'The host sets the buy-in. Friends enter the code using Join a table.'}</p>`, async () => {
@@ -432,7 +462,7 @@ function donationDialog() {
   }, 'Confirm donation');
 }
 function openControls(targetId) {
-  const panel = document.getElementById(targetId || (state.hostId === state.playerId ? 'host-menu' : 'your-seat'));
+  const panel = document.getElementById(targetId || (state.permissions?.manage ? 'host-menu' : 'your-seat'));
   const sidebar = document.querySelector('#table .sidebar');
   $('#table-rail').open = true;
   panel.open = true;
@@ -467,19 +497,124 @@ const instructions = {
   flop: 'Reveal three community cards on the real table.',
   turn: 'Reveal the fourth community card on the real table.',
   river: 'Reveal the fifth and final community card.',
-  showdown: 'Reveal any remaining community cards, then your hole cards. The host selects winners below.',
+  showdown: 'Reveal any remaining community cards, then your hole cards. The host or co-host selects winners below.',
   complete: 'Chips settled. Collect the cards and get ready for the next hand.'
 };
 function option(p) { return `<option value="${escape(p.id)}">${escape(p.name)} · ${number(p.stack)}</option>`; }
 function alertControls() {
-  const preferences = window.Alerts?.preferences() || { sound: true, vibration: true, keepScreenOn: true };
-  const toggle = (key, label) => `<label class="preference-toggle"><input type="checkbox" data-alert-setting="${key}" ${preferences[key] ? 'checked' : ''}><span>${label}</span></label>`;
-  return `<section class="alert-controls" aria-label="Alerts and screen"><h3>Alerts & display</h3>${toggle('sound', 'Sound')}${window.Alerts?.vibrationSupported ? toggle('vibration', 'Vibration') : ''}${window.Alerts?.wakeLockSupported ? toggle('keepScreenOn', 'Keep screen on') : ''}<p class="helper">iPhone silent switch can mute sound.</p><button type="button" id="test-alert">Test alert</button></section>`;
+  return personalControls('seat');
+}
+function personalControls(scope) {
+  const prefs = window.TablematePrefs?.get();
+  if (!prefs) return '';
+  const check = (path, label, value) => `<label class="preference-toggle"><input type="checkbox" data-pref="${path}" ${value ? 'checked' : ''}><span>${label}</span></label>`;
+  const select = (path, label, value, choices) => `<label class="personal-field">${label}<select data-pref="${path}">${choices.map(([id, text]) => `<option value="${id}" ${value === id ? 'selected' : ''}>${text}</option>`).join('')}</select></label>`;
+  return `<details class="personal-settings" id="personal-${scope}"><summary>Personal settings</summary><div class="personal-settings-body"><p class="helper">Your preferences stay on this device in guest mode and sync when you sign in.</p><h4>Sound</h4>${check('sound.on', 'Turn and win sounds', prefs.sound.on)}${select('sound.pack', 'Sound pack', prefs.sound.pack, [['classic','Classic'],['soft','Soft'],['arcade','Arcade']])}<h4>Vibration</h4>${check('vibration.on', 'Vibrate for events', prefs.vibration.on)}${select('vibration.yourTurn','Your turn',prefs.vibration.yourTurn,[['off','Off'],['short','Short'],['double','Double tap'],['long','Long']])}${select('vibration.win','Win',prefs.vibration.win,[['off','Off'],['short','Short'],['double','Double tap'],['long','Long']])}<button type="button" data-pref-test>Test sound and vibration</button><h4>Display</h4>${select('motion','Motion',prefs.motion,[['auto','System'],['reduce','Reduced'],['full','Full']])}${select('contrast','Contrast',prefs.contrast,[['normal','Normal'],['high','High']])}${select('density','Layout',prefs.density,[['compact','Compact'],['comfortable','Comfortable'],['large','Large text']])}${check('leftHanded','Left-handed controls',prefs.leftHanded)}${check('wakeLock','Keep screen on at the table',prefs.wakeLock)}<h4>Seat defaults</h4>${select('defaultAvatar','Avatar',prefs.defaultAvatar,window.TablematePrefs.enums.avatar.map(id=>[id,id[0].toUpperCase()+id.slice(1)]))}${select('defaultSeatColor','Color',prefs.defaultSeatColor,window.TablematePrefs.enums.seatColor.map((id,i)=>[id,`Color ${i+1}`]))}<label class="personal-field">Nickname or pronunciation<input data-pref="note" maxlength="24" value="${escape(prefs.note)}" autocomplete="off"></label></div></details>`;
+}
+function openCosmetics() {
+  const dialog = $('#cosmetics-dialog');
+  const current = state.cosmetics?.[state.playerId] || { avatar: 'chip', color: 'c1', note: '' };
+  const avatarNames = window.TablematePrefs.enums.avatar;
+  const colorNames = window.TablematePrefs.enums.seatColor;
+  dialog.innerHTML = `<div class="cosmetics-picker"><h2 id="cosmetics-title">Your seat style</h2><p class="helper">Your avatar, color and note are visible to everyone at this table.</p><h4>Avatar</h4><div class="avatar-grid" role="radiogroup" aria-label="Seat avatar">${avatarNames.map(id => `<button type="button" role="radio" aria-label="${id}" aria-checked="${current.avatar === id}" data-avatar-choice="${id}">${avatarIcon(id)}</button>`).join('')}</div><h4>Seat color</h4><div class="color-grid" role="radiogroup" aria-label="Seat color">${colorNames.map((id, index) => `<button type="button" class="seat-color-${id}" role="radio" aria-label="Color ${index + 1}" aria-checked="${current.color === id}" data-color-choice="${id}"></button>`).join('')}</div><form id="cosmetics-note-form"><label for="cosmetics-note">Nickname or pronunciation · 24 characters max</label><input id="cosmetics-note" maxlength="24" value="${escape(current.note)}" autocomplete="off"><button type="submit">Save note</button></form><p id="cosmetics-error" role="alert"></p><button type="button" id="cosmetics-close">Done</button></div>`;
+  const update = async patch => {
+    try {
+      const result = await request('seat:cosmetics', patch);
+      receive(result.state);
+      dialog.querySelectorAll('[data-avatar-choice]').forEach(button => button.setAttribute('aria-checked', String(button.dataset.avatarChoice === result.state.cosmetics[result.state.playerId].avatar)));
+      dialog.querySelectorAll('[data-color-choice]').forEach(button => button.setAttribute('aria-checked', String(button.dataset.colorChoice === result.state.cosmetics[result.state.playerId].color)));
+      $('#cosmetics-error').textContent = '';
+    } catch (error) { $('#cosmetics-error').textContent = error.message; }
+  };
+  dialog.onclick = event => {
+    const avatar = event.target.closest('[data-avatar-choice]');
+    const color = event.target.closest('[data-color-choice]');
+    if (avatar) update({ avatar: avatar.dataset.avatarChoice });
+    if (color) update({ color: color.dataset.colorChoice });
+  };
+  dialog.onkeydown = event => {
+    const selected = event.target.closest('[role="radio"]');
+    if (!selected || !['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp'].includes(event.key)) return;
+    event.preventDefault();
+    const siblings = [...selected.parentElement.querySelectorAll('[role="radio"]')];
+    const direction = ['ArrowRight', 'ArrowDown'].includes(event.key) ? 1 : -1;
+    siblings[(siblings.indexOf(selected) + direction + siblings.length) % siblings.length].focus();
+  };
+  dialog.querySelector('#cosmetics-note-form').onsubmit = event => { event.preventDefault(); update({ note: $('#cosmetics-note').value.trim() }); };
+  dialog.querySelector('#cosmetics-close').onclick = () => dialog.close();
+  openSheet(dialog, { labelledBy: 'cosmetics-title' });
+}
+function policyFromForm() {
+  return $('#rebuy-policy-mode').value === 'auto'
+    ? { mode: 'auto', cap: Number($('#rebuy-policy-cap').value), maxPerPlayer: Number($('#rebuy-policy-limit').value) }
+    : { mode: 'host' };
+}
+function presetFromForm(name) {
+  return { name, startingStack: Number($('#starting-stack').value), smallBlind: Number($('#small-blind').value),
+    bigBlind: Number($('#big-blind').value), blindMinutes: Number($('#blind-minutes').value),
+    centsPer1000Chips: Math.round(Number($('#cash-value').value) * 100), rebuyPolicy: policyFromForm() };
+}
+function renderPresetChips() {
+  const all = [...window.TablematePresets.builtins.map((preset, index) => ({ ...preset, id: `builtin-${index}` })), ...savedPresets];
+  $('#preset-chips').innerHTML = all.map(preset => `<button type="button" data-preset-id="${escape(preset.id)}" aria-pressed="false">${escape(preset.name)}</button>`).join('');
+  $('#preset-account-actions').hidden = !canSavePresets;
+}
+function applyPreset(preset) {
+  for (const [id, value] of [['starting-stack', preset.startingStack], ['small-blind', preset.smallBlind], ['big-blind', preset.bigBlind],
+    ['blind-minutes', preset.blindMinutes], ['cash-value', (preset.centsPer1000Chips / 100).toFixed(2)]]) $(`#${id}`).value = value;
+  $('#rebuy-policy-mode').value = preset.rebuyPolicy.mode;
+  $('#rebuy-policy-cap').value = preset.rebuyPolicy.cap ?? preset.startingStack;
+  $('#rebuy-policy-limit').value = preset.rebuyPolicy.maxPerPlayer ?? 3;
+  $('#rebuy-policy-auto').hidden = preset.rebuyPolicy.mode !== 'auto';
+  document.querySelectorAll('[data-preset-id]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.presetId === preset.id)));
+}
+async function presetApi(method, path, body) {
+  const response = await fetch(`/api/me/presets${path}`, { method, headers: { 'Content-Type': 'application/json' },
+    ...(body ? { body: JSON.stringify(body) } : {}) });
+  if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || 'Could not save the preset.');
+  return response.json();
+}
+async function loadPresets() {
+  try { savedPresets = (await presetApi('GET', '')).presets; renderPresetChips(); }
+  catch (error) { toast(error.message); }
+}
+function openPresets(kind) {
+  const dialog = $('#presets-dialog');
+  const rows = savedPresets.map((preset, index) => `<li data-preset-row="${escape(preset.id)}"><strong>${escape(preset.name)}</strong><button type="button" data-preset-action="up" ${index ? '' : 'disabled'}>↑</button><button type="button" data-preset-action="down" ${index < savedPresets.length - 1 ? '' : 'disabled'}>↓</button><button type="button" data-preset-action="rename">Rename</button><button type="button" data-preset-action="delete" class="danger">Delete</button></li>`).join('');
+  dialog.innerHTML = `<div class="preset-manager"><h2 id="presets-title">${kind === 'save' ? 'Save a table preset' : 'Manage presets'}</h2>${kind === 'save' ? '<form id="preset-save-form"><label for="preset-name">Preset name</label><input id="preset-name" maxlength="20" required><button type="submit">Save preset</button></form>' : `<ol>${rows || '<li>No saved presets yet.</li>'}</ol>`}<p id="presets-error" role="alert"></p><button type="button" id="presets-close">Done</button></div>`;
+  dialog.querySelector('#presets-close').onclick = () => dialog.close();
+  dialog.querySelector('#preset-save-form')?.addEventListener('submit', async event => {
+    event.preventDefault();
+    try { await presetApi('POST', '', presetFromForm($('#preset-name').value.trim())); await loadPresets(); dialog.close(); toast('Preset saved.'); }
+    catch (error) { $('#presets-error').textContent = error.message; }
+  });
+  dialog.onclick = async event => {
+    const button = event.target.closest('[data-preset-action]');
+    if (!button) return;
+    const id = button.closest('[data-preset-row]').dataset.presetRow;
+    const index = savedPresets.findIndex(preset => preset.id === id);
+    const preset = savedPresets[index];
+    try {
+      if (button.dataset.presetAction === 'delete') await presetApi('DELETE', `/${id}`);
+      else if (button.dataset.presetAction === 'rename') {
+        const name = window.prompt('New preset name', preset.name);
+        if (name === null) return;
+        await presetApi('PATCH', `/${id}`, { preset: { ...preset, name: name.trim(), id: undefined, position: undefined, createdAt: undefined } });
+      } else {
+        const other = savedPresets[index + (button.dataset.presetAction === 'up' ? -1 : 1)];
+        if (!other) return;
+        await presetApi('PATCH', `/${id}`, { position: other.position });
+        await presetApi('PATCH', `/${other.id}`, { position: preset.position });
+      }
+      await loadPresets(); dialog.close(); openPresets('manage');
+    } catch (error) { $('#presets-error').textContent = error.message; }
+  };
+  openSheet(dialog, { labelledBy: 'presets-title' });
 }
 function rebuyRequestControls() {
   const pending = (state.rebuyRequests || []).find(item => item.id === state.playerId);
   if (pending) return `<section class="rebuy-request-controls"><h3>Rebuy request</h3><p role="status">Pending · ${number(pending.amount)} chips</p><button type="button" id="cancel-rebuy-request">Cancel request</button></section>`;
-  return `<form id="rebuy-request-form" class="rebuy-request-controls"><h3>Request rebuy</h3><label for="rebuy-request-amount">Amount · virtual chips</label><div class="amount-stepper"><button type="button" data-rebuy-step="-1" aria-label="Decrease rebuy amount">−</button><input id="rebuy-request-amount" type="number" inputmode="numeric" min="1" max="1000000000" step="1" value="${state.settings.startingStack}" required><button type="button" data-rebuy-step="1" aria-label="Increase rebuy amount">+</button></div><p class="helper">The host approves requests between hands.</p><button type="submit">Send rebuy request</button></form>`;
+  return `<form id="rebuy-request-form" class="rebuy-request-controls"><h3>Request rebuy</h3><label for="rebuy-request-amount">Amount · virtual chips</label><div class="amount-stepper"><button type="button" data-rebuy-step="-1" aria-label="Decrease rebuy amount">−</button><input id="rebuy-request-amount" type="number" inputmode="numeric" min="1" max="1000000000" step="1" value="${state.settings.startingStack}" required><button type="button" data-rebuy-step="1" aria-label="Increase rebuy amount">+</button></div><p class="helper">${state.rebuyPolicy?.mode === 'auto' ? `Requests up to ${number(state.rebuyPolicy.cap)} chips auto-approve between hands, up to ${state.rebuyPolicy.maxPerPlayer} times per player. The host reviews other requests.` : 'The host approves requests between hands.'}</p><button type="submit">Send rebuy request</button></form>`;
 }
 function tonightText(summary) {
   const totals = summary.rebuyTotals || summary.rows.reduce((result, row) => ({
@@ -552,9 +687,9 @@ function renderRebuyRequests(force = false) {
   const dialog = $('#rebuy-requests-dialog');
   if (!dialog.open && !force) return;
   const snapshot = dialog.open ? captureRegion(dialog) : null;
-  const requests = state.hostId === state.playerId ? (state.rebuyRequests || []) : [];
+  const requests = state.permissions?.manage ? (state.rebuyRequests || []) : [];
   const rows = requests.map(item => `<article class="rebuy-request-row"><div><h3>${escape(item.name)}</h3><p>Requested ${number(item.amount)} chips</p></div><label for="request-amount-${escape(item.id)}">Approve amount</label><input id="request-amount-${escape(item.id)}" data-request-amount="${escape(item.id)}" type="number" inputmode="numeric" min="1" max="1000000000" step="1" value="${item.amount}"><div class="rebuy-request-actions"><button type="button" data-rebuy-approve="${escape(item.id)}">Approve</button><button type="button" class="quiet danger" data-rebuy-deny="${escape(item.id)}">Deny</button></div></article>`).join('');
-  dialog.innerHTML = `<section class="rebuy-requests-sheet"><header class="tonight-header"><div><p class="eyebrow">HOST CONTROLS</p><h2 id="rebuy-requests-title">Rebuy requests (${requests.length})</h2></div><button type="button" class="seat-sheet-close" data-close-rebuy aria-label="Close rebuy requests">×</button></header><p id="rebuy-request-message" role="alert" class="seat-message">${escape(rebuyRequestMessage)}</p>${rows || '<p class="empty-ledger">No pending requests.</p>'}</section>`;
+  dialog.innerHTML = `<section class="rebuy-requests-sheet"><header class="tonight-header"><div><p class="eyebrow">TABLE CONTROLS</p><h2 id="rebuy-requests-title">Rebuy requests (${requests.length})</h2></div><button type="button" class="seat-sheet-close" data-close-rebuy aria-label="Close rebuy requests">×</button></header><p id="rebuy-request-message" role="alert" class="seat-message">${escape(rebuyRequestMessage)}</p>${rows || '<p class="empty-ledger">No pending requests.</p>'}</section>`;
   if (snapshot) restoreRegion(dialog, snapshot);
   dialog.querySelector('[data-close-rebuy]').addEventListener('click', () => dialog.close());
   dialog.querySelectorAll('[data-rebuy-approve]').forEach(button => button.addEventListener('click', () => respondToRebuy(button.dataset.rebuyApprove, true)));
@@ -586,6 +721,12 @@ function leaveConfirmation() {
   const net = row ? `${row.net > 0 ? '+' : ''}${number(row.net)} chips${row.netMoney ? ` · ${row.netMoney}` : ''}` : 'No settled totals yet.';
   showDialog('Leave table', `<p>Your net so far: <strong>${escape(net)}</strong>.</p><p class="helper">Leaving removes your seat. You can copy the Tonight summary first.</p>`, async () => { await request('leave'); if (state) reset('You left the table.'); }, 'Leave table');
 }
+function endLeagueNight() {
+  showDialog('End league night', '<p>Save tonight’s results and close this league table for everyone?</p><p class="helper">The completed night will appear in league history and standings.</p>', async () => {
+    await request('host:endNight');
+    if (state) reset('League night ended. Results saved.');
+  }, 'End night');
+}
 function nextAssignments(order, changed) {
   const eligible = order.filter(id => { const p = state.players.find(p => p.id === id); return p.stack > 0 && !p.sittingOut; });
   if (eligible.length < 2) return {};
@@ -602,7 +743,7 @@ function renderSeatReorder(force = false) {
   if ((!dialog.open && !force) || dragSeat) return;
   const previousScroll = dialog.querySelector('.seat-sort-list')?.scrollTop || 0;
   const focusedPlayer = document.activeElement?.closest?.('[data-seat-row]')?.dataset.playerId;
-  const host = state.hostId === state.playerId;
+  const host = state.permissions?.manage;
   const editable = host && ['lobby', 'complete'].includes(state.street);
   const changed = JSON.stringify(seatDraft) !== JSON.stringify(state.seatOrder);
   const roles = editable ? nextAssignments(seatDraft, changed) : { D: state.players.find(p => p.seat === state.dealerSeat)?.id, SB: state.smallBlindId, BB: state.bigBlindId };
@@ -613,7 +754,7 @@ function renderSeatReorder(force = false) {
     const label = `Seat ${index + 1}, ${escape(player.name)}, stack ${number(player.stack)}${Object.entries(roles).filter(([, playerId]) => playerId === id).map(([role]) => `, ${roleNames[role]}`).join('')}`;
     return `<li data-seat-row data-player-id="${escape(id)}" tabindex="0" aria-label="${label}" ${editable ? 'aria-roledescription="sortable seat" aria-grabbed="false"' : ''}><button type="button" class="seat-grip" aria-label="Drag ${escape(player.name)}">⠿</button><span class="seat-index">${index + 1}</span><strong class="seat-player">${escape(player.name)}</strong><span class="seat-stack" title="${number(player.stack)} chips" aria-label="${number(player.stack)} chips">${compactStack(player.stack)}</span><span class="seat-role-chips">${badges}</span>${editable ? `<span class="seat-actions"><button type="button" data-seat-move="up" aria-label="Move ${escape(player.name)} up" ${index === 0 ? 'disabled' : ''}>↑</button><button type="button" data-seat-move="down" aria-label="Move ${escape(player.name)} down" ${index === seatDraft.length - 1 ? 'disabled' : ''}>↓</button></span>` : ''}</li>`;
   }).join('');
-  dialog.innerHTML = `<section class="seat-sheet ${editable ? '' : 'read-only'}"><header class="seat-sheet-header"><div><p class="eyebrow">TABLE SEATING</p><h2 id="seat-reorder-title">${editable ? 'Arrange players' : 'Seat order'}</h2></div><button type="button" class="seat-sheet-close" aria-label="Close seat order">×</button></header><p class="seat-sheet-note">${editable ? 'Drag by the handle, hold a row, or use the arrow keys. Seat 1 stays at the top.' : 'This order is read-only. Ask the host to change seats between hands.'}</p><p class="seat-preview" id="seat-preview">Next hand: ${['D', 'SB', 'BB'].map(role => `${role} ${escape(state.players.find(p => p.id === roles[role])?.name || '—')}`).join(' · ')}</p>${state.players.length ? `<ol class="seat-sort-list" aria-label="${editable ? 'Reorder players' : 'Player seat order'}">${rows}</ol>` : '<p>No players seated.</p>'}<p class="seat-message" role="status">${escape(seatMessage)}</p><div class="seat-live sr-only" aria-live="polite" aria-atomic="true"></div>${editable ? `<footer class="seat-sheet-footer"><button type="button" class="seat-shuffle">Shuffle seats</button><button type="button" class="seat-cancel">Cancel</button><button type="button" class="primary seat-save" ${!changed || busy || !ready ? 'disabled' : ''}>Save order</button></footer>` : ''}</section>`;
+  dialog.innerHTML = `<section class="seat-sheet ${editable ? '' : 'read-only'}"><header class="seat-sheet-header"><div><p class="eyebrow">TABLE SEATING</p><h2 id="seat-reorder-title">${editable ? 'Arrange players' : 'Seat order'}</h2></div><button type="button" class="seat-sheet-close" aria-label="Close seat order">×</button></header><p class="seat-sheet-note">${editable ? 'Drag by the handle, hold a row, or use the arrow keys. Seat 1 stays at the top.' : 'This order is read-only. Ask the host or co-host to change seats between hands.'}</p><p class="seat-preview" id="seat-preview">Next hand: ${['D', 'SB', 'BB'].map(role => `${role} ${escape(state.players.find(p => p.id === roles[role])?.name || '—')}`).join(' · ')}</p>${state.players.length ? `<ol class="seat-sort-list" aria-label="${editable ? 'Reorder players' : 'Player seat order'}">${rows}</ol>` : '<p>No players seated.</p>'}<p class="seat-message" role="status">${escape(seatMessage)}</p><div class="seat-live sr-only" aria-live="polite" aria-atomic="true"></div>${editable ? `<footer class="seat-sheet-footer"><button type="button" class="seat-shuffle">Shuffle seats</button><button type="button" class="seat-cancel">Cancel</button><button type="button" class="primary seat-save" ${!changed || busy || !ready ? 'disabled' : ''}>Save order</button></footer>` : ''}</section>`;
   const list = dialog.querySelector('.seat-sort-list'); if (list) list.scrollTop = previousScroll;
   if (focusedPlayer) dialog.querySelector(`[data-player-id="${CSS.escape(focusedPlayer)}"]`)?.focus({ preventScroll: true });
   dialog.querySelector('.seat-sheet-close').addEventListener('click', () => dialog.close());
@@ -745,18 +886,56 @@ function seatOval(order) {
     const p = state.players.find(player => player.id === id);
     const status = playing && p.folded ? '× Folded' : playing && p.inHand && p.stack === 0 ? '⚡ All-in' : p.sittingOut ? '⏸ Away' : !p.connected ? '⏸ Offline' : p.id === state.turn ? '▶ To act' : playing ? '● In hand' : '✓ Ready';
     const statusKind = playing && p.folded ? 'folded' : playing && p.inHand && p.stack === 0 ? 'allin' : p.sittingOut || !p.connected ? 'away' : p.id === state.turn ? 'active' : 'ready';
-    return `<article class="oval-seat slot-${index} ${p.id === state.turn ? 'acting' : ''} ${p.id === state.playerId ? 'my-seat' : ''} ${playing && p.folded ? 'folded-seat' : ''}"><div class="oval-name"><small>${index + 1}</small><strong title="${escape(p.name)}">${escape(p.name)}</strong></div><span class="seat-owner">${p.id === state.playerId ? `You • Seat ${index + 1}` : `Seat ${index + 1}`}</span><div class="seat-roles">${Object.entries(roles).filter(([, id]) => id === p.id).map(([role]) => `<span class="role-${role}" title="${role === 'D' ? 'Dealer' : role === 'SB' ? 'Small blind' : 'Big blind'}">${role}</span>`).join('')}</div><strong class="oval-stack" title="${number(p.stack)} chips" aria-label="${number(p.stack)} chips">${compactStack(p.stack)}</strong><small>Bet ${number(p.streetBet)}</small><span class="oval-status status-${statusKind} ${!playing && p.connected && !p.sittingOut ? 'ready-pill' : ''}">${status}</span></article>`;
+    const cosmetic = state.cosmetics?.[id] || { avatar: 'chip', color: 'c1' };
+    const social = state.socialSeats?.includes(id);
+    return `<article class="oval-seat slot-${index} seat-color-${escape(cosmetic.color)} ${social ? 'social-seat' : ''} ${[2, 3].includes(state.identities?.[id]?.avatar?.v) ? 'character-seat' : ''} ${p.id === state.turn ? 'acting' : ''} ${p.id === state.playerId ? 'my-seat' : ''} ${playing && p.folded ? 'folded-seat' : ''}" ${social ? `data-friend-seat="${escape(id)}" role="button" tabindex="0" aria-label="View ${escape(p.name)}'s account and friendship"` : ''}><div class="oval-name"><small>${index + 1}</small>${tableAvatar(id, cosmetic, p.name, 64)}<strong title="${escape(p.name)}">${escape(p.name)}</strong>${tableUsername(id)}</div><span class="seat-owner">${p.id === state.playerId ? `You • Seat ${index + 1}` : `Seat ${index + 1}`}</span><div class="seat-roles">${Object.entries(roles).filter(([, id]) => id === p.id).map(([role]) => `<span class="role-${role}" title="${role === 'D' ? 'Dealer' : role === 'SB' ? 'Small blind' : 'Big blind'}">${role}</span>`).join('')}</div><strong class="oval-stack" title="${number(p.stack)} chips" aria-label="${number(p.stack)} chips">${compactStack(p.stack)}</strong><small>Bet ${number(p.streetBet)}</small><span class="oval-status status-${statusKind} ${!playing && p.connected && !p.sittingOut ? 'ready-pill' : ''}">${status}</span></article>`;
   }).join('')}</div>`;
+}
+async function openFriendSeat(seatId) {
+  if (!state?.signedIn || !state.socialSeats?.includes(seatId)) return;
+  const dialog = $('#friend-seat-dialog'); const content = $('#friend-seat-content');
+  content.textContent = 'Loading player account…';
+  if (!dialog.open) dialog.show();
+  try {
+    const path = `/api/friends/table/${encodeURIComponent(state.roomCode)}/${encodeURIComponent(seatId)}`;
+    const response = await fetch(path);
+    const peer = await response.json();
+    if (!response.ok) throw new Error(peer.error || 'Account unavailable.');
+    content.replaceChildren();
+    if (peer.avatar && window.TablemateAvatar?.valid(peer.avatar)) content.append(window.TablemateAvatar.renderAvatar(peer.avatar, 64, peer.displayName));
+    const name = document.createElement('strong'); name.textContent = peer.displayName; content.append(name);
+    if (peer.username) { const handle = document.createElement('span'); handle.textContent = `@${peer.username}`; content.append(handle); }
+    const relation = document.createElement('p');
+    relation.textContent = ({ friends: 'Already friends', 'request-sent': 'Friend request sent',
+      'request-received': 'This player sent you a request', blocked: 'You blocked this player',
+      'not-friends': 'Not friends yet' })[peer.status] || 'Unavailable';
+    content.append(relation);
+    if (peer.status === 'not-friends') {
+      const button = document.createElement('button'); button.type = 'button'; button.textContent = 'Send friend request';
+      button.addEventListener('click', async () => {
+        button.disabled = true;
+        try {
+          const sent = await fetch(`${path}/request`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+          const result = await sent.json(); if (!sent.ok) throw new Error(result.error || 'Request failed.');
+          relation.textContent = result.status === 'friends' ? 'You are now friends.' : 'Friend request sent.';
+          button.remove(); refreshFriendsCount();
+        } catch (error) { relation.textContent = error.message; button.disabled = false; }
+      }); content.append(button);
+    } else if (peer.status === 'request-received' || peer.status === 'blocked') {
+      const link = document.createElement('a'); link.href = '/friends.html'; link.textContent = 'Manage in Friends'; content.append(link);
+    }
+  } catch (error) { content.textContent = error.message; }
 }
 function positionSeats() {
   document.querySelectorAll('.seat-oval').forEach(oval => {
     const width = oval.clientWidth;
     const occupied = oval.querySelectorAll('.oval-seat').length;
+    const hasCharacters = Boolean(oval.querySelector('.character-seat'));
     const seatsPerWidth = occupied <= 2 ? 2 : occupied === 3 ? 3.5 : occupied === 4 ? 3 : occupied <= 6 ? 4 : 4.5;
     const cardWidth = Math.min(140, Math.floor((width - 24) / seatsPerWidth));
-    const height = occupied <= 2 ? 380 : occupied <= 4 ? 440 : occupied === 9 ? 580 : 540;
+    const height = hasCharacters && occupied >= 7 ? 650 : occupied <= 2 ? 380 : occupied <= 4 ? 440 : occupied === 9 ? 580 : 540;
     const rx = (width - cardWidth - 12) / 2;
-    const ry = (height - 112) / 2;
+    const ry = (height - (hasCharacters ? 144 : 112)) / 2;
     oval.style.height = `${height}px`;
     const mine = oval.querySelector('.my-seat');
     const ownSlot = mine ? Number([...mine.classList].find(c => c.startsWith('slot-')).slice(5)) : 0;
@@ -829,7 +1008,7 @@ function render() {
   if (!state) return;
   const me = state.players.find(p => p.id === state.playerId);
   if (!me) return;
-  const host = state.hostId === state.playerId;
+  const host = state.permissions?.manage;
   const requestCount = host ? (state.rebuyRequests || []).length : 0;
   const playing = !['lobby', 'complete'].includes(state.street);
   const actor = state.players.find(p => p.id === state.turn);
@@ -848,12 +1027,12 @@ function render() {
         ${state.street === 'showdown' && state.pots.length > 1 ? `<div class="pot-summary">${state.pots.map((p, i) => `<span>${i ? `Side pot ${i}` : 'Main pot'} · ${number(p.amount)}</span>`).join('')}</div>` : ''}</div>
       ${seatOval(state.seatOrder)}</div><div class="table-meta"><span>Action moves clockwise</span><span id="blind-clock"></span></div>
       ${state.lastResult && state.street === 'complete' ? `<section class="result"><h2>That’s a hand.</h2>${state.lastResult.awards.map(a => `<p>${escape(state.players.find(p => p.id === a.id)?.name || 'Departed player')} <strong>+${number(a.amount)}</strong> · ${escape(a.label)}</p>`).join('')}${[...new Set(state.lastResult.awards.map(a => a.id))].map(id => { const winner = state.players.find(p => p.id === id); return winner ? `<p class="winner-record">${escape(winner.name)} has won ${winner.handsWon} of ${winner.handsPlayed} played hands; dealt ${winner.handsDealt} total tonight.</p>` : ''; }).join('')}</section>` : ''}
-      ${state.street === 'showdown' ? `<section class="showdown"><h2>Who takes the pot?</h2><p class="helper">${host ? 'Select every tied winner for each pot. Chips settle after all pots are assigned; odd chips go left of the dealer.' : 'The host is selecting winners from the physical cards.'}</p>${state.pots.map((pot, index) => `<form class="winner-form" data-pot="${pot.id}"><h3>${index ? `Side pot ${index}` : 'Main pot'} · ${number(pot.amount)} chips</h3>${pot.winners ? `<p class="helper">Selected: ${pot.winners.map(id => escape(state.players.find(p => p.id === id).name)).join(' + ')}</p>` : pot.eligible.map(id => `<label for="winner-${pot.id}-${id}"><input id="winner-${pot.id}-${id}" type="checkbox" name="winner" value="${escape(id)}" ${!host ? 'disabled' : ''}>${escape(state.players.find(p => p.id === id).name)}</label>`).join('')}${host && !pot.winners ? '<button class="primary" type="submit">Confirm winner(s)</button>' : ''}</form>`).join('')}</section>` : ''}
+      ${state.street === 'showdown' ? `<section class="showdown"><h2>Who takes the pot?</h2><p class="helper">${host ? 'Select every tied winner for each pot. Chips settle after all pots are assigned; odd chips go left of the dealer.' : 'The host or co-host is selecting winners from the physical cards.'}</p>${state.pots.map((pot, index) => `<form class="winner-form" data-pot="${pot.id}"><h3>${index ? `Side pot ${index}` : 'Main pot'} · ${number(pot.amount)} chips</h3>${pot.winners ? `<p class="helper">Selected: ${pot.winners.map(id => escape(state.players.find(p => p.id === id).name)).join(' + ')}</p>` : pot.eligible.map(id => `<label for="winner-${pot.id}-${id}"><input id="winner-${pot.id}-${id}" type="checkbox" name="winner" value="${escape(id)}" ${!host ? 'disabled' : ''}>${escape(state.players.find(p => p.id === id).name)}</label>`).join('')}${host && !pot.winners ? '<button class="primary" type="submit">Confirm winner(s)</button>' : ''}</form>`).join('')}</section>` : ''}
     </section><details class="rail-drawer" id="table-rail" ${railMedia.matches ? 'open' : ''}><summary>Players, hand log & controls</summary><aside class="sidebar">
-      <details class="panel" id="players-panel" open><summary>Players <span>${state.players.length}/10</span></summary><ul class="players-list">${state.seatOrder.map(id => { const p = state.players.find(p => p.id === id); return `<li><strong>${escape(p.name)}${p.id === state.playerId ? ' · You' : ''}</strong><span>${p.sittingOut ? '⏸ Away' : p.connected ? '✓ Connected' : '⏸ Offline'}</span><span>Won ${p.handsWon} · Played ${p.handsPlayed} · Dealt ${p.handsDealt}</span></li>`; }).join('')}</ul><div class="panel-content"><button id="donate-chips" ${playing || me.stack < 1 || state.players.length < 2 ? 'disabled' : ''}>Donate chips</button><button id="open-tonight-players">Tonight</button><p class="helper">${playing ? 'Available between hands.' : 'Give chips from your stack to another player.'}</p></div></details>
+      <details class="panel" id="players-panel" open><summary>Players <span>${state.players.length}/10</span></summary><ul class="players-list">${state.seatOrder.map(id => { const p = state.players.find(p => p.id === id); const cosmetic = state.cosmetics?.[id] || { avatar:'chip',color:'c1',note:'' }; return `<li class="seat-color-${escape(cosmetic.color)}"><strong>${tableAvatar(id, cosmetic, p.name, 24)} ${escape(p.name)}${tableUsername(id)}${p.id === state.playerId ? ' · You' : ''}</strong><span>${p.sittingOut ? '⏸ Away' : p.connected ? '✓ Connected' : '⏸ Offline'}</span>${cosmetic.note ? `<span class="seat-note">${escape(cosmetic.note)}</span>` : ''}<span>Won ${p.handsWon} · Played ${p.handsPlayed} · Dealt ${p.handsDealt}</span></li>`; }).join('')}</ul><div class="panel-content"><button id="donate-chips" ${playing || me.stack < 1 || state.players.length < 2 ? 'disabled' : ''}>Donate chips</button><button id="open-tonight-players">Tonight</button><p class="helper">${playing ? 'Available between hands.' : 'Give chips from your stack to another player.'}</p></div></details>
       <details class="panel" id="hand-log" ${railMedia.matches ? 'open' : ''}><summary>Hand log <span>Hand ${state.handNumber}</span></summary><ol class="log-list">${handLog()}</ol></details>
-      ${host ? hostPanel(playing, actor) : ''}
-      <details class="panel" id="your-seat"><summary>Your seat</summary><div class="panel-content"><p class="helper">${playing ? 'Sit out applies from the next hand. Leave and rebuy between hands.' : 'Ask your host for a rebuy or add-on.'}</p><button id="sit-out">${me.sittingOut ? 'Play next hand' : 'Sit out next hand'}</button><button id="leave" class="quiet danger" ${playing ? 'disabled' : ''}>Leave table</button>${rebuyRequestControls()}${themePickerMarkup('seat')}${pushControls()}${alertControls()}</div></details>
+      ${host ? hostPanel(playing, actor, state.permissions.owner) : ''}
+      <details class="panel" id="your-seat"><summary>Your seat</summary><div class="panel-content"><p class="helper">${playing ? 'Sit out applies from the next hand. Leave and rebuy between hands.' : 'Ask your host for a rebuy or add-on.'}</p><button id="sit-out">${me.sittingOut ? 'Play next hand' : 'Sit out next hand'}</button><button id="leave" class="quiet danger" ${playing ? 'disabled' : ''}>Leave table</button><button type="button" id="open-cosmetics">Avatar & seat color</button>${rebuyRequestControls()}${themePickerMarkup('seat')}${pushControls()}${alertControls()}</div></details>
     </aside></details></div>
     <section class="dock" aria-label="Your betting controls"><div class="dock-inner"><div class="dock-summary"><div class="turn-label ${state.legal.active ? '' : 'waiting'}${ready && !state.legal.active && actor ? ' other-turn' : ''}" role="status">${!ready ? 'RECONNECTING' : state.legal.active ? 'YOUR TURN' : state.street === 'showdown' ? 'SHOWDOWN' : actor ? `${escape(actor.name).toUpperCase()} TO ACT` : host ? 'HOST · TABLE CONTROLS' : 'WAITING FOR HOST'}</div><div class="balance"><span>Your stack</span><strong>${number(me.stack)}</strong></div><div class="balance"><span>To call</span><strong>${number(state.legal.toCall)}</strong></div></div>
       ${!playing ? `<div class="lobby-actions"><button id="invite-players">Invite players</button><button id="change-seat">Change seat</button><button id="set-buy-in">${host ? 'Set buy-in' : 'View buy-in'}</button><button id="open-tonight-dock">Tonight</button>${host ? `<button id="open-rebuy-requests-dock" ${requestCount ? '' : 'disabled'}>Rebuy requests (${requestCount})</button><button id="start-hand" class="primary" ${state.players.filter(p => p.stack > 0 && !p.sittingOut).length < 2 ? 'disabled' : ''}>${state.handNumber ? 'Start next hand' : 'Start game'} →</button>` : '<span class="helper">Your host starts the hand.</span>'}</div>` : ''}
@@ -870,18 +1049,20 @@ function render() {
       })() : ''}
     </div></section>`;
   restoreRegion(tableRoot, uiState);
+  window.AvatarV2?.hydrate(tableRoot);
   document.querySelectorAll('#table .theme-picker-section').forEach(wireThemePicker);
   wireTable(me, total); updateClock(); setButtons(); renderSeatReorder();
   ellipseObserver.disconnect();
   document.querySelectorAll('.seat-oval').forEach(el => ellipseObserver.observe(el));
   positionSeats();
 }
-function hostPanel(playing, actor) {
+function hostPanel(playing, actor, owner) {
   const requestCount = (state.rebuyRequests || []).length;
-  return `<details class="panel" id="host-menu"><summary tabindex="0">Host controls</summary><div class="panel-content"><button id="undo" ${!state.canUndo ? 'disabled' : ''}>Undo last action</button><button type="button" id="open-rebuy-requests-host" ${requestCount ? '' : 'disabled'}>Rebuy requests (${requestCount})</button>${actor && !actor.connected ? '<button id="host-fold" class="danger">Fold disconnected player</button>' : ''}<p class="helper">${playing ? 'Settings are available between hands.' : 'Changes to the starting stack apply to new seats. Before the first hand, they apply to everyone.'}</p>
+  return `<details class="panel" id="host-menu"><summary tabindex="0">${owner ? 'Host controls' : 'Co-host controls'}</summary><div class="panel-content">${owner ? `<button id="undo" ${!state.canUndo ? 'disabled' : ''}>Undo last action</button>` : ''}<button type="button" id="open-rebuy-requests-host" ${requestCount ? '' : 'disabled'}>Rebuy requests (${requestCount})</button>${actor && !actor.connected ? '<button id="host-fold" class="danger">Fold disconnected player</button>' : ''}${state.leagueTable && state.handNumber > 0 ? `<button type="button" id="end-league-night" class="quiet" ${playing ? 'disabled' : ''}>End league night</button>` : ''}<p class="helper">${playing ? 'Settings are available between hands.' : 'Changes to the starting stack apply to new seats. Before the first hand, they apply to everyone.'}</p>
     <form id="settings-form"><div class="form-grid"><div><label for="host-stack">Starting stack</label><input id="host-stack" type="number" min="1" max="1000000000" value="${state.settings.startingStack}" ${playing ? 'disabled' : ''} required></div><div><label for="host-timer">Timer (minutes)</label><input id="host-timer" type="number" min="0" max="1440" value="${state.settings.blindMinutes}" ${playing ? 'disabled' : ''} required></div><div><label for="host-sb">Small blind</label><input id="host-sb" type="number" min="1" value="${state.settings.smallBlind}" ${playing ? 'disabled' : ''} required></div><div><label for="host-bb">Big blind</label><input id="host-bb" type="number" min="1" value="${state.settings.bigBlind}" ${playing ? 'disabled' : ''} required></div><div><label for="host-cash-value">Cash value per 1,000 chips ($)</label><input id="host-cash-value" type="number" inputmode="decimal" min="0" max="100000" step="0.01" value="${(state.settings.centsPer1000Chips / 100).toFixed(2)}" ${playing ? 'disabled' : ''}></div></div><button type="submit" ${playing ? 'disabled' : ''}>Save table settings</button></form>
-    <form id="rebuy-form"><label for="rebuy-player">Rebuy / add-on</label><select id="rebuy-player" ${playing ? 'disabled' : ''}>${state.players.map(option).join('')}</select><label for="rebuy-amount">Chips to add</label><input id="rebuy-amount" type="number" min="1" max="1000000000" value="${state.settings.startingStack}" ${playing ? 'disabled' : ''} required><button type="submit" ${playing ? 'disabled' : ''}>Add chips</button></form>
-    ${state.players.length > 1 ? `<form id="kick-form"><label for="kick-player">Remove a player</label><select id="kick-player" ${playing ? 'disabled' : ''}>${state.players.filter(p => p.id !== state.playerId).map(option).join('')}</select><button class="danger quiet" type="submit" ${playing ? 'disabled' : ''}>Remove selected player</button></form>` : ''}</div></details>`;
+    <form id="host-policy-form"><h3>Rebuy approval</h3><label for="host-policy-mode">Mode</label><select id="host-policy-mode"><option value="host" ${state.rebuyPolicy?.mode === 'host' ? 'selected' : ''}>Host approves</option><option value="auto" ${state.rebuyPolicy?.mode === 'auto' ? 'selected' : ''}>Auto-approve up to a cap</option></select><div id="host-policy-auto" ${state.rebuyPolicy?.mode === 'auto' ? '' : 'hidden'}><label for="host-policy-cap">Cap · chips</label><input id="host-policy-cap" type="number" min="1" max="1000000000" value="${state.rebuyPolicy?.cap ?? state.settings.startingStack}"><label for="host-policy-limit">Auto rebuys per player</label><input id="host-policy-limit" type="number" min="0" max="20" value="${state.rebuyPolicy?.maxPerPlayer ?? 3}"></div><button type="submit">Save rebuy policy</button></form>
+    ${owner ? `<form id="rebuy-form"><label for="rebuy-player">Rebuy / add-on</label><select id="rebuy-player" ${playing ? 'disabled' : ''}>${state.players.map(option).join('')}</select><label for="rebuy-amount">Chips to add</label><input id="rebuy-amount" type="number" min="1" max="1000000000" value="${state.settings.startingStack}" ${playing ? 'disabled' : ''} required><button type="submit" ${playing ? 'disabled' : ''}>Add chips</button></form>` : ''}
+    ${owner && state.players.length > 1 ? `<form id="kick-form"><label for="kick-player">Remove a player</label><select id="kick-player" ${playing ? 'disabled' : ''}>${state.players.filter(p => p.id !== state.playerId).map(option).join('')}</select><button class="danger quiet" type="submit" ${playing ? 'disabled' : ''}>Remove selected player</button></form>` : ''}</div></details>`;
 }
 function wireTable(me, pot) {
   $('#copy-code').addEventListener('click', async () => {
@@ -891,6 +1072,12 @@ function wireTable(me, pot) {
   $('#table-settings').addEventListener('click', () => openControls());
   $('#donate-chips').addEventListener('click', donationDialog);
   $('#header-invite').addEventListener('click', inviteDialog);
+  document.querySelectorAll('[data-friend-seat]').forEach(seat => {
+    seat.addEventListener('click', () => openFriendSeat(seat.dataset.friendSeat));
+    seat.addEventListener('keydown', event => {
+      if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openFriendSeat(seat.dataset.friendSeat); }
+    });
+  });
   $('#invite-players')?.addEventListener('click', inviteDialog);
   $('#set-buy-in')?.addEventListener('click', inviteDialog);
   $('#change-seat')?.addEventListener('click', openSeatReorder);
@@ -901,16 +1088,16 @@ function wireTable(me, pot) {
   $('#start-hand')?.addEventListener('click', () => run('start-hand'));
   $('#undo')?.addEventListener('click', () => run('undo'));
   $('#host-fold')?.addEventListener('click', () => run('host-fold'));
+  $('#end-league-night')?.addEventListener('click', endLeagueNight);
   $('#sit-out').addEventListener('click', () => run('sit-out', { value: !me.sittingOut }));
   $('#leave').addEventListener('click', leaveConfirmation);
+  $('#open-cosmetics').addEventListener('click', openCosmetics);
   $('#rebuy-request-form')?.addEventListener('submit', event => {
     event.preventDefault(); run('rebuy:request', { amount: Number($('#rebuy-request-amount').value) });
   });
   $('#cancel-rebuy-request')?.addEventListener('click', () => run('rebuy:cancel'));
   $('#open-tonight-players')?.addEventListener('click', openTonight);
   $('#open-tonight-dock')?.addEventListener('click', openTonight);
-  document.querySelectorAll('[data-alert-setting]').forEach(input => input.addEventListener('change', () => window.Alerts?.setPreference(input.dataset.alertSetting, input.checked)));
-  $('#test-alert')?.addEventListener('click', () => window.Alerts?.test());
   $('#toggle-push')?.addEventListener('click', () => togglePushNotifications().catch(error => toast(error.message)));
   document.querySelectorAll('[data-action]').forEach(el => el.addEventListener('click', () => run('action', { type: el.dataset.action })));
   $('#toggle-raise')?.addEventListener('click', () => { raiseOpen = !raiseOpen; render(); });
@@ -945,6 +1132,12 @@ function wireTable(me, pot) {
   $('#settings-form')?.addEventListener('submit', event => {
     event.preventDefault(); run('host-settings', { settings: { startingStack: Number($('#host-stack').value), smallBlind: Number($('#host-sb').value), bigBlind: Number($('#host-bb').value), blindMinutes: Number($('#host-timer').value), centsPer1000Chips: Math.round(Number($('#host-cash-value').value) * 100) } });
   });
+  $('#host-policy-mode')?.addEventListener('change', () => { $('#host-policy-auto').hidden = $('#host-policy-mode').value !== 'auto'; });
+  $('#host-policy-form')?.addEventListener('submit', event => {
+    event.preventDefault();
+    const mode = $('#host-policy-mode').value;
+    run('host:rebuyPolicy', mode === 'auto' ? { mode, cap: Number($('#host-policy-cap').value), maxPerPlayer: Number($('#host-policy-limit').value) } : { mode });
+  });
   $('#rebuy-form')?.addEventListener('submit', event => { event.preventDefault(); run('rebuy', { playerId: $('#rebuy-player').value, amount: Number($('#rebuy-amount').value) }); });
   $('#kick-form')?.addEventListener('submit', event => { event.preventDefault(); run('kick', { playerId: $('#kick-player').value }); });
   document.querySelectorAll('.winner-form').forEach(form => form.addEventListener('submit', event => {
@@ -973,8 +1166,65 @@ document.addEventListener('visibilitychange', reportPresence);
 window.addEventListener('focus', reportPresence);
 updateKeyboardInset();
 setInterval(updateClock, 1000);
+$('#friend-seat-close').addEventListener('click', () => $('#friend-seat-dialog').close());
+async function refreshFriendsCount() {
+  try {
+    const response = await fetch('/api/friends/summary'); if (!response.ok) return;
+    const { unread } = await response.json(); const count = $('#friends-count');
+    count.hidden = !unread; count.textContent = unread > 9 ? '9+' : String(unread);
+    $('#friends-link').setAttribute('aria-label', unread ? `Friends, ${unread} new updates` : 'Friends');
+  } catch { /* The table keeps working if friend updates are unavailable. */ }
+}
+fetch('/api/config').then(response => response.json()).then(async config => {
+  if (!config.accounts) return;
+  const response = await fetch('/api/me');
+  const link = $('#account-link');
+  link.hidden = false;
+  $('#home-account').hidden = false;
+  if (!response.ok) return;
+  const account = await response.json();
+  $('#friends-link').hidden = false; refreshFriendsCount();
+  if (!$('#name').value.trim()) $('#name').value = account.displayName;
+  link.textContent = 'My account';
+  link.href = '/me.html';
+  $('#home-account').querySelector('span').textContent = `Welcome back, ${account.displayName}. Your nights and settings are saved.`;
+  $('#home-account-link').textContent = 'My account';
+  $('#home-account-link').href = '/me.html';
+  $('#account-logout').hidden = false;
+  canSavePresets = true;
+  loadPresets();
+}).catch(() => {});
+setInterval(() => { if (!$('#friends-link').hidden && document.visibilityState === 'visible') refreshFriendsCount(); }, 30_000);
+$('#account-logout').addEventListener('click', async () => {
+  await fetch('/api/auth/logout', { method: 'POST' });
+  window.location.assign('/');
+});
+renderPresetChips();
+$('#preset-chips').addEventListener('click', event => {
+  const button = event.target.closest('[data-preset-id]');
+  if (!button) return;
+  const preset = button.dataset.presetId.startsWith('builtin-')
+    ? window.TablematePresets.builtins[Number(button.dataset.presetId.slice(8))]
+    : savedPresets.find(item => item.id === button.dataset.presetId);
+  if (preset) applyPreset({ ...preset, id: button.dataset.presetId });
+});
+$('#create-fields').addEventListener('input', event => {
+  if (event.target.closest('#preset-chips')) return;
+  document.querySelectorAll('[data-preset-id]').forEach(button => button.setAttribute('aria-pressed', 'false'));
+});
+$('#rebuy-policy-mode').addEventListener('change', () => { $('#rebuy-policy-auto').hidden = $('#rebuy-policy-mode').value !== 'auto'; });
+$('#save-preset').addEventListener('click', () => openPresets('save'));
+$('#manage-presets').addEventListener('click', () => openPresets('manage'));
 $('#lobby-theme-picker').innerHTML = themePickerMarkup('lobby');
 wireThemePicker($('#lobby-theme-picker'));
+$('#lobby-personal').innerHTML = personalControls('lobby');
+document.addEventListener('tablemate-prefs-loaded', () => {
+  themePreference = document.documentElement.dataset.themePreference || 'felt';
+  $('#lobby-theme-picker').innerHTML = themePickerMarkup('lobby');
+  wireThemePicker($('#lobby-theme-picker'));
+  $('#lobby-personal').innerHTML = personalControls('lobby');
+  if (state) render();
+});
 applyInviteCodeFromQuery();
 setButtons(); socket.connect();
 })();

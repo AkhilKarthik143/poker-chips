@@ -2,3 +2,6 @@ node_modules/
 .env
 .DS_Store
 coverage/
+data/
+artifacts/qa/
+/unity-build.log
