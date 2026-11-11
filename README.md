@@ -4,8 +4,6 @@ Physical cards. Virtual chips. A mobile-first chip bank and authoritative bettin
 
 **[Play Tablemate on Render](https://poker-chips-o7n9.onrender.com/)**
 
-The account, league, theme and customization work described below is currently on local branches. The Render link may serve an earlier version until these commits are deployed.
-
 ## Play with a real deck
 
 1. The host creates a table, chooses a starting stack and blinds, and optionally enables a blind timer.
@@ -22,7 +20,7 @@ From the table’s **Invite** or **Invite players** control, share the QR code, 
 
 ## Local run
 
-Node 20 is the requested deployment target. Node 20+ is supported; no frontend build step is required.
+Node 22.5+ is required; no frontend build step is required.
 
 ```sh
 npm ci
@@ -42,7 +40,7 @@ The service binds `0.0.0.0` and reads `process.env.PORT`, defaulting to 3000. `G
 
 ## Optional accounts and saved nights
 
-Guest play stays available with no setup. Set `TABLEMATE_DB_PATH=./data/tablemate.db` to enable SQLite night history, personal stats and accounts. Node 22.5+ uses `node:sqlite`; Node 20 uses `better-sqlite3`. Leave the variable unset to disable these features and keep the existing guest behavior. For email sign-in in production, configure `RESEND_API_KEY` and `MAIL_FROM`. For Google sign-in, configure `GOOGLE_CLIENT_ID` with a Google OAuth **Web application** client ID and add the app's origin to its authorized JavaScript origins in Google Cloud. For this local demo, authorize `http://127.0.0.1:3101`; for deployment, authorize the exact HTTPS origin. Google sign-in uses Google's own button and server-side ID-token verification; it does not need a client secret or redirect URI. Accounts are available when either sign-in method is configured with SQLite. `GET /api/config` reports which methods are available.
+Guest play stays available with no setup. Set `TABLEMATE_DB_PATH=./data/tablemate.db` to enable SQLite night history, personal stats and accounts. Node 22.5+ uses `node:sqlite`. Leave the variable unset to disable these features and keep the existing guest behavior. For email sign-in in production, configure `RESEND_API_KEY` and `MAIL_FROM`. For Google sign-in, configure `GOOGLE_CLIENT_ID` with a Google OAuth **Web application** client ID and add the app's origin to its authorized JavaScript origins in Google Cloud. For this local demo, authorize `http://127.0.0.1:3101`; for deployment, authorize the exact HTTPS origin. Google sign-in uses Google's own button and server-side ID-token verification; it does not need a client secret or redirect URI. Accounts are available when either sign-in method is configured with SQLite. `GET /api/config` reports which methods are available.
 
 `DATABASE_URL` is not supported by this local build; the optional Postgres adapter remains unimplemented. New accounts receive a safe default display name; if that name is already in use, Tablemate adds a short number.
 
@@ -154,7 +152,7 @@ The create form keeps its basic table fields up front. **Table presets & rebuy r
 
 ## Deploy to Render
 
-See [DEPLOY.md](DEPLOY.md) for exact repository and deployment commands. The included `render.yaml` creates one free Node web service using `npm ci`, `npm start`, `/healthz` and `NODE_VERSION=20`.
+See [DEPLOY.md](DEPLOY.md) for exact repository and deployment commands. The included `render.yaml` creates one free Node web service using `npm ci`, `npm start`, `/healthz` and `NODE_VERSION=22`.
 
 **Render’s free tier sleeps after inactivity. In-memory rooms are lost whenever the service restarts or spins down, and the first load can be slow. Wake it up before game night**, then create your table. A reconnect token cannot recover a room after a restart. Use a single always-on instance plus durable shared storage if you later need persistent rooms; persistence is outside this project’s requested scope.
 

@@ -16,7 +16,7 @@ npm run lint && npm test
 1. Open [Render](https://dashboard.render.com/) and sign in.
 2. Select **New > Blueprint**.
 3. Connect GitHub if needed, then select **poker-chips**.
-4. Render reads `render.yaml`: one free Node service, Node 20, build `npm ci`, start `npm start`, health check `/healthz`.
+4. Render reads `render.yaml`: one free Node service, Node 22, build `npm ci`, start `npm start`, health check `/healthz`.
 5. Select **Apply** (or the equivalent deploy confirmation in the current UI).
 6. Wait for **Live**, open the assigned `https://…onrender.com` address, and share that address with players.
 
