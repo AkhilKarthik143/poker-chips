@@ -44,6 +44,7 @@ A successful response is `{"ok":true}`. Create a room and join it from a second 
 - For updates, commit and `git push`; the Blueprint uses the repository’s default branch.
 - Core gameplay needs no secrets or environment file. The optional Web Push feature requires the three VAPID values below.
 - Optional accounts need `TABLEMATE_DB_PATH` plus at least one sign-in method: `RESEND_API_KEY` and `MAIL_FROM` for email, or `GOOGLE_CLIENT_ID` for Google. Create a Google OAuth Web application client and add the exact HTTPS service origin under authorized JavaScript origins. No client secret or redirect URI is used. Use a persistent disk for SQLite; a free instance's local files can disappear on restart or redeploy. A real Postgres adapter is not included in this local branch. Rooms remain process-local even when history is saved.
+- Friends require those same SQLite accounts; schema migration 8 runs automatically on startup. Keep the database on persistent storage so friendships and stored request updates survive restarts. Friends do not require a separate service or push keys. Direct account-to-account table invitation delivery is not configured; the app checks the room and uses the existing copy/share link.
 
 ## Optional character creator build
 

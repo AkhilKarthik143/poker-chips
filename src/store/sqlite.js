@@ -336,7 +336,13 @@ export class SqliteStore {
   }
   async exportAccount(accountId) {
     return { account: await this.getAccount(accountId), googleIdentities: this.db.prepare('SELECT google_sub FROM google_identities WHERE account_id = ?').all(accountId).map(row => row.google_sub),
-      settings: await this.getSettings(accountId), presets: await this.listPresets(accountId), nights: await this.listAccountNights(accountId, true) };
+      settings: await this.getSettings(accountId), presets: await this.listPresets(accountId), nights: await this.listAccountNights(accountId, true),
+      friendships: this.db.prepare(`SELECT a.username,r.status,r.created_at,r.accepted_at,
+        (r.requester_id = ?) AS sent_by_me FROM friend_relations r JOIN accounts a
+        ON a.id = CASE WHEN r.user_a = ? THEN r.user_b ELSE r.user_a END
+        WHERE r.user_a = ? OR r.user_b = ?`).all(accountId, accountId, accountId, accountId),
+      blockedUsers: this.db.prepare(`SELECT a.username,b.created_at FROM friend_blocks b
+        JOIN accounts a ON a.id = b.blocked_id WHERE b.blocker_id = ?`).all(accountId) };
   }
   async getSettings(accountId) {
     const row = this.db.prepare('SELECT settings_json FROM account_settings WHERE account_id = ?').get(accountId);

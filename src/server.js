@@ -259,6 +259,14 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     if (!req.body || Object.keys(req.body).length) { res.status(400).json({ error: 'Invalid request.' }); return; }
     friendsStore.markRead(req.account.id, now()); res.json({ unread: 0 });
   });
+  app.get('/api/friends/invite/:code', requireAccount, (req, res) => {
+    const room = rooms.get(String(req.params.code).toUpperCase());
+    if (!room || room.closing) { res.status(404).json({ error: 'This table is no longer open.' }); return; }
+    if (room.game.players.length >= 10) { res.status(409).json({ error: 'This table is full.' }); return; }
+    const ownSeat = room.game.players.find(player => room.accounts.get(player.id) === req.account.id);
+    if (!ownSeat) { res.status(403).json({ error: 'Join this table with your account first.' }); return; }
+    res.json({ code: room.code });
+  });
   app.post('/api/friends/:username/:action', apiOrigin, requireAccount, (req, res) => {
     if (!req.body || Object.keys(req.body).length || usernameError(req.params.username) ||
       !['send', 'accept', 'decline', 'cancel', 'remove', 'block', 'unblock'].includes(req.params.action)) {
@@ -275,7 +283,9 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
   function friendSeat(req, res) {
     const room = rooms.get(String(req.params.code).toUpperCase());
     const targetSeat = room?.game.players.find(player => player.id === req.params.seatId);
-    if (!targetSeat || !room.accounts.has(targetSeat.id)) { res.status(404).json({ error: 'Account seat not found.' }); return null; }
+    if (!targetSeat || !room.accounts.has(targetSeat.id) || !room.identities.has(targetSeat.id)) {
+      res.status(404).json({ error: 'Account seat not found.' }); return null;
+    }
     const mySeat = room.game.players.find(player => room.accounts.get(player.id) === req.account.id);
     if (!mySeat) { res.status(403).json({ error: 'Join this table with your account first.' }); return null; }
     const targetId = room.accounts.get(targetSeat.id);
@@ -608,7 +618,8 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
       cosmetics: Object.fromEntries(room.cosmetics),
       identities: Object.fromEntries(room.identities),
       socialSeats: signedInSeat(room, id, socket) ? state.players.filter(player =>
-        room.accounts.has(player.id) && room.accounts.get(player.id) !== room.accounts.get(id) &&
+        room.accounts.has(player.id) && room.identities.has(player.id) &&
+        room.accounts.get(player.id) !== room.accounts.get(id) &&
         friendsStore.account(room.accounts.get(player.id))?.username).map(player => player.id) : [],
       rebuyPolicy: room.rebuyPolicy,
       canUndo: permissions.owner && room.game.history.length > 0, serverTime: now(),

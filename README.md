@@ -79,6 +79,16 @@ The server saves a night after each completed hand, when the host sends `host:en
 
 Account APIs: `POST /api/auth/request`, `POST /api/auth/verify`, `POST /api/auth/google`, `POST /api/auth/logout`, `GET/PATCH/DELETE /api/me`, `PUT /api/me/profile`, `GET /api/username/check?u=`, `GET /api/username/suggestions`, `POST /api/me/onboarding/skip`, `GET /api/u/:username`, `GET /api/me/stats`, `POST /api/nights/claim`, `GET /api/me/export`, `GET/PUT/PATCH /api/me/settings`, and `GET/POST /api/me/presets` plus `PATCH/DELETE /api/me/presets/:id`. Mutating APIs require the same origin; signed-in APIs require an HttpOnly session cookie. Username checks and profile updates have per-session limits. With no database/account service, identity, settings and saved preset routes return 404.
 
+## Friends
+
+Signed-in members can open **Friends** from the home account navigation, My stats or a league. Search registered usernames, send requests, accept or decline incoming requests, cancel sent requests, remove friends, and block or unblock users. Relationships use stable account IDs in SQLite, so a username change, logout, device switch or room expiry does not alter them. Both sides become friends only after acceptance; a reciprocal request automatically accepts the pending one. Blocking removes a friendship or pending request, and unblocking never restores it. Deleting an account cascades its relationship and notification rows. Private profiles use generated initials in discovery and lists instead of exposing their avatar.
+
+The home Friends link shows an unread update count. The Friends page separates incoming and sent requests and shows stored request/acceptance updates; it refreshes while open, so missed updates remain visible after reload. These account updates do not use turn sounds, vibration or Web Push. Search and request endpoints have per-session limits. Search results and room views never include email, session tokens or account IDs.
+
+At a table, a signed-in player can tap or focus another verified account seat to see a small account sheet and send a request. Guest and own seats do not offer that action, and sending a request does not change the hand or table revision. If a member opens Friends from the table invite sheet, they can copy or share the existing room URL after the server checks that the table still exists and has space. Tablemate does not deliver an account-to-account room invite; the normal QR, copy and device share flows remain available. Friendships are independent of leagues and never affect who may join a table.
+
+Friends APIs: `GET /api/friends`, `GET /api/friends/summary`, `GET /api/friends/search?q=`, `POST /api/friends/:username/{send,accept,decline,cancel,remove,block,unblock}`, `POST /api/friends/notifications/read`, `GET /api/friends/table/:code/:seatId`, `POST /api/friends/table/:code/:seatId/request`, and `GET /api/friends/invite/:code`. Mutations use the authenticated account from the session; clients cannot supply a sender ID. Migration 8 adds unique unordered relationship pairs, blocks and account notification rows. `GET /api/me/export` includes friendships and blocked users. With accounts disabled, these APIs return 404 and guest play stays unchanged.
+
 Tablemate is an **informal tally for friends, not a gambling or payments platform**. It never moves money.
 
 ## Leagues

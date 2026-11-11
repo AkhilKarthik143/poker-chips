@@ -15,6 +15,7 @@ test('friends API requires an account, validates input, syncs requests and limit
     await store.updateProfile(id, { username: id }, 1, THIRTY_DAYS);
     await store.saveSession(hashSecret(tokenFor(id)), id, 100_000);
   }
+  await store.saveSession(hashSecret('d'.repeat(64)), 'alice', 100_000);
   const server = createServer({ store, now: () => 1000, mailer: { enabled: true, send: async () => {} } });
   const noDb = createServer({});
   const root = `http://127.0.0.1:${(await server.listen()).port}`;
@@ -41,6 +42,8 @@ test('friends API requires an account, validates input, syncs requests and limit
   assert.equal((await request('cara', '/api/friends/alice/accept', true)).status, 409);
   assert.equal((await request('bob', '/api/friends/alice/accept', true)).status, 200);
   assert.equal((await (await request('alice', '/api/friends')).json()).friends.length, 1);
+  assert.equal((await (await fetch(root + '/api/friends', { headers: { Cookie: `tm_session=${'d'.repeat(64)}` } })).json()).friends.length, 1);
+  assert.equal((await request('cara', '/api/friends/bob/remove', true)).status, 409);
   assert.equal((await (await request('alice', '/api/friends')).json()).notifications[0].kind, 'accepted');
   assert.equal((await request('alice', '/api/friends/notifications/read', true)).status, 200);
   assert.equal((await (await request('alice', '/api/friends/summary')).json()).unread, 0);
@@ -49,8 +52,13 @@ test('friends API requires an account, validates input, syncs requests and limit
   assert.equal((await request('alice', '/api/friends/bob/send', true)).status, 404);
   assert.equal((await request('bob', '/api/friends/alice/unblock', true)).status, 200);
   assert.equal((await (await request('bob', '/api/friends')).json()).friends.length, 0);
+  const reciprocal = await Promise.all([request('alice', '/api/friends/bob/send', true), request('bob', '/api/friends/alice/send', true)]);
+  assert.deepEqual(reciprocal.map(response => response.status), [200, 200]);
+  assert.equal((await (await request('alice', '/api/friends')).json()).friends.length, 1);
   for (let index = 0; index < 27; index++) await request('alice', '/api/friends/search?q=bo');
   assert.equal((await request('alice', '/api/friends/search?q=bo')).status, 429);
+  for (let index = 0; index < 10; index++) assert.equal((await request('cara', '/api/friends/bob/send', true)).status, 200);
+  assert.equal((await request('cara', '/api/friends/bob/send', true)).status, 429);
 });
 
 test('an account seat can start a friendship without exposing account IDs or changing poker state', async t => {
@@ -83,6 +91,7 @@ test('an account seat can start a friendship without exposing account IDs or cha
   const path = `/api/friends/table/${created.roomCode}/${joined.playerId}`;
   const peer = await (await fetch(root + path, { headers })).json();
   assert.equal(peer.displayName, 'bob');
+  assert.equal(peer.username, null, 'table-hidden usernames stay hidden in the seat sheet');
   assert.equal(JSON.stringify(peer).includes('bob@example.com'), false);
   assert.equal(JSON.stringify(current).includes('bob@example.com'), false);
   assert.equal(JSON.stringify(current).includes('alice@example.com'), false);
@@ -96,6 +105,12 @@ test('an account seat can start a friendship without exposing account IDs or cha
   assert.equal(after.state.revision, before);
   assert.equal(after.state.street, current.street);
   assert.equal((await (await fetch(root + '/api/friends', { headers })).json()).outgoing.length, 1);
+  assert.equal((await fetch(root + `/api/friends/invite/${created.roomCode}`, { headers })).status, 200);
+  assert.equal((await fetch(root + '/api/friends/invite/ABCDEFGH', { headers })).status, 404);
   assert.equal((await fetch(root + `/api/friends/table/${created.roomCode}/${guestJoin.playerId}`, { headers })).status, 404);
   assert.equal((await fetch(root + path)).status, 401);
+  const afterLogoutState = new Promise(resolve => alice.once('state', resolve));
+  await fetch(root + '/api/auth/logout', { method: 'POST', headers: { Cookie: `tm_session=${tokenFor('bob')}` } });
+  assert.deepEqual((await afterLogoutState).socialSeats, []);
+  assert.equal((await fetch(root + path, { headers })).status, 404);
 });

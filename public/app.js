@@ -385,6 +385,7 @@ function inviteDialog() {
       </div>
     </div>
   </section>
+  ${state.signedIn ? `<a class="invite-friends-link" href="/friends.html?code=${escape(state.roomCode)}">Find a friend to share this link with</a>` : ''}
   <label for="invite-buy-in">Buy-in · virtual chips</label>
   <input id="invite-buy-in" type="number" min="1" max="1000000000" value="${state.settings.startingStack}" ${host ? '' : 'readonly'}>
   <p class="helper">${host ? 'Before the first hand, changing the buy-in updates every seated player. Later, it applies to new players only.' : 'The host sets the buy-in. Friends enter the code using Join a table.'}</p>`, async () => {
@@ -885,8 +886,44 @@ function seatOval(order) {
     const status = playing && p.folded ? '× Folded' : playing && p.inHand && p.stack === 0 ? '⚡ All-in' : p.sittingOut ? '⏸ Away' : !p.connected ? '⏸ Offline' : p.id === state.turn ? '▶ To act' : playing ? '● In hand' : '✓ Ready';
     const statusKind = playing && p.folded ? 'folded' : playing && p.inHand && p.stack === 0 ? 'allin' : p.sittingOut || !p.connected ? 'away' : p.id === state.turn ? 'active' : 'ready';
     const cosmetic = state.cosmetics?.[id] || { avatar: 'chip', color: 'c1' };
-    return `<article class="oval-seat slot-${index} seat-color-${escape(cosmetic.color)} ${state.identities?.[id]?.avatar?.v === 2 ? 'character-seat' : ''} ${p.id === state.turn ? 'acting' : ''} ${p.id === state.playerId ? 'my-seat' : ''} ${playing && p.folded ? 'folded-seat' : ''}"><div class="oval-name"><small>${index + 1}</small>${tableAvatar(id, cosmetic, p.name, 64)}<strong title="${escape(p.name)}">${escape(p.name)}</strong>${tableUsername(id)}</div><span class="seat-owner">${p.id === state.playerId ? `You • Seat ${index + 1}` : `Seat ${index + 1}`}</span><div class="seat-roles">${Object.entries(roles).filter(([, id]) => id === p.id).map(([role]) => `<span class="role-${role}" title="${role === 'D' ? 'Dealer' : role === 'SB' ? 'Small blind' : 'Big blind'}">${role}</span>`).join('')}</div><strong class="oval-stack" title="${number(p.stack)} chips" aria-label="${number(p.stack)} chips">${compactStack(p.stack)}</strong><small>Bet ${number(p.streetBet)}</small><span class="oval-status status-${statusKind} ${!playing && p.connected && !p.sittingOut ? 'ready-pill' : ''}">${status}</span></article>`;
+    const social = state.socialSeats?.includes(id);
+    return `<article class="oval-seat slot-${index} seat-color-${escape(cosmetic.color)} ${social ? 'social-seat' : ''} ${state.identities?.[id]?.avatar?.v === 2 ? 'character-seat' : ''} ${p.id === state.turn ? 'acting' : ''} ${p.id === state.playerId ? 'my-seat' : ''} ${playing && p.folded ? 'folded-seat' : ''}" ${social ? `data-friend-seat="${escape(id)}" role="button" tabindex="0" aria-label="View ${escape(p.name)}'s account and friendship"` : ''}><div class="oval-name"><small>${index + 1}</small>${tableAvatar(id, cosmetic, p.name, 64)}<strong title="${escape(p.name)}">${escape(p.name)}</strong>${tableUsername(id)}</div><span class="seat-owner">${p.id === state.playerId ? `You • Seat ${index + 1}` : `Seat ${index + 1}`}</span><div class="seat-roles">${Object.entries(roles).filter(([, id]) => id === p.id).map(([role]) => `<span class="role-${role}" title="${role === 'D' ? 'Dealer' : role === 'SB' ? 'Small blind' : 'Big blind'}">${role}</span>`).join('')}</div><strong class="oval-stack" title="${number(p.stack)} chips" aria-label="${number(p.stack)} chips">${compactStack(p.stack)}</strong><small>Bet ${number(p.streetBet)}</small><span class="oval-status status-${statusKind} ${!playing && p.connected && !p.sittingOut ? 'ready-pill' : ''}">${status}</span></article>`;
   }).join('')}</div>`;
+}
+async function openFriendSeat(seatId) {
+  if (!state?.signedIn || !state.socialSeats?.includes(seatId)) return;
+  const dialog = $('#friend-seat-dialog'); const content = $('#friend-seat-content');
+  content.textContent = 'Loading player account…';
+  if (!dialog.open) dialog.show();
+  try {
+    const path = `/api/friends/table/${encodeURIComponent(state.roomCode)}/${encodeURIComponent(seatId)}`;
+    const response = await fetch(path);
+    const peer = await response.json();
+    if (!response.ok) throw new Error(peer.error || 'Account unavailable.');
+    content.replaceChildren();
+    if (peer.avatar && window.TablemateAvatar?.valid(peer.avatar)) content.append(window.TablemateAvatar.renderAvatar(peer.avatar, 64, peer.displayName));
+    const name = document.createElement('strong'); name.textContent = peer.displayName; content.append(name);
+    if (peer.username) { const handle = document.createElement('span'); handle.textContent = `@${peer.username}`; content.append(handle); }
+    const relation = document.createElement('p');
+    relation.textContent = ({ friends: 'Already friends', 'request-sent': 'Friend request sent',
+      'request-received': 'This player sent you a request', blocked: 'You blocked this player',
+      'not-friends': 'Not friends yet' })[peer.status] || 'Unavailable';
+    content.append(relation);
+    if (peer.status === 'not-friends') {
+      const button = document.createElement('button'); button.type = 'button'; button.textContent = 'Send friend request';
+      button.addEventListener('click', async () => {
+        button.disabled = true;
+        try {
+          const sent = await fetch(`${path}/request`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+          const result = await sent.json(); if (!sent.ok) throw new Error(result.error || 'Request failed.');
+          relation.textContent = result.status === 'friends' ? 'You are now friends.' : 'Friend request sent.';
+          button.remove(); refreshFriendsCount();
+        } catch (error) { relation.textContent = error.message; button.disabled = false; }
+      }); content.append(button);
+    } else if (peer.status === 'request-received' || peer.status === 'blocked') {
+      const link = document.createElement('a'); link.href = '/friends.html'; link.textContent = 'Manage in Friends'; content.append(link);
+    }
+  } catch (error) { content.textContent = error.message; }
 }
 function positionSeats() {
   document.querySelectorAll('.seat-oval').forEach(oval => {
@@ -1034,6 +1071,12 @@ function wireTable(me, pot) {
   $('#table-settings').addEventListener('click', () => openControls());
   $('#donate-chips').addEventListener('click', donationDialog);
   $('#header-invite').addEventListener('click', inviteDialog);
+  document.querySelectorAll('[data-friend-seat]').forEach(seat => {
+    seat.addEventListener('click', () => openFriendSeat(seat.dataset.friendSeat));
+    seat.addEventListener('keydown', event => {
+      if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openFriendSeat(seat.dataset.friendSeat); }
+    });
+  });
   $('#invite-players')?.addEventListener('click', inviteDialog);
   $('#set-buy-in')?.addEventListener('click', inviteDialog);
   $('#change-seat')?.addEventListener('click', openSeatReorder);
@@ -1122,6 +1165,15 @@ document.addEventListener('visibilitychange', reportPresence);
 window.addEventListener('focus', reportPresence);
 updateKeyboardInset();
 setInterval(updateClock, 1000);
+$('#friend-seat-close').addEventListener('click', () => $('#friend-seat-dialog').close());
+async function refreshFriendsCount() {
+  try {
+    const response = await fetch('/api/friends/summary'); if (!response.ok) return;
+    const { unread } = await response.json(); const count = $('#friends-count');
+    count.hidden = !unread; count.textContent = unread > 9 ? '9+' : String(unread);
+    $('#friends-link').setAttribute('aria-label', unread ? `Friends, ${unread} new updates` : 'Friends');
+  } catch { /* The table keeps working if friend updates are unavailable. */ }
+}
 fetch('/api/config').then(response => response.json()).then(async config => {
   if (!config.accounts) return;
   const response = await fetch('/api/me');
@@ -1130,6 +1182,7 @@ fetch('/api/config').then(response => response.json()).then(async config => {
   $('#home-account').hidden = false;
   if (!response.ok) return;
   const account = await response.json();
+  $('#friends-link').hidden = false; refreshFriendsCount();
   if (!$('#name').value.trim()) $('#name').value = account.displayName;
   link.textContent = `${account.displayName} · My stats`;
   link.href = '/me.html';
@@ -1140,6 +1193,7 @@ fetch('/api/config').then(response => response.json()).then(async config => {
   canSavePresets = true;
   loadPresets();
 }).catch(() => {});
+setInterval(() => { if (!$('#friends-link').hidden && document.visibilityState === 'visible') refreshFriendsCount(); }, 30_000);
 $('#account-logout').addEventListener('click', async () => {
   await fetch('/api/auth/logout', { method: 'POST' });
   window.location.assign('/');

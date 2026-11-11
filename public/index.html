@@ -25,7 +25,7 @@
 <body>
   <header class="masthead">
     <a class="wordmark" href="/" aria-label="Tablemate home"><span class="chip-mark" aria-hidden="true"></span>tablemate<span class="wordmark-dot">.</span></a>
-    <nav class="account-nav" aria-label="Account"><a id="account-link" href="/login.html" hidden>Sign in</a><button id="account-logout" type="button" hidden>Sign out</button><span id="connection" class="connection" role="status">Connecting</span></nav>
+    <nav class="account-nav" aria-label="Account"><a id="account-link" href="/login.html" hidden>Sign in</a><a id="friends-link" href="/friends.html" hidden>Friends <span id="friends-count" class="friend-count" hidden></span></a><button id="account-logout" type="button" hidden>Sign out</button><span id="connection" class="connection" role="status">Connecting</span></nav>
   </header>
   <main id="lobby" class="lobby">
     <section class="intro">
@@ -104,6 +104,7 @@
   <dialog id="rebuy-requests-dialog" aria-labelledby="rebuy-requests-title"></dialog>
   <dialog id="cosmetics-dialog" aria-labelledby="cosmetics-title"></dialog>
   <dialog id="presets-dialog" aria-labelledby="presets-title"></dialog>
+  <dialog id="friend-seat-dialog" class="friend-seat-dialog" aria-labelledby="friend-seat-title"><h2 id="friend-seat-title">Player account</h2><div id="friend-seat-content"></div><div class="dialog-actions"><button id="friend-seat-close" type="button">Close</button></div></dialog>
   <div id="toast" class="toast" role="alert" hidden></div>
   <noscript>This table needs JavaScript to keep everyone’s chips in sync.</noscript>
   <footer id="site-footer" class="site-footer"><span>A LITTLE LESS SETUP. A LOT MORE POKER.</span><span>Made for the table.</span></footer>
