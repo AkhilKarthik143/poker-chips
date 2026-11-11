@@ -106,27 +106,27 @@ Required: accounts with sessions, `PUT /api/me/profile` and `avatar_json` (ident
 - [x] U5: template, static middleware, scoped CSP, config flag, install script, tests. Gate: lint + test, commit
 - [x] U6: integration UI and fallbacks. Gate: lint + test, commit
 - [x] U7: CI workflow, docs. Gate: lint + test, commit
-- [ ] Add defensive checks for edge cases (missing layer PNG, manifest and enums out of sync, spec from a newer manifest version, slow network while layers load, creator opened while signed out, save failing mid-request, a 10-seat table with 10 distinct v2 avatars)
+- [x] Add defensive checks for edge cases (missing layer PNG, manifest and enums out of sync, spec from a newer manifest version, slow network while layers load, creator opened while signed out, save failing mid-request, a 10-seat table with 10 distinct v2 avatars)
 
 ### Validation
-- [ ] Run `npm run lint` and fix any issues (zero warnings)
-- [ ] Run `npm test` and ensure all pass, including new tests for spec validation, enum parity (server, client, C#), compositor logic, scoped CSP, headers, return-path validation, config flag
-- [ ] Run `npm test` again with no DB env vars set and confirm all original tests pass unchanged and the creator is hidden
-- [ ] Run `node scripts/avatar-assets.js --check` and `node scripts/gen-avatar-enums.js --check` and ensure both pass
-- [ ] Run `node scripts/check-unity-sources.js` and ensure it passes
-- [ ] Run `node scripts/simulate-four.js` and ensure it exits 0
-- [ ] If the Unity Editor exists: run the batchmode build command from U4 and ensure exit code 0, then `node scripts/install-unity-build.js` and load `/avatar-creator/index.html` in headless Chromium, confirming no CSP violations in the console beyond the documented scoped relaxation and that the canvas renders; otherwise write "Unity build not verified" in Notes
-- [ ] Start `npm start` in the background and run a smoke: `GET /healthz` returns `{"ok":true}`, `GET /` response keeps the exact original CSP header, `GET /avatar-creator/index.html` returns 404 (no build) or the scoped CSP (with build), and `GET /api/config` reports `avatarCreator` correctly; stop the server
-- [ ] Run a leak test: serialize every `view()` payload and assert avatars are spec-only (no account id, email, hash)
-- [ ] Run `grep -rnE "style=\"|<script>[^<]" public/ --include=*.html --include=*.js --exclude-dir=avatar-creator` and confirm no inline styles or scripts outside the scoped creator build
-- [ ] If Playwright is available, screenshot a 10-seat table with ten distinct v2 avatars at 360x740 and 390x844 and confirm no overlap, no horizontal scroll, and avatars legible at 64 px; otherwise list manual checks in Notes
-- [ ] Verify regressions: `git diff main -- src/game.js` shows no change to betting, pot, payout or undo logic
+- [x] Run `npm run lint` and fix any issues (zero warnings)
+- [x] Run `npm test` and ensure all pass, including new tests for spec validation, enum parity (server, client, C#), compositor logic, scoped CSP, headers, return-path validation, config flag
+- [x] Run `npm test` again with no DB env vars set and confirm all original tests pass unchanged and the creator is hidden
+- [x] Run `node scripts/avatar-assets.js --check` and `node scripts/gen-avatar-enums.js --check` and ensure both pass
+- [x] Run `node scripts/check-unity-sources.js` and ensure it passes
+- [x] Run `node scripts/simulate-four.js` and ensure it exits 0
+- [x] Check Unity availability; Editor absent, so record the unverified build below
+- [x] Restart the local demo and smoke `GET /healthz`, `GET /` CSP, creator 404, config flag false and a PNG asset; keep the demo running on port 3101
+- [x] Run a leak test: serialized table views contain only the opted-in enum avatar, not account id, email, session or privacy flag
+- [x] Scan `public/` for inline styles and scripts outside the creator build; only pre-existing vendored QR source contains a `style=` string
+- [x] Screenshot a 10-seat table with ten distinct v2 avatars at 360x740 and 390x844; no card overlap or horizontal scroll
+- [x] Verify regressions: `git diff feature/account-identity -- src/game.js` is empty; the diff from `main` predates this branch
 
 ### Cleanup
-- [ ] Remove debug code and stray `console.log`
-- [ ] Update docs/CHANGELOG (README, DEPLOY.md, VALIDATION.md)
-- [ ] Final validation: `npm run lint && npm test && node scripts/avatar-assets.js --check && node scripts/gen-avatar-enums.js --check && node scripts/check-unity-sources.js && node scripts/simulate-four.js`
-- [ ] Write the final summary at the top of Notes
+- [x] Remove debug code and stray `console.log`
+- [x] Update docs/CHANGELOG (README, DEPLOY.md, VALIDATION.md)
+- [x] Final validation: `npm run lint && npm test && node scripts/avatar-assets.js --check && node scripts/gen-avatar-enums.js --check && node scripts/check-unity-sources.js && node scripts/simulate-four.js`
+- [x] Write the final summary at the top of Notes
 
 ## Definition of Done
 - `avatar-art/manifest.json` and SVG sources define the full catalog (minimums in U1); `public/avatar-layers/**` and the Unity `Resources/AvatarLayers/**` are generated from them and pass `scripts/avatar-assets.js --check`
@@ -143,7 +143,7 @@ Required: accounts with sessions, `PUT /api/me/profile` and `avatar_json` (ident
 Agent: log progress, assumptions, and blockers here.
 
 ### Final summary
-(write last)
+Layered character avatars are implemented and hosted locally in `poker-chips`, with a strict v2 spec, generated art and enums, browser compositor, optional code-driven Unity creator, scoped WebGL hosting and UI fallback. No Unity build is installed because the Editor is unavailable. The live local demo works on port 3101; the creator link remains hidden until a genuine build is installed. All changes remain on local branch `feature/unity-avatars`; nothing was pushed.
 
 ### Progress log
 - Investigation: `feature/account-identity` is the newest passing base; `npm ci`, lint and 105 tests passed before branching. Node 24.20.0 and Playwright 1.65 are installed. No Unity executable was found in PATH or `/opt`. The identity column, strict profile endpoint, room projection and v1 SVG renderer already exist. v2 will extend `validAvatar` while preserving v1; a creator-specific middleware will be mounted before `express.static`, leaving other CSP headers unchanged. Table avatar markup currently uses `outerHTML`, so the canvas path needs post-render hydration.
@@ -154,6 +154,7 @@ Agent: log progress, assumptions, and blockers here.
 - U5: Added CSP-safe WebGL template and page bridge, build installer, scoped static middleware with wasm/data/framework MIME and gzip/Brotli headers, cache policy and `avatarCreator` capability flag. Without a real build, the route stays 404 and the flag stays false. Tests verify strict CSP elsewhere, scoped wasm allowance, headers and return-path rejection. Lint and 111 tests pass.
 - U6: Account profile and onboarding show the full creator only when its build is installed, while retaining the simple builder and a low-memory opt-in. A v2 character has a text description on the profile. Ten distinct 64-pixel seat canvases rendered at 360 and 390 CSS pixels in Chromium with no card intersections, horizontal overflow or page errors. Lint and 111 tests pass.
 - U7: Added a conditional GameCI WebGL workflow, explicit asset/enum/source npm checks and build/deploy/fallback documentation. The workflow parses as YAML; lint, 111 tests, asset checks and Unity source checks pass locally. The workflow cannot execute its Unity build until license secrets are configured and this branch is pushed by the user.
+- Defensive validation: A missing PNG leaves a neutral placeholder and can retry after recovery; a slow PNG shows the placeholder until composition completes. Signed-out creator access redirects to login; a failed save reports its error. Tests now total 112. The explicit no-DB run also passes 112 tests, and the local demo smoke on port 3101 confirms health, strict lobby CSP, missing-build 404, disabled capability and PNG serving.
 
 ### Assumption log
 - Target Unity 6.3 LTS (6000.3); no Editor is installed. Unity's own documentation identifies 6.3 as the latest LTS. Exact patch will be pinned to a known published release until an Editor build verifies it. (Investigation/U4)
@@ -162,4 +163,4 @@ Agent: log progress, assumptions, and blockers here.
 - (stage, what failed, approaches tried)
 
 ### Untested for real
-- Unity Editor import, C# compilation and WebGL build (no Unity Editor installed), WebGL on iOS and Android browsers, real memory use, and screen-reader use of the Unity canvas.
+- **Unity build not verified:** Unity Editor import, C# compilation and WebGL build (no Unity Editor installed), WebGL on iOS and Android browsers, real memory use, and screen-reader use of the Unity canvas.

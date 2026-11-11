@@ -19,10 +19,14 @@ function layersFor(spec) {
 }
 function loadLayer(layer) {
   const key = `${layer.slot}/${layer.id}`;
-  if (!imageCache.has(key)) imageCache.set(key, new Promise((resolve, reject) => {
-    const image = new Image(); image.onload = () => resolve(image); image.onerror = () => reject(new Error(`Missing avatar layer: ${key}`));
-    image.src = `/avatar-layers/${key}.png`;
-  }));
+  if (!imageCache.has(key)) {
+    const pending = new Promise((resolve, reject) => {
+      const image = new Image(); image.onload = () => resolve(image); image.onerror = () => reject(new Error(`Missing avatar layer: ${key}`));
+      image.src = `/avatar-layers/${key}.png`;
+    });
+    imageCache.set(key, pending);
+    pending.catch(() => { if (imageCache.get(key) === pending) imageCache.delete(key); });
+  }
   return imageCache.get(key);
 }
 function blankCanvas(size) { const canvas = document.createElement('canvas'); canvas.width = canvas.height = size; return canvas; }

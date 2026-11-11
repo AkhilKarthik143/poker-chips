@@ -38,5 +38,34 @@ try {
     const fixture = document.querySelector('#avatar-fixture'); fixture.append(window.AvatarV2.render(second, 128, 'Second'));
   }, second);
   await page.locator('#avatar-fixture').screenshot({ path: new URL('../artifacts/qa/avatar-v2-render.png', import.meta.url).pathname });
-  process.stdout.write(`Avatar compositor: two distinct specs, stable pixels, cached recomposition, ${result.images} cached layer images.\n`);
+  const slow = await browser.newPage();
+  await slow.route('**/avatar-layers/outfit/*.png', async route => {
+    await new Promise(resolve => setTimeout(resolve, 350)); await route.continue();
+  });
+  await slow.goto(`http://127.0.0.1:${port}/`);
+  const initialPixels = await slow.evaluate(spec => {
+    const canvas = window.AvatarV2.render(spec, 64, 'Slow'); document.body.replaceChildren(canvas);
+    return canvas.toDataURL();
+  }, first);
+  await slow.waitForFunction(() => window.AvatarV2.stats().compositions === 1);
+  assert.notEqual(await slow.locator('canvas').evaluate(canvas => canvas.toDataURL()), initialPixels,
+    'The placeholder should be replaced when a slow layer arrives');
+
+  const broken = await browser.newPage();
+  await broken.route('**/avatar-layers/hat/cowboy.png', route => route.abort());
+  await broken.goto(`http://127.0.0.1:${port}/`);
+  const missingSpec = { ...first, hat: 'cowboy' };
+  const placeholder = await broken.evaluate(spec => {
+    const canvas = window.AvatarV2.render(spec, 64, 'Missing'); document.body.replaceChildren(canvas);
+    return canvas.toDataURL();
+  }, missingSpec);
+  await broken.waitForFunction(() => window.AvatarV2.stats().specs === 0);
+  assert.equal(await broken.locator('canvas').evaluate(canvas => canvas.toDataURL()), placeholder,
+    'A failed layer should leave the neutral placeholder');
+  await broken.unroute('**/avatar-layers/hat/cowboy.png');
+  await broken.evaluate(spec => document.body.replaceChildren(window.AvatarV2.render(spec, 64, 'Recovered')), missingSpec);
+  await broken.waitForFunction(() => window.AvatarV2.stats().compositions === 1);
+  assert.notEqual(await broken.locator('canvas').evaluate(canvas => canvas.toDataURL()), placeholder,
+    'The failed layer should load on retry');
+  process.stdout.write(`Avatar compositor: distinct specs, stable cached pixels, slow placeholder, missing-layer fallback and retry; ${result.images} cached layer images.\n`);
 } finally { await browser.close(); await server.close(); }

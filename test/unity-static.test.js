@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { mkdtemp as makeTemp, mkdir as makeDir, writeFile as putFile, rm as remove } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { setImmediate } from 'node:timers';
 import { brotliCompressSync, gzipSync } from 'node:zlib';
 import vm from 'node:vm';
 import { createServer } from '../src/server.js';
@@ -61,4 +62,23 @@ test('creator return path rejects external, protocol and encoded double-slash de
   assert.equal(safe('/me.html?tab=profile'), '/me.html?tab=profile');
   for (const value of ['//evil.com', 'https://evil.com', 'javascript:alert(1)', '/%2Fevil.com', '/\\evil.com', null])
     assert.equal(safe(value), '/me.html');
+});
+
+test('creator redirects signed-out visitors and reports a failed profile save', async () => {
+  const source = readFileSync(new URL('../unity/AvatarCreator/Assets/WebGLTemplates/Tablemate/loader.js', import.meta.url), 'utf8');
+  const elements = { '#creator-build': { dataset: {} }, '#creator-loading': {}, '#creator-error': {},
+    '#creator-progress': {}, '#simple-builder': {} };
+  const locations = [];
+  const location = { origin: 'http://127.0.0.1:3101', search: '?return=%2Fwelcome.html',
+    assign: path => locations.push(path) };
+  const window = { TablemateCreatorPath: { safeReturnPath: value => value || '/me.html' } };
+  const fetch = async path => path === '/api/me'
+    ? { status: 401, ok: false }
+    : { status: 503, ok: false, json: async () => ({ error: 'Save unavailable.' }) };
+  const document = { querySelector: selector => elements[selector] };
+  vm.runInNewContext(source, { window, document, fetch, location, URLSearchParams });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(locations, ['/login.html']);
+  assert.equal(elements['#simple-builder'].href, '/welcome.html');
+  await assert.rejects(window.TablemateAvatar.save(JSON.stringify({ v: 2 })), /Save unavailable/);
 });
