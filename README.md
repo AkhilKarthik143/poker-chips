@@ -50,6 +50,12 @@ With accounts enabled, the home panel and header show **Sign in**. For a local b
 
 The sign-in page shows **Continue with Google**. It becomes active when `GOOGLE_CLIENT_ID` is configured; otherwise it remains disabled with a clear message. Google identities are linked by Google's stable subject ID. Verified Gmail or Workspace accounts can join an existing Tablemate account with the same email. For other email domains, use the email link if that Tablemate account already exists. The Google identity is included in account export and removed on account deletion.
 
+### Separate preview website
+
+Run `npm run preview` and open `http://localhost:3102/preview/`. This starts the complete app on a separate port with its own ignored SQLite database (`data/tablemate-preview.db`), leaving the normal demo and its accounts untouched. The preview hub links to the new profile/photo flow, Unity character creator, friends, league standings, saved nights, themes and live table. **Enter as Alex** opens a seeded four-person league with four completed nights, a friend and a pending request; **Try a fresh account** starts onboarding with a disposable test identity. The preview server listens only on loopback. Its normal email and Google sign-in methods are disabled so the demo account controls can work without real credentials.
+
+For a temporary public test URL, run `cloudflared tunnel --url http://localhost:3102` in another terminal and open the printed `https://…trycloudflare.com/preview/` link. Anyone with that URL can use the preview and change its sample data; use test photos and details. The URL works only while both processes and this computer remain online, and changes when the tunnel restarts. No Git push or production deployment is involved.
+
 New accounts visit a short, skippable setup after their first email or Google sign-in. They choose a username, display name, built avatar and privacy settings. **Skip for now** assigns a unique `player` username and a stable default avatar. Guest play never asks for a profile. Signed-in create/join forms prefill the display name but keep it editable.
 
 Usernames are 3–20 ASCII letters, digits or underscores, must begin with a letter and cannot contain `__`. They are unique without regard to casing; reserved names and a small offensive-term baseline are blocked. A username can normally change once every 30 days. A released username is held for its prior owner for 30 days, including after account deletion; the owner may switch back during the hold. The minimal blocklist does not replace moderation.

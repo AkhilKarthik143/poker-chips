@@ -1,5 +1,11 @@
 # Validation record
 
+## Separate preview website (November 11, 2026)
+
+- `npm run preview` serves a separate localhost:3102 instance with an ignored SQLite database and a feature hub at `/preview/`. Sample data includes four accounts, one active season, four completed nights and friend activity. A disposable account path opens onboarding. The normal localhost:3101 account remains isolated by hostname and database.
+- Playwright Chromium opened the hub at 1280×800 and 390×844, followed feature links, signed in as Alex, viewed populated league standings and friends, entered fresh onboarding, selected a theme and saw it on the table. No page errors or horizontal overflow. Screenshots are in ignored `artifacts/qa/preview-site-*.png`.
+- A Cloudflare Quick Tunnel exposed the local preview over HTTPS. Browser checks through the public URL loaded the hub, images, sample account, friends, standings and a connected Socket.IO table. The preview hides normal email/Google sign-in and rejects email-link requests, so the public tunnel cannot issue local development links. The tunnel link is temporary and requires the local server and tunnel to stay running.
+
 ## Photo avatars and extra hairstyles (November 11, 2026)
 
 - Added five hairstyle pairs (pixie, afro, braids, ponytail and mohawk) to the shared SVG catalog. Generated assets now total 52 layers. The real Unity 6000.3.26f1 WebGL creator was rebuilt and installed locally. Chromium screenshots at 1280×800 and 390×844 show all eleven hair choices and usable mobile scrolling in ignored `artifacts/qa/unity-more-hair-*.png`; the eight non-bald styles rendered distinctly in `artifacts/qa/new-hairstyles-grid.png`.

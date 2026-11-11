@@ -7,6 +7,16 @@ fetch('/api/config').then(response => response.json()).then(config => {
     document.querySelector('#login-status').textContent = 'Accounts are unavailable on this table. You can keep playing as a guest.';
     return;
   }
+  if (config.preview) {
+    document.querySelector('#login-form').hidden = true;
+    document.querySelector('#google-signin').hidden = true;
+    document.querySelector('#signin-divider').hidden = true;
+    const status = document.querySelector('#login-status');
+    status.textContent = 'This test site uses sample accounts. ';
+    const link = document.createElement('a'); link.href = '/preview/'; link.textContent = 'Open the preview hub to sign in.';
+    status.append(link);
+    return;
+  }
   if (!config.email) {
     document.querySelector('#login-form').hidden = true;
     document.querySelector('#signin-divider').hidden = true;

@@ -28,7 +28,7 @@ const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
 const safeTokenEqual = (a, b) => typeof a === 'string' && typeof b === 'string' && a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
 const hashToken = value => createHash('sha256').update(value).digest('hex');
 
-export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupIntervalMs = 60_000, allowedOrigins = process.env.NODE_ENV === 'production' ? [process.env.RENDER_EXTERNAL_URL || 'https://poker-chips-o7n9.onrender.com'] : null, trustProxy = process.env.RENDER === 'true', devLogin = process.env.TABLEMATE_DEV_LOGIN === '1', googleClientId = process.env.GOOGLE_CLIENT_ID, verifyGoogleIdToken = null, logError = error => process.stderr.write(`${error.stack}\n`), pushTransport = webPush, vapid = { publicKey: process.env.VAPID_PUBLIC_KEY, privateKey: process.env.VAPID_PRIVATE_KEY, subject: process.env.VAPID_SUBJECT }, store = createStore(), mailer = createMailer(), avatarCreatorRoot = fileURLToPath(new URL('../public/avatar-creator/', import.meta.url)) } = {}) {
+export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupIntervalMs = 60_000, allowedOrigins = process.env.NODE_ENV === 'production' ? [process.env.RENDER_EXTERNAL_URL || 'https://poker-chips-o7n9.onrender.com'] : null, trustProxy = process.env.RENDER === 'true', devLogin = process.env.TABLEMATE_DEV_LOGIN === '1', previewMode = false, googleClientId = process.env.GOOGLE_CLIENT_ID, verifyGoogleIdToken = null, logError = error => process.stderr.write(`${error.stack}\n`), pushTransport = webPush, vapid = { publicKey: process.env.VAPID_PUBLIC_KEY, privateKey: process.env.VAPID_PRIVATE_KEY, subject: process.env.VAPID_SUBJECT }, store = createStore(), mailer = createMailer(), avatarCreatorRoot = fileURLToPath(new URL('../public/avatar-creator/', import.meta.url)) } = {}) {
   const app = express();
   const httpServer = createHttpServer(app);
   const originAllowed = (origin, requestHost) => allowedOrigins ? allowedOrigins.includes(origin)
@@ -131,7 +131,8 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     next();
   });
   app.get('/healthz', (_req, res) => res.status(200).json({ ok: true }));
-  app.get('/api/config', (_req, res) => res.json({ accounts: accountsEnabled, email: emailEnabled,
+  app.get('/api/config', (_req, res) => res.json({ accounts: accountsEnabled, email: emailEnabled && !previewMode,
+    ...(previewMode ? { preview: true } : {}),
     googleClientId: googleEnabled ? googleClientId : null, avatarCreator }));
   app.use('/api', express.json({ limit: '4kb' }));
   const authLimits = new Map();
@@ -165,7 +166,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
   }
   app.use('/api/auth', (req, res, next) => { if (!accountsEnabled) res.sendStatus(404); else next(); });
   app.post('/api/auth/request', apiOrigin, async (req, res) => {
-    if (!emailEnabled) { res.sendStatus(404); return; }
+    if (!emailEnabled || previewMode) { res.sendStatus(404); return; }
     const email = normalizeEmail(req.body?.email);
     let devLink;
     if (email && allowLinkRequest(req, email)) {
@@ -179,7 +180,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     res.json({ message: 'If that address can receive mail, a sign-in link is on its way.', ...(devLink ? { devLink } : {}) });
   });
   app.post('/api/auth/verify', apiOrigin, async (req, res) => {
-    if (!emailEnabled) { res.sendStatus(404); return; }
+    if (!emailEnabled || previewMode) { res.sendStatus(404); return; }
     const verified = await auth.verify(req.body?.token);
     if (!verified) { res.status(400).json({ error: 'This link has expired or was already used.' }); return; }
     res.setHeader('Set-Cookie', `tm_session=${verified.sessionToken}; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000${process.env.NODE_ENV === 'production' ? '; Secure' : ''}`);

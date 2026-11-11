@@ -110,6 +110,22 @@ test('local sign-in link requires an explicit demo flag and console mailer', asy
   assert.match(new URL(demo.devLink).searchParams.get('token'), /^[a-f0-9]{64}$/);
 });
 
+test('public preview mode hides normal email sign-in and never issues a development link', async t => {
+  let sends = 0;
+  const server = createServer({ store: new SqliteStore(':memory:'), previewMode: true, devLogin: true,
+    mailer: { enabled: true, local: true, send: async () => { sends++; } }, avatarCreatorRoot: absentAvatarCreatorRoot });
+  const { port } = await server.listen();
+  t.after(() => server.close());
+  const url = `http://127.0.0.1:${port}`;
+  assert.deepEqual(await (await fetch(`${url}/api/config`)).json(),
+    { accounts: true, email: false, preview: true, googleClientId: null, avatarCreator: false });
+  for (const path of ['/api/auth/request', '/api/auth/verify']) {
+    const response = await fetch(url + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    assert.equal(response.status, 404);
+  }
+  assert.equal(sends, 0);
+});
+
 test('Google sign-in verifies a credential, links by subject and uses the normal session', async t => {
   const store = new SqliteStore(':memory:');
   const sent = [];

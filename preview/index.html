@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#fffdf5">
+  <meta name="description" content="Explore the latest Tablemate features in a separate local preview.">
+  <title>Tablemate Preview · Try what's new</title>
+  <script src="/helpers.js"></script>
+  <script src="/theme-init.js"></script>
+  <link rel="stylesheet" href="/tokens.css">
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/preview/preview.css">
+  <script src="/prefs.js" defer></script>
+  <script src="/preview/preview.js" defer></script>
+</head>
+<body>
+  <header class="masthead preview-masthead">
+    <a class="wordmark" href="/preview/" aria-label="Tablemate preview home"><span class="chip-mark" aria-hidden="true"></span>tablemate<span class="wordmark-dot">.</span></a>
+    <nav class="preview-nav" aria-label="Preview navigation"><span class="preview-badge">LOCAL PREVIEW</span><a href="/">Open table</a><a href="/me.html">My profile</a></nav>
+  </header>
+  <main class="preview-shell">
+    <section class="preview-hero" aria-labelledby="preview-title">
+      <div class="preview-hero-copy">
+        <p class="eyebrow">A SEPARATE PLACE TO EXPLORE</p>
+        <h1 id="preview-title">Everything new.<br><em>All yours to try.</em></h1>
+        <p class="preview-lead">A full Tablemate test site with sample friends, a league season and saved nights. Try the latest screens, then start a real table with your own group.</p>
+        <div class="preview-hero-actions"><button id="demo-login" type="button" class="primary">Enter as Alex <span aria-hidden="true">↗</span></button><button id="fresh-login" type="button" class="preview-secondary">Try a fresh account</button><a class="preview-secondary" href="/">Play as a guest</a></div>
+        <p id="preview-account" class="preview-account" role="status" aria-live="polite">Checking your preview account…</p>
+      </div>
+      <div class="preview-visual" aria-label="Screenshots of the Tablemate character creator, friends and poker table">
+        <div class="preview-visual-main"><img src="/preview/assets/character-studio.png" width="1280" height="800" alt="Tablemate character studio showing the expanded hairstyle picker"></div>
+        <div class="preview-visual-friends"><img src="/preview/assets/friends.png" width="390" height="1300" alt="Tablemate friends screen with a saved friend and request"></div>
+        <div class="preview-visual-table"><img src="/preview/assets/table.png" width="390" height="900" alt="Four player poker table with character avatars"></div>
+      </div>
+    </section>
+
+    <section class="preview-guide" aria-labelledby="preview-guide-title">
+      <div><p class="eyebrow">START HERE</p><h2 id="preview-guide-title">Pick a seat in the preview.</h2></div>
+      <ol>
+        <li><strong>Enter as Alex</strong><span>Open a ready-to-test profile, league, friends list and four saved nights.</span></li>
+        <li><strong>Explore the features</strong><span>Use the links below to jump directly to each screen.</span></li>
+        <li><strong>Try your own flow</strong><span>Use a fresh test account to explore signup and make your own avatar.</span></li>
+      </ol>
+    </section>
+
+    <section class="preview-explore" aria-labelledby="preview-explore-title">
+      <div class="preview-section-heading"><div><p class="eyebrow">EXPLORE THE UPDATE</p><h2 id="preview-explore-title">Choose what to test.</h2></div><span>01 — 06</span></div>
+      <div class="preview-grid">
+        <a class="preview-card" href="/me.html#identity-panel"><span class="preview-card-index">01 / IDENTITY</span><span class="preview-card-symbol" aria-hidden="true">◉</span><h3>Profile & photo avatars</h3><p>Upload a photo, build an icon, control what other players see.</p><span class="preview-card-link">Open profile <span aria-hidden="true">↗</span></span></a>
+        <a class="preview-card" href="/avatar-creator/?return=/me.html"><span class="preview-card-index">02 / CHARACTER STUDIO</span><span class="preview-card-symbol" aria-hidden="true">✳</span><h3>More hairstyles</h3><p>Make a character in Unity and try pixie, afro, braids, ponytail and mohawk.</p><span class="preview-card-link">Open creator <span aria-hidden="true">↗</span></span></a>
+        <a class="preview-card" href="/friends.html"><span class="preview-card-index">03 / YOUR PEOPLE</span><span class="preview-card-symbol" aria-hidden="true">✦</span><h3>Friends</h3><p>See Alex’s friend and pending request, then search and send one yourself.</p><span class="preview-card-link">Open friends <span aria-hidden="true">↗</span></span></a>
+        <a class="preview-card" id="preview-league-link" href="/me.html#groups-title"><span class="preview-card-index">04 / FRIDAY NIGHT</span><span class="preview-card-symbol" aria-hidden="true">♠</span><h3>League & standings</h3><p>Review a four-player roster, season points, night history and table rules.</p><span class="preview-card-link">Open league <span aria-hidden="true">↗</span></span></a>
+        <a class="preview-card" href="/me.html#nights-title"><span class="preview-card-index">05 / YOUR HISTORY</span><span class="preview-card-symbol" aria-hidden="true">↗</span><h3>Stats & saved nights</h3><p>Check Alex’s trend, lifetime stats and four nights from the sample season.</p><span class="preview-card-link">Open history <span aria-hidden="true">↗</span></span></a>
+        <a class="preview-card" href="/"><span class="preview-card-index">06 / THE TABLE</span><span class="preview-card-symbol" aria-hidden="true">◈</span><h3>Presets & game night</h3><p>Start a table, try themes, rebuys, seat controls and Tonight’s ledger.</p><span class="preview-card-link">Start a table <span aria-hidden="true">↗</span></span></a>
+      </div>
+    </section>
+
+    <section class="preview-themes" aria-labelledby="preview-themes-title">
+      <div><p class="eyebrow">CHANGE THE FEEL</p><h2 id="preview-themes-title">Try the three new themes.</h2><p>Choose a theme here, then open the table to see it in play.</p></div>
+      <div class="preview-theme-list" role="group" aria-label="Preview themes">
+        <button type="button" class="preview-theme" data-preview-theme="miami-vice"><span class="preview-theme-swatch swatch-miami" aria-hidden="true"></span><span>Miami Vice</span></button>
+        <button type="button" class="preview-theme" data-preview-theme="royal-flush"><span class="preview-theme-swatch swatch-royal" aria-hidden="true"></span><span>Royal Flush</span></button>
+        <button type="button" class="preview-theme" data-preview-theme="retro-arcade"><span class="preview-theme-swatch swatch-arcade" aria-hidden="true"></span><span>Retro Arcade</span></button>
+      </div>
+      <p id="preview-theme-status" role="status" aria-live="polite"></p>
+    </section>
+    <footer class="preview-footer"><span>Made for the table.</span><p>This site uses separate sample data. Anyone with its public link can access the preview, so use test photos and details. Tablemate keeps an informal tally for friends; no money moves through it.</p></footer>
+  </main>
+</body>
+</html>
