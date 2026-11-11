@@ -114,6 +114,7 @@ export class SqliteStore {
     if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
     this.db = new DatabaseSync(path);
     this.db.exec('PRAGMA foreign_keys = ON');
+    this.db.exec('PRAGMA busy_timeout = 3000');
     this.db.exec('CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)');
     if (!this.db.prepare('SELECT version FROM schema_version').get()) this.db.prepare('INSERT INTO schema_version VALUES (0)').run();
     this.enabled = true;
@@ -342,7 +343,9 @@ export class SqliteStore {
         ON a.id = CASE WHEN r.user_a = ? THEN r.user_b ELSE r.user_a END
         WHERE r.user_a = ? OR r.user_b = ?`).all(accountId, accountId, accountId, accountId),
       blockedUsers: this.db.prepare(`SELECT a.username,b.created_at FROM friend_blocks b
-        JOIN accounts a ON a.id = b.blocked_id WHERE b.blocker_id = ?`).all(accountId) };
+        JOIN accounts a ON a.id = b.blocked_id WHERE b.blocker_id = ?`).all(accountId),
+      friendUpdates: this.db.prepare(`SELECT a.username,e.kind,e.created_at,e.read_at FROM friend_events e
+        JOIN accounts a ON a.id = e.actor_id WHERE e.account_id = ? ORDER BY e.created_at DESC`).all(accountId) };
   }
   async getSettings(accountId) {
     const row = this.db.prepare('SELECT settings_json FROM account_settings WHERE account_id = ?').get(accountId);

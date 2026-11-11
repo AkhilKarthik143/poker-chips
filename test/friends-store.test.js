@@ -61,7 +61,9 @@ test('friendship uses stable accounts through restart and username change; delet
   assert.equal(friends.list('alice').friends[0].username, 'Bob');
   await store.updateProfile('bob', { username: 'NewBob' }, THIRTY_DAYS + 21, THIRTY_DAYS);
   assert.equal(friends.list('alice').friends[0].username, 'NewBob');
-  assert.equal((await store.exportAccount('alice')).friendships[0].username, 'NewBob');
+  const exported = await store.exportAccount('alice');
+  assert.equal(exported.friendships[0].username, 'NewBob');
+  assert.equal(exported.friendUpdates[0].kind, 'accepted');
   await store.deleteAccount('bob', THIRTY_DAYS + 22);
   assert.equal(friends.list('alice').friends.length, 0);
   assert.equal(friends.unread('alice'), 0);
