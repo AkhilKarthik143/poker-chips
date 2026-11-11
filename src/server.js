@@ -20,6 +20,7 @@ import { MAX_PRESETS, normalizePreset, validPreset } from './preset-schema.js';
 import { normalizeRebuyPolicy, validRebuyPolicy } from './rebuy-policy.js';
 import { THIRTY_DAYS, usernameError, validAvatar, validPrivacy, avatarForAccount, privacyForAccount, defaultAvatarV2 } from './identity.js';
 import { hasUnityBuild, unityStatic } from './static-unity.js';
+import { FriendError, FriendsStore } from './friends-store.js';
 
 const SIX_HOURS = 6 * 60 * 60 * 1000;
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -39,6 +40,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
   const activeSession = accountsEnabled ? store.db.prepare('SELECT 1 FROM sessions WHERE token_hash = ? AND account_id = ? AND expires_at > ?') : null;
   const googleClient = googleEnabled && !verifyGoogleIdToken ? new OAuth2Client(googleClientId) : null;
   const leagueStore = accountsEnabled ? new LeagueStore(store.db) : null;
+  const friendsStore = accountsEnabled ? new FriendsStore(store.db) : null;
   const io = new Server(httpServer, { maxHttpBufferSize: 16_384,
     cors: { origin: (origin, cb) => cb(null, allowedOrigins ? allowedOrigins.includes(origin) : true) },
     allowRequest: (req, cb) => {
@@ -229,6 +231,74 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
       ...(privacy.showUsernameAtTables && account.username ? { username: account.username } : {}) };
   };
   app.get('/api/me', requireAccount, (req, res) => res.json(selfProfile(req.account)));
+  const friendSearchLimits = new Map();
+  const friendSendLimits = new Map();
+  function friendLimit(map, req, max) {
+    const key = hashToken(parseSessionCookie(req.headers.cookie));
+    const bucket = map.get(key);
+    if (!bucket || now() - bucket.start >= 60_000) { map.set(key, { start: now(), count: 1 }); return true; }
+    bucket.count++;
+    return bucket.count <= max;
+  }
+  const friendFailure = (res, error) => {
+    if (error instanceof FriendError) res.status(error.status).json({ error: error.message });
+    else { logError(error); res.status(503).json({ error: 'Friends are temporarily unavailable.' }); }
+  };
+  app.get('/api/friends', requireAccount, (req, res) => res.json({ ...friendsStore.list(req.account.id),
+    notifications: friendsStore.notifications(req.account.id), unread: friendsStore.unread(req.account.id) }));
+  app.get('/api/friends/summary', requireAccount, (req, res) => res.json({ unread: friendsStore.unread(req.account.id) }));
+  app.get('/api/friends/search', apiOrigin, requireAccount, (req, res) => {
+    if (!friendLimit(friendSearchLimits, req, 30)) { res.status(429).json({ error: 'Too many searches. Try again soon.' }); return; }
+    const query = req.query.q;
+    if (typeof query !== 'string' || !/^[A-Za-z][A-Za-z0-9_]{1,19}$/.test(query)) {
+      res.status(400).json({ error: 'Enter at least two username characters.' }); return;
+    }
+    res.json({ users: friendsStore.search(req.account.id, query) });
+  });
+  app.post('/api/friends/notifications/read', apiOrigin, requireAccount, (req, res) => {
+    if (!req.body || Object.keys(req.body).length) { res.status(400).json({ error: 'Invalid request.' }); return; }
+    friendsStore.markRead(req.account.id, now()); res.json({ unread: 0 });
+  });
+  app.post('/api/friends/:username/:action', apiOrigin, requireAccount, (req, res) => {
+    if (!req.body || Object.keys(req.body).length || usernameError(req.params.username) ||
+      !['send', 'accept', 'decline', 'cancel', 'remove', 'block', 'unblock'].includes(req.params.action)) {
+      res.status(400).json({ error: 'Invalid friend action.' }); return;
+    }
+    if (req.params.action === 'send' && !friendLimit(friendSendLimits, req, 10)) {
+      res.status(429).json({ error: 'Too many friend requests. Try again soon.' }); return;
+    }
+    const target = friendsStore.byUsername(req.params.username);
+    if (!target) { res.status(404).json({ error: 'User not found.' }); return; }
+    try { res.json(friendsStore.change(req.account.id, target.id, req.params.action, now())); }
+    catch (error) { friendFailure(res, error); }
+  });
+  function friendSeat(req, res) {
+    const room = rooms.get(String(req.params.code).toUpperCase());
+    const targetSeat = room?.game.players.find(player => player.id === req.params.seatId);
+    if (!targetSeat || !room.accounts.has(targetSeat.id)) { res.status(404).json({ error: 'Account seat not found.' }); return null; }
+    const mySeat = room.game.players.find(player => room.accounts.get(player.id) === req.account.id);
+    if (!mySeat) { res.status(403).json({ error: 'Join this table with your account first.' }); return null; }
+    const targetId = room.accounts.get(targetSeat.id);
+    if (targetId === req.account.id) { res.status(400).json({ error: 'This is your seat.' }); return null; }
+    return targetId;
+  }
+  app.get('/api/friends/table/:code/:seatId', requireAccount, (req, res) => {
+    const targetId = friendSeat(req, res);
+    if (!targetId) return;
+    const peer = friendsStore.peer(req.account.id, targetId, { table: true });
+    if (!peer) { res.status(404).json({ error: 'Account seat not found.' }); return; }
+    res.json(peer);
+  });
+  app.post('/api/friends/table/:code/:seatId/request', apiOrigin, requireAccount, (req, res) => {
+    if (!req.body || Object.keys(req.body).length) { res.status(400).json({ error: 'Invalid friend action.' }); return; }
+    if (!friendLimit(friendSendLimits, req, 10)) { res.status(429).json({ error: 'Too many friend requests. Try again soon.' }); return; }
+    const targetId = friendSeat(req, res);
+    if (!targetId || !friendsStore.peer(req.account.id, targetId, { table: true })) {
+      if (targetId) res.status(404).json({ error: 'Account seat not found.' }); return;
+    }
+    try { res.json(friendsStore.change(req.account.id, targetId, 'send', now())); }
+    catch (error) { friendFailure(res, error); }
+  });
   const usernameLimits = new Map();
   app.get('/api/username/check', apiOrigin, requireAccount, (req, res) => {
     const session = hashToken(parseSessionCookie(req.headers.cookie));
@@ -537,6 +607,9 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
       permissions,
       cosmetics: Object.fromEntries(room.cosmetics),
       identities: Object.fromEntries(room.identities),
+      socialSeats: signedInSeat(room, id, socket) ? state.players.filter(player =>
+        room.accounts.has(player.id) && room.accounts.get(player.id) !== room.accounts.get(id) &&
+        friendsStore.account(room.accounts.get(player.id))?.username).map(player => player.id) : [],
       rebuyPolicy: room.rebuyPolicy,
       canUndo: permissions.owner && room.game.history.length > 0, serverTime: now(),
       settlement: structuredClone(room.lastSettlement || game.settlement(room.game)),

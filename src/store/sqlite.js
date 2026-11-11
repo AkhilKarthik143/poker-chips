@@ -79,6 +79,31 @@ const identityMigration = `
   CREATE UNIQUE INDEX accounts_username_lower ON accounts(username_lower);
   CREATE TABLE username_history (username_lower TEXT PRIMARY KEY, account_id TEXT NOT NULL, released_at INTEGER NOT NULL);
 `;
+const friendsMigration = `
+  CREATE TABLE friend_relations (
+    user_a TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    user_b TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    requester_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    status TEXT NOT NULL CHECK(status IN ('pending','friends')),
+    created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, accepted_at INTEGER,
+    PRIMARY KEY(user_a,user_b), CHECK(user_a < user_b),
+    CHECK(requester_id = user_a OR requester_id = user_b)
+  );
+  CREATE INDEX friend_relations_b ON friend_relations(user_b,status);
+  CREATE TABLE friend_blocks (
+    blocker_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    blocked_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    created_at INTEGER NOT NULL, PRIMARY KEY(blocker_id,blocked_id), CHECK(blocker_id <> blocked_id)
+  );
+  CREATE INDEX friend_blocks_target ON friend_blocks(blocked_id);
+  CREATE TABLE friend_events (
+    id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    actor_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL CHECK(kind IN ('request','accepted')),
+    created_at INTEGER NOT NULL, read_at INTEGER
+  );
+  CREATE INDEX friend_events_inbox ON friend_events(account_id,read_at,created_at);
+`;
 
 export class SqliteStore {
   constructor(path) {
@@ -149,6 +174,14 @@ export class SqliteStore {
       try {
         this.db.exec(identityMigration);
         this.db.prepare('UPDATE schema_version SET version = 7').run();
+        this.db.exec('COMMIT');
+      } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+    }
+    if (version < 8) {
+      this.db.exec('BEGIN');
+      try {
+        this.db.exec(friendsMigration);
+        this.db.prepare('UPDATE schema_version SET version = 8').run();
         this.db.exec('COMMIT');
       } catch (error) { this.db.exec('ROLLBACK'); throw error; }
     }
