@@ -123,10 +123,11 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
   }
   app.disable('x-powered-by');
   app.use((_req, res, next) => {
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('Referrer-Policy', 'same-origin');
-    // Google Identity Services injects button styles; keep its CSP allowance on the sign-in page only.
     const googleSources = googleEnabled && _req.path === '/login.html';
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    // Send only the site origin to Google Identity Services, as Google recommends.
+    res.setHeader('Referrer-Policy', googleSources ? 'strict-origin-when-cross-origin' : 'same-origin');
+    // Google Identity Services injects button styles; keep its CSP allowance on the sign-in page only.
     res.setHeader('Content-Security-Policy', googleSources
       ? "default-src 'self'; script-src 'self' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src 'self' https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
       : "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
