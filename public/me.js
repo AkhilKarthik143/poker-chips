@@ -9,7 +9,6 @@ let profileAccount;
 function renderAvatarPreview() {
   if (!profileAccount) return;
   $('#profile-avatar-preview').replaceChildren(window.TablemateAvatar.renderAvatar(profileAccount.avatar, 72, profileAccount.displayName));
-  $('#avatar-description').textContent = window.TablemateAvatar.describe(profileAccount.avatar);
   $('#remove-avatar-photo').hidden = profileAccount.avatar?.v !== 3;
 }
 function renderProfileForm() {
@@ -94,7 +93,6 @@ $('#profile-form').addEventListener('submit', async event => {
 $('#preview-profile').addEventListener('click', () => {
   const body = $('#profile-preview-body'); body.replaceChildren();
   body.append(window.TablemateAvatar.renderAvatar(profileAccount.avatar, 72, profileAccount.displayName));
-  const avatarDescription = document.createElement('p'); avatarDescription.textContent = window.TablemateAvatar.describe(profileAccount.avatar); body.append(avatarDescription);
   const name = document.createElement('h3'); name.textContent = profileAccount.displayName; body.append(name);
   const username = document.createElement('p'); username.textContent = profileAccount.username ? `@${profileAccount.username}` : 'No username yet'; body.append(username);
   const visibility = document.createElement('p'); visibility.textContent = profileAccount.privacy.profileVisibility === 'leagues'
