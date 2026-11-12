@@ -55,3 +55,23 @@ test('username API rate limit and no-database feature flag', async t => {
   assert.equal((await fetch(`http://127.0.0.1:${noDbPort}/api/me/profile`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status, 404);
   assert.equal((await fetch(`http://127.0.0.1:${noDbPort}/api/me/onboarding/skip`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status, 404);
 });
+
+test('production accepts same-origin username reads without Origin and rejects cross-site reads', async t => {
+  const store = new SqliteStore(':memory:');
+  await store.createAccount('first', 'first@example.com', 'First', 0);
+  const token = 'a'.repeat(64);
+  await store.saveSession(hashSecret(token), 'first', 100_000);
+  const allowedOrigins = [];
+  const server = createServer({ store, allowedOrigins, now: () => 1000,
+    mailer: { enabled: true, send: async () => {} } });
+  const { port } = await server.listen();
+  t.after(() => server.close());
+  const root = `http://127.0.0.1:${port}`;
+  allowedOrigins.push(root);
+  const headers = { Cookie: `tm_session=${token}`, 'Sec-Fetch-Site': 'same-origin' };
+  assert.equal((await fetch(`${root}/api/username/check?u=GoodName`, { headers })).status, 200);
+  assert.equal((await fetch(`${root}/api/username/suggestions`, { headers })).status, 200);
+  assert.equal((await fetch(`${root}/api/username/check?u=GoodName`, { headers: { ...headers, Origin: 'https://attacker.example' } })).status, 403);
+  assert.equal((await fetch(`${root}/api/username/check?u=GoodName`, { headers: { ...headers, 'Sec-Fetch-Site': 'cross-site' } })).status, 403);
+  assert.equal((await fetch(`${root}/api/username/check?u=GoodName`, { headers: { ...headers, 'Sec-Fetch-Site': 'none' } })).status, 403);
+});

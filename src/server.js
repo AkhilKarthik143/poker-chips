@@ -148,7 +148,12 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
   app.use('/api', express.json({ limit: '4kb' }));
   const authLimits = new Map();
   function apiOrigin(req, res, next) {
-    if (req.get('Sec-Fetch-Site') === 'cross-site' || !originAllowed(req.get('Origin'), req.get('Host'))) {
+    // Browsers omit Origin on same-origin GETs. Fetch metadata identifies those
+    // reads without relaxing the Origin requirement for writes.
+    const host = req.get('Host');
+    const implicitOrigin = req.method === 'GET' && req.get('Sec-Fetch-Site') === 'same-origin'
+      ? allowedOrigins?.find(origin => origin === `https://${host}` || origin === `http://${host}`) : undefined;
+    if (req.get('Sec-Fetch-Site') === 'cross-site' || !originAllowed(req.get('Origin') || implicitOrigin, host)) {
       res.status(403).json({ error: 'Origin not allowed.' }); return;
     }
     next();
