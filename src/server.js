@@ -66,31 +66,31 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
   }
   const rooms = new Map();
   const liveByLeague = new Map();
-  const signedInSeat = (room, id, socket) => {
+  const signedInSeat = async (room, id, socket) => {
     const accountId = room.accounts.get(id);
     return Boolean(accountId && socket?.data.accountId === accountId && socket.data.sessionHash &&
-      activeSession.get(socket.data.sessionHash, accountId, now()));
+      await activeSession.get(socket.data.sessionHash, accountId, now()));
   };
-  function roomAccess(room, id, socket) {
+  async function roomAccess(room, id, socket, signedIn = null) {
     if (!room.leagueId) {
       const host = room.hostId === id;
       return { manage: host, owner: host };
     }
     const accountId = room.accounts.get(id);
-    if (!signedInSeat(room, id, socket) || !leagueStore.get(room.leagueId)) {
+    if (!(signedIn ?? await signedInSeat(room, id, socket)) || !await leagueStore.get(room.leagueId)) {
       return { manage: false, owner: false };
     }
-    const role = leagueStore.member(room.leagueId, accountId)?.role;
+    const role = (await leagueStore.member(room.leagueId, accountId))?.role;
     return { manage: role === 'commissioner' || role === 'co', owner: role === 'commissioner' };
   }
-  function requireRoomAccess(room, id, socket, permission) {
-    requireValue(roomAccess(room, id, socket)[permission], permission === 'owner'
+  async function requireRoomAccess(room, id, socket, permission) {
+    requireValue((await roomAccess(room, id, socket))[permission], permission === 'owner'
       ? 'Only the league commissioner or table host can do that.'
       : 'Only the table host or a league commissioner or co-commissioner can do that.');
   }
-  function broadcastLeague(leagueId) {
+  async function broadcastLeague(leagueId) {
     const room = rooms.get(liveByLeague.get(leagueId));
-    if (room) broadcast(room);
+    if (room) await broadcast(room);
   }
   function persist(room, finalize = false) {
     if (!store.enabled || room.game.handNumber === 0) return;
@@ -107,11 +107,13 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
         startedAt: room.startedAt, updatedAt: now(), endedAt: room.endedAt ?? null,
         hands: room.game.handNumber, settings: room.game.settings,
         settlement: game.settlement(room.game), players };
-      return Promise.resolve().then(async () => {
+      const pending = (room.persistChain || Promise.resolve()).then(async () => {
         await store.saveNight(snapshot);
-        if (snapshot.endedAt && room.leagueId) leagueStore.finalizeNight(room.nightId);
+        if (snapshot.endedAt && room.leagueId) await leagueStore.finalizeNight(room.nightId);
         return true;
       }).catch(error => { logError(error); return false; });
+      room.persistChain = pending;
+      return pending;
     } catch (error) { logError(error); return Promise.resolve(false); }
   }
   let pushEnabled = false;
@@ -131,9 +133,17 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     next();
   });
   app.get('/healthz', (_req, res) => res.status(200).json({ ok: true }));
-  app.get('/api/config', (_req, res) => res.json({ accounts: accountsEnabled, email: emailEnabled && !previewMode,
-    ...(previewMode ? { preview: true } : {}),
-    googleClientId: googleEnabled ? googleClientId : null, avatarCreator }));
+  app.get('/api/config', async (_req, res) => {
+    try {
+      if (accountsEnabled) await store.ping();
+      res.json({ accounts: accountsEnabled, email: emailEnabled && !previewMode,
+        ...(previewMode ? { preview: true } : {}),
+        googleClientId: googleEnabled ? googleClientId : null, avatarCreator });
+    } catch (error) {
+      logError(error);
+      res.status(503).json({ accounts: false, email: false, googleClientId: null, avatarCreator: false });
+    }
+  });
   app.use('/api', express.json({ limit: '4kb' }));
   const authLimits = new Map();
   function apiOrigin(req, res, next) {
@@ -218,7 +228,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
         for (const [playerId, socketId] of room.connections) if (io.sockets.sockets.get(socketId)?.data.sessionHash === sessionHash) {
           room.identities.delete(playerId); changed = true;
         }
-        if (changed) broadcast(room);
+        if (changed) (await broadcast(room));
       }
     }
     res.setHeader('Set-Cookie', 'tm_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0');
@@ -232,16 +242,16 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     return { ...(privacy.showAvatarAtTables ? { avatar: avatarForAccount(account) } : {}),
       ...(privacy.showUsernameAtTables && account.username ? { username: account.username } : {}) };
   };
-  const syncSeatIdentity = (accountId, account) => {
+  const syncSeatIdentity = async (accountId, account) => {
     for (const room of rooms.values()) {
       let changed = false;
       for (const [playerId, seatedAccountId] of room.accounts) if (seatedAccountId === accountId) {
         const socket = io.sockets.sockets.get(room.connections.get(playerId));
-        if (signedInSeat(room, playerId, socket)) room.identities.set(playerId, tableIdentity(account));
+        if ((await signedInSeat(room, playerId, socket))) room.identities.set(playerId, tableIdentity(account));
         else room.identities.delete(playerId);
         changed = true;
       }
-      if (changed) broadcast(room);
+      if (changed) (await broadcast(room));
     }
   };
   app.get('/api/me', requireAccount, (req, res) => res.json(selfProfile(req.account)));
@@ -258,20 +268,20 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     if (error instanceof FriendError) res.status(error.status).json({ error: error.message });
     else { logError(error); res.status(503).json({ error: 'Friends are temporarily unavailable.' }); }
   };
-  app.get('/api/friends', requireAccount, (req, res) => res.json({ ...friendsStore.list(req.account.id),
-    notifications: friendsStore.notifications(req.account.id), unread: friendsStore.unread(req.account.id) }));
-  app.get('/api/friends/summary', requireAccount, (req, res) => res.json({ unread: friendsStore.unread(req.account.id) }));
-  app.get('/api/friends/search', apiOrigin, requireAccount, (req, res) => {
+  app.get('/api/friends', requireAccount, async (req, res) => res.json({ ...(await friendsStore.list(req.account.id)),
+    notifications: (await friendsStore.notifications(req.account.id)), unread: (await friendsStore.unread(req.account.id)) }));
+  app.get('/api/friends/summary', requireAccount, async (req, res) => res.json({ unread: (await friendsStore.unread(req.account.id)) }));
+  app.get('/api/friends/search', apiOrigin, requireAccount, async (req, res) => {
     if (!friendLimit(friendSearchLimits, req, 30)) { res.status(429).json({ error: 'Too many searches. Try again soon.' }); return; }
     const query = req.query.q;
     if (typeof query !== 'string' || !/^[A-Za-z][A-Za-z0-9_]{1,19}$/.test(query)) {
       res.status(400).json({ error: 'Enter at least two username characters.' }); return;
     }
-    res.json({ users: friendsStore.search(req.account.id, query) });
+    res.json({ users: (await friendsStore.search(req.account.id, query)) });
   });
-  app.post('/api/friends/notifications/read', apiOrigin, requireAccount, (req, res) => {
+  app.post('/api/friends/notifications/read', apiOrigin, requireAccount, async (req, res) => {
     if (!req.body || Object.keys(req.body).length) { res.status(400).json({ error: 'Invalid request.' }); return; }
-    friendsStore.markRead(req.account.id, now()); res.json({ unread: 0 });
+    (await friendsStore.markRead(req.account.id, now())); res.json({ unread: 0 });
   });
   app.get('/api/friends/invite/:code', requireAccount, (req, res) => {
     const room = rooms.get(String(req.params.code).toUpperCase());
@@ -281,7 +291,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     if (!ownSeat) { res.status(403).json({ error: 'Join this table with your account first.' }); return; }
     res.json({ code: room.code });
   });
-  app.post('/api/friends/:username/:action', apiOrigin, requireAccount, (req, res) => {
+  app.post('/api/friends/:username/:action', apiOrigin, requireAccount, async (req, res) => {
     if (!req.body || Object.keys(req.body).length || usernameError(req.params.username) ||
       !['send', 'accept', 'decline', 'cancel', 'remove', 'block', 'unblock'].includes(req.params.action)) {
       res.status(400).json({ error: 'Invalid friend action.' }); return;
@@ -289,9 +299,9 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     if (req.params.action === 'send' && !friendLimit(friendSendLimits, req, 10)) {
       res.status(429).json({ error: 'Too many friend requests. Try again soon.' }); return;
     }
-    const target = friendsStore.byUsername(req.params.username);
+    const target = (await friendsStore.byUsername(req.params.username));
     if (!target) { res.status(404).json({ error: 'User not found.' }); return; }
-    try { res.json(friendsStore.change(req.account.id, target.id, req.params.action, now())); }
+    try { res.json((await friendsStore.change(req.account.id, target.id, req.params.action, now()))); }
     catch (error) { friendFailure(res, error); }
   });
   function friendSeat(req, res) {
@@ -306,35 +316,35 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     if (targetId === req.account.id) { res.status(400).json({ error: 'This is your seat.' }); return null; }
     return targetId;
   }
-  app.get('/api/friends/table/:code/:seatId', requireAccount, (req, res) => {
+  app.get('/api/friends/table/:code/:seatId', requireAccount, async (req, res) => {
     const targetId = friendSeat(req, res);
     if (!targetId) return;
-    const peer = friendsStore.peer(req.account.id, targetId, { table: true });
+    const peer = (await friendsStore.peer(req.account.id, targetId, { table: true }));
     if (!peer) { res.status(404).json({ error: 'Account seat not found.' }); return; }
     res.json(peer);
   });
-  app.post('/api/friends/table/:code/:seatId/request', apiOrigin, requireAccount, (req, res) => {
+  app.post('/api/friends/table/:code/:seatId/request', apiOrigin, requireAccount, async (req, res) => {
     if (!req.body || Object.keys(req.body).length) { res.status(400).json({ error: 'Invalid friend action.' }); return; }
     if (!friendLimit(friendSendLimits, req, 10)) { res.status(429).json({ error: 'Too many friend requests. Try again soon.' }); return; }
     const targetId = friendSeat(req, res);
-    if (!targetId || !friendsStore.peer(req.account.id, targetId, { table: true })) {
+    if (!targetId || !(await friendsStore.peer(req.account.id, targetId, { table: true }))) {
       if (targetId) res.status(404).json({ error: 'Account seat not found.' }); return;
     }
-    try { res.json(friendsStore.change(req.account.id, targetId, 'send', now())); }
+    try { res.json((await friendsStore.change(req.account.id, targetId, 'send', now()))); }
     catch (error) { friendFailure(res, error); }
   });
   const usernameLimits = new Map();
-  app.get('/api/username/check', apiOrigin, requireAccount, (req, res) => {
+  app.get('/api/username/check', apiOrigin, requireAccount, async (req, res) => {
     const session = hashToken(parseSessionCookie(req.headers.cookie));
     const bucket = usernameLimits.get(session);
     if (bucket && now() - bucket.start < 60_000 && bucket.count >= 30) { res.status(429).json({ error: 'Too many username checks.' }); return; }
     if (!bucket || now() - bucket.start >= 60_000) usernameLimits.set(session, { start: now(), count: 1 });
     else bucket.count++;
-    const reason = usernameError(req.query.u) || store.usernameAvailability(req.account.id, req.query.u, now(), THIRTY_DAYS);
+    const reason = usernameError(req.query.u) || (await store.usernameAvailability(req.account.id, req.query.u, now(), THIRTY_DAYS));
     res.json({ available: !reason, reason });
   });
   const suggestionLimits = new Map();
-  app.get('/api/username/suggestions', apiOrigin, requireAccount, (req, res) => {
+  app.get('/api/username/suggestions', apiOrigin, requireAccount, async (req, res) => {
     const key = req.account.id; const bucket = suggestionLimits.get(key);
     if (bucket && now() - bucket.start < 60_000 && bucket.count >= 5) { res.status(429).json({ error: 'Try suggestions again later.' }); return; }
     if (!bucket || now() - bucket.start >= 60_000) suggestionLimits.set(key, { start: now(), count: 1 }); else bucket.count++;
@@ -343,7 +353,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     for (let tries = 0; tries < 60 && choices.size < 3; tries++) {
       const suffix = Array.from({ length: 4 }, () => 'abcdefghijklmnopqrstuvwxyz0123456789'[randomInt(36)]).join('');
       const candidate = `${stem}${suffix}`;
-      if (!usernameError(candidate) && !store.usernameAvailability(req.account.id, candidate, now(), THIRTY_DAYS)) choices.add(candidate);
+      if (!usernameError(candidate) && !(await store.usernameAvailability(req.account.id, candidate, now(), THIRTY_DAYS))) choices.add(candidate);
     }
     res.json({ suggestions: [...choices] });
   });
@@ -381,7 +391,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     const patch = { ...body, ...(body.displayName !== undefined ? { displayName: normalizedName(body.displayName) } : {}) };
     const result = await store.updateProfile(req.account.id, patch, now(), THIRTY_DAYS);
     if (result.reason) { res.status(409).json({ error: result.reason }); return; }
-    syncSeatIdentity(req.account.id, result.account);
+    (await syncSeatIdentity(req.account.id, result.account));
     res.json(selfProfile(result.account));
   });
   const photoUploadLimits = new Map();
@@ -397,7 +407,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     try {
       const image = await processAvatarPhoto(req.body, req.get('Content-Type').split(';')[0].toLowerCase());
       const account = await store.setAvatarPhoto(req.account.id, randomBytes(16).toString('hex'), image, now());
-      syncSeatIdentity(req.account.id, account);
+      (await syncSeatIdentity(req.account.id, account));
       res.json(selfProfile(account));
     } catch (error) {
       if (error.message === 'Choose a valid JPEG, PNG or WebP photo.') { res.status(400).json({ error: error.message }); return; }
@@ -407,12 +417,12 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
   app.delete('/api/me/avatar-photo', apiOrigin, requireAccount, async (req, res) => {
     if (avatarForAccount(req.account).v !== 3) { res.status(409).json({ error: 'No photo avatar to remove.' }); return; }
     const result = await store.updateProfile(req.account.id, { avatar: defaultAvatarV2(req.account.id) }, now(), THIRTY_DAYS);
-    syncSeatIdentity(req.account.id, result.account);
+    (await syncSeatIdentity(req.account.id, result.account));
     res.json(selfProfile(result.account));
   });
   app.get('/avatar-photos/:key.webp', async (req, res) => {
     if (!accountsEnabled || !/^[0-9a-f]{32}$/.test(req.params.key)) { res.sendStatus(404); return; }
-    const image = await store.getAvatarPhoto?.(req.params.key);
+    const image = await (await store.getAvatarPhoto?.(req.params.key));
     if (!image) { res.sendStatus(404); return; }
     res.set('Cache-Control', 'private, no-store');
     res.set('Cross-Origin-Resource-Policy', 'same-origin');
@@ -423,7 +433,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     if (usernameError(req.params.username)) { hiddenProfile(res); return; }
     const target = await store.profileByUsername(req.params.username);
     if (!target) { hiddenProfile(res); return; }
-    const sharedLeagues = store.sharedLeagues(req.account.id, target.id);
+    const sharedLeagues = (await store.sharedLeagues(req.account.id, target.id));
     if (target.id !== req.account.id && (privacyForAccount(target).profileVisibility !== 'leagues' || !sharedLeagues.length)) {
       hiddenProfile(res); return;
     }
@@ -506,19 +516,19 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
       for (const [playerId, accountId] of room.accounts) {
         if (accountId === req.account.id) { room.accounts.delete(playerId); room.identities.delete(playerId); changed = true; }
       }
-      if (changed) broadcast(room);
+      if (changed) (await broadcast(room));
     }
     res.setHeader('Set-Cookie', 'tm_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0');
     res.json({ deleted: true });
   });
   const leagueIdValid = value => typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value);
   const newInvite = () => Array.from({ length: 8 }, () => ALPHABET[randomInt(ALPHABET.length)]).join('');
-  const publicLeague = league => ({ id: league.id, name: league.name, inviteCode: league.invite_code,
-    tableSettings: JSON.parse(league.table_settings_json), members: leagueStore.roster(league.id) });
-  function requireLeague(req, res, next) {
+  const publicLeague = async league => ({ id: league.id, name: league.name, inviteCode: league.invite_code,
+    tableSettings: JSON.parse(league.table_settings_json), members: (await leagueStore.roster(league.id)) });
+  async function requireLeague(req, res, next) {
     if (!leagueIdValid(req.params.id)) { res.sendStatus(404); return; }
-    const league = leagueStore.get(req.params.id);
-    const member = league && leagueStore.member(league.id, req.account.id);
+    const league = (await leagueStore.get(req.params.id));
+    const member = league && (await leagueStore.member(league.id, req.account.id));
     if (!member) { res.sendStatus(404); return; }
     req.league = league; req.leagueMember = member; next();
   }
@@ -533,108 +543,108 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     return game.createTable(input).settings;
   }
   app.use('/api/leagues', requireAccount);
-  app.post('/api/leagues', apiOrigin, (req, res) => {
+  app.post('/api/leagues', apiOrigin, async (req, res) => {
     if (!req.body || Object.keys(req.body).length !== 1 || !validName(req.body.name)) {
       res.status(400).json({ error: 'Invalid league name.' }); return;
     }
     let inviteCode;
-    do { inviteCode = newInvite(); } while (leagueStore.byInvite(inviteCode));
-    const league = leagueStore.create({ id: randomUUID(), name: normalizedName(req.body.name), inviteCode,
-      settings: game.createTable().settings, account: req.account, memberId: randomUUID(), time: now() });
-    res.status(201).json(publicLeague(league));
+    do { inviteCode = newInvite(); } while ((await leagueStore.byInvite(inviteCode)));
+    const league = (await leagueStore.create({ id: randomUUID(), name: normalizedName(req.body.name), inviteCode,
+      settings: game.createTable().settings, account: req.account, memberId: randomUUID(), time: now() }));
+    res.status(201).json((await publicLeague(league)));
   });
-  app.get('/api/leagues', (req, res) => res.json({ leagues: leagueStore.mine(req.account.id) }));
-  app.post('/api/leagues/join', apiOrigin, (req, res) => {
+  app.get('/api/leagues', async (req, res) => res.json({ leagues: (await leagueStore.mine(req.account.id)) }));
+  app.post('/api/leagues/join', apiOrigin, async (req, res) => {
     const code = typeof req.body?.inviteCode === 'string' ? req.body.inviteCode.toUpperCase() : null;
     if (!code || !/^[A-HJ-NP-Z]{8}$/.test(code) || Object.keys(req.body).length !== 1) {
       res.status(400).json({ error: 'Invalid invite code.' }); return;
     }
-    const league = leagueStore.byInvite(code);
+    const league = (await leagueStore.byInvite(code));
     if (!league) { res.sendStatus(404); return; }
-    leagueStore.join(league.id, req.account, randomUUID(), now());
-    res.json(publicLeague(league));
+    (await leagueStore.join(league.id, req.account, randomUUID(), now()));
+    res.json((await publicLeague(league)));
   });
-  app.get('/api/leagues/:id', requireLeague, (req, res) => res.json({ ...publicLeague(req.league), myRole: req.leagueMember.role }));
-  app.patch('/api/leagues/:id', apiOrigin, requireLeague, role('commissioner'), (req, res) => {
+  app.get('/api/leagues/:id', requireLeague, async (req, res) => res.json({ ...(await publicLeague(req.league)), myRole: req.leagueMember.role }));
+  app.patch('/api/leagues/:id', apiOrigin, requireLeague, role('commissioner'), async (req, res) => {
     const body = req.body || {};
     if (Object.keys(body).some(key => !['name', 'tableSettings'].includes(key)) ||
       (body.name !== undefined && !validName(body.name))) { res.status(400).json({ error: 'Invalid league update.' }); return; }
     const settings = body.tableSettings === undefined ? JSON.parse(req.league.table_settings_json) : tableSettings(body.tableSettings);
-    res.json(publicLeague(leagueStore.update(req.league.id, body.name ? normalizedName(body.name) : req.league.name, settings)));
+    res.json((await publicLeague((await leagueStore.update(req.league.id, body.name ? normalizedName(body.name) : req.league.name, settings)))));
   });
-  app.post('/api/leagues/:id/leave', apiOrigin, requireLeague, (req, res) => {
-    leagueStore.leave(req.leagueMember, now()); broadcastLeague(req.league.id); res.json({ left: true });
+  app.post('/api/leagues/:id/leave', apiOrigin, requireLeague, async (req, res) => {
+    (await leagueStore.leave(req.leagueMember, now())); (await broadcastLeague(req.league.id)); res.json({ left: true });
   });
-  app.post('/api/leagues/:id/invite/rotate', apiOrigin, requireLeague, role('commissioner', 'co'), (req, res) => {
-    let code; do { code = newInvite(); } while (leagueStore.byInvite(code));
-    leagueStore.rotate(req.league.id, code); res.json({ inviteCode: code });
+  app.post('/api/leagues/:id/invite/rotate', apiOrigin, requireLeague, role('commissioner', 'co'), async (req, res) => {
+    let code; do { code = newInvite(); } while ((await leagueStore.byInvite(code)));
+    (await leagueStore.rotate(req.league.id, code)); res.json({ inviteCode: code });
   });
-  app.patch('/api/leagues/:id/members/:memberId', apiOrigin, requireLeague, role('commissioner'), (req, res) => {
+  app.patch('/api/leagues/:id/members/:memberId', apiOrigin, requireLeague, role('commissioner'), async (req, res) => {
     if (!['co', 'member'].includes(req.body?.role) || Object.keys(req.body).length !== 1) { res.status(400).json({ error: 'Invalid role.' }); return; }
-    leagueStore.setRole(req.league.id, req.params.memberId, req.body.role); broadcastLeague(req.league.id);
-    res.json({ members: leagueStore.roster(req.league.id) });
+    (await leagueStore.setRole(req.league.id, req.params.memberId, req.body.role)); (await broadcastLeague(req.league.id));
+    res.json({ members: (await leagueStore.roster(req.league.id)) });
   });
-  app.delete('/api/leagues/:id/members/:memberId', apiOrigin, requireLeague, role('commissioner', 'co'), (req, res) => {
-    leagueStore.remove(req.league.id, req.params.memberId, now()); broadcastLeague(req.league.id);
-    res.json({ members: leagueStore.roster(req.league.id) });
+  app.delete('/api/leagues/:id/members/:memberId', apiOrigin, requireLeague, role('commissioner', 'co'), async (req, res) => {
+    (await leagueStore.remove(req.league.id, req.params.memberId, now())); (await broadcastLeague(req.league.id));
+    res.json({ members: (await leagueStore.roster(req.league.id)) });
   });
-  app.post('/api/leagues/:id/transfer', apiOrigin, requireLeague, role('commissioner'), (req, res) => {
+  app.post('/api/leagues/:id/transfer', apiOrigin, requireLeague, role('commissioner'), async (req, res) => {
     requireValue(leagueIdValid(req.body?.memberId) && Object.keys(req.body).length === 1, 'Invalid member.');
-    leagueStore.transfer(req.league.id, req.leagueMember.id, req.body?.memberId); broadcastLeague(req.league.id);
-    res.json({ members: leagueStore.roster(req.league.id) });
+    (await leagueStore.transfer(req.league.id, req.leagueMember.id, req.body?.memberId)); (await broadcastLeague(req.league.id));
+    res.json({ members: (await leagueStore.roster(req.league.id)) });
   });
   app.get('/api/leagues/:id/live', requireLeague, (req, res) => res.json({ roomCode: liveByLeague.get(req.league.id) ?? null }));
-  app.get('/api/leagues/:id/seasons', requireLeague, (req, res) => res.json({ seasons: leagueStore.seasons(req.league.id).map(season => ({
+  app.get('/api/leagues/:id/seasons', requireLeague, async (req, res) => res.json({ seasons: (await leagueStore.seasons(req.league.id)).map(season => ({
     id: season.id, name: season.name, status: season.status, startsAt: season.starts_at, endsAt: season.ends_at,
     scoring: JSON.parse(season.scoring_json), championMemberId: season.champion_member_id })) }));
-  app.post('/api/leagues/:id/seasons', apiOrigin, requireLeague, role('commissioner'), (req, res) => {
+  app.post('/api/leagues/:id/seasons', apiOrigin, requireLeague, role('commissioner'), async (req, res) => {
     if (!validName(req.body?.name) || Object.keys(req.body).some(key => !['name', 'scoring'].includes(key))) {
       res.status(400).json({ error: 'Invalid season.' }); return;
     }
     const scoring = validateScoring(req.body.scoring);
-    const season = leagueStore.createSeason(req.league.id, randomUUID(), normalizedName(req.body.name), scoring, now());
+    const season = (await leagueStore.createSeason(req.league.id, randomUUID(), normalizedName(req.body.name), scoring, now()));
     res.status(201).json({ id: season.id, status: season.status, scoring });
   });
-  app.patch('/api/leagues/:id/seasons/:sid', apiOrigin, requireLeague, role('commissioner'), (req, res) => {
-    const prior = leagueStore.season(req.league.id, req.params.sid);
+  app.patch('/api/leagues/:id/seasons/:sid', apiOrigin, requireLeague, role('commissioner'), async (req, res) => {
+    const prior = (await leagueStore.season(req.league.id, req.params.sid));
     if (!prior) { res.sendStatus(404); return; }
     if (Object.keys(req.body || {}).some(key => !['name', 'scoring'].includes(key)) ||
       (req.body?.name !== undefined && !validName(req.body.name))) { res.status(400).json({ error: 'Invalid season update.' }); return; }
     const scoring = req.body?.scoring ? validateScoring(req.body.scoring) : JSON.parse(prior.scoring_json);
-    const season = leagueStore.updateSeason(req.league.id, prior.id, req.body?.name ? normalizedName(req.body.name) : prior.name, scoring);
+    const season = (await leagueStore.updateSeason(req.league.id, prior.id, req.body?.name ? normalizedName(req.body.name) : prior.name, scoring));
     res.json({ id: season.id, status: season.status, scoring });
   });
-  app.post('/api/leagues/:id/seasons/:sid/activate', apiOrigin, requireLeague, role('commissioner'), (req, res) => {
-    const season = leagueStore.activateSeason(req.league.id, req.params.sid, now()); res.json({ id: season.id, status: season.status });
+  app.post('/api/leagues/:id/seasons/:sid/activate', apiOrigin, requireLeague, role('commissioner'), async (req, res) => {
+    const season = (await leagueStore.activateSeason(req.league.id, req.params.sid, now())); res.json({ id: season.id, status: season.status });
   });
-  app.post('/api/leagues/:id/seasons/:sid/close', apiOrigin, requireLeague, role('commissioner'), (req, res) => {
-    const season = leagueStore.season(req.league.id, req.params.sid);
+  app.post('/api/leagues/:id/seasons/:sid/close', apiOrigin, requireLeague, role('commissioner'), async (req, res) => {
+    const season = (await leagueStore.season(req.league.id, req.params.sid));
     if (!season) { res.sendStatus(404); return; }
-    const standings = computeStandings({ scoring: JSON.parse(season.scoring_json) }, leagueStore.results(req.league.id, season.id), leagueStore.roster(req.league.id));
+    const standings = computeStandings({ scoring: JSON.parse(season.scoring_json) }, (await leagueStore.results(req.league.id, season.id)), (await leagueStore.roster(req.league.id)));
     const champion = standings.find(row => row.qualified && row.nights > 0);
-    const closed = leagueStore.closeSeason(req.league.id, season.id, champion?.memberId ?? null, now());
+    const closed = (await leagueStore.closeSeason(req.league.id, season.id, champion?.memberId ?? null, now()));
     res.json({ id: closed.id, status: closed.status, championMemberId: closed.champion_member_id });
   });
-  app.get('/api/leagues/:id/seasons/:sid/standings', requireLeague, (req, res) => {
-    const season = leagueStore.season(req.league.id, req.params.sid);
+  app.get('/api/leagues/:id/seasons/:sid/standings', requireLeague, async (req, res) => {
+    const season = (await leagueStore.season(req.league.id, req.params.sid));
     if (!season) { res.sendStatus(404); return; }
     res.json({ season: { id: season.id, name: season.name, status: season.status,
       scoring: JSON.parse(season.scoring_json), championMemberId: season.champion_member_id },
-    standings: computeStandings({ scoring: JSON.parse(season.scoring_json) }, leagueStore.results(req.league.id, season.id), leagueStore.roster(req.league.id)) });
+    standings: computeStandings({ scoring: JSON.parse(season.scoring_json) }, (await leagueStore.results(req.league.id, season.id)), (await leagueStore.roster(req.league.id))) });
   });
-  app.get('/api/leagues/:id/nights', requireLeague, (req, res) => res.json({ nights: leagueStore.nights(req.league.id, req.query.season || null) }));
-  app.get('/api/leagues/:id/audit', requireLeague, (req, res) => {
+  app.get('/api/leagues/:id/nights', requireLeague, async (req, res) => res.json({ nights: (await leagueStore.nights(req.league.id, req.query.season || null)) }));
+  app.get('/api/leagues/:id/audit', requireLeague, async (req, res) => {
     const page = req.query.page === undefined ? 1 : Number(req.query.page);
     if (!Number.isSafeInteger(page) || page < 1 || page > 1_000_000) { res.status(400).json({ error: 'Invalid audit page.' }); return; }
-    res.json({ entries: leagueStore.audit(req.league.id, 50, (page - 1) * 50), page });
+    res.json({ entries: (await leagueStore.audit(req.league.id, 50, (page - 1) * 50)), page });
   });
-  app.get('/api/leagues/:id/records', requireLeague, (req, res) => res.json(recordsFromResults(leagueStore.results(req.league.id), leagueStore.roster(req.league.id))));
-  for (const action of ['void', 'restore']) app.post(`/api/leagues/:id/nights/:nightId/${action}`, apiOrigin, requireLeague, role('commissioner', 'co'), (req, res) => {
+  app.get('/api/leagues/:id/records', requireLeague, async (req, res) => res.json(recordsFromResults((await leagueStore.results(req.league.id)), (await leagueStore.roster(req.league.id)))));
+  for (const action of ['void', 'restore']) app.post(`/api/leagues/:id/nights/:nightId/${action}`, apiOrigin, requireLeague, role('commissioner', 'co'), async (req, res) => {
     const reason = req.body?.reason;
     if (typeof reason !== 'string' || reason.trim().length < 3 || reason.length > 200 || /[<>\p{Cc}\p{Cf}]/u.test(reason) || Object.keys(req.body).length !== 1) {
       res.status(400).json({ error: 'A reason of 3–200 safe characters is required.' }); return;
     }
-    leagueStore.reviewNight(req.league.id, req.params.nightId, action === 'restore', req.leagueMember.id, reason.trim(), now(), randomUUID());
+    (await leagueStore.reviewNight(req.league.id, req.params.nightId, action === 'restore', req.leagueMember.id, reason.trim(), now(), randomUUID()));
     res.json({ counts: action === 'restore' });
   });
   app.use('/avatar-creator', unityStatic(avatarCreatorRoot, avatarCreator));
@@ -645,22 +655,24 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
   });
   app.use(express.static(fileURLToPath(new URL('../public', import.meta.url))));
 
-  function view(room, id) {
+  async function view(room, id) {
     const state = structuredClone(room.game);
+    const revision = room.revision;
     delete state.history;
     const handInProgress = game.isPlaying(room.game);
     const socket = io.sockets.sockets.get(room.connections.get(id));
-    const permissions = roomAccess(room, id, socket);
+    const signedIn = await signedInSeat(room, id, socket);
+    const permissions = await roomAccess(room, id, socket, signedIn);
     return { ...state, roomCode: room.code, nightId: room.nightId, leagueTable: Boolean(room.leagueId),
-      hostId: room.hostId, playerId: id, revision: room.revision,
-      signedIn: signedInSeat(room, id, socket),
+      hostId: room.hostId, playerId: id, revision,
+      signedIn,
       permissions,
       cosmetics: Object.fromEntries(room.cosmetics),
       identities: Object.fromEntries(room.identities),
-      socialSeats: signedInSeat(room, id, socket) ? state.players.filter(player =>
+      socialSeats: signedIn ? state.players.filter(player =>
         room.accounts.has(player.id) && room.identities.has(player.id) &&
         room.accounts.get(player.id) !== room.accounts.get(id) &&
-        friendsStore.account(room.accounts.get(player.id))?.username).map(player => player.id) : [],
+        io.sockets.sockets.get(room.connections.get(player.id))?.data.accountProfile?.username).map(player => player.id) : [],
       rebuyPolicy: room.rebuyPolicy,
       canUndo: permissions.owner && room.game.history.length > 0, serverTime: now(),
       settlement: structuredClone(room.lastSettlement || game.settlement(room.game)),
@@ -676,10 +688,11 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
       pots: state.street === 'showdown' || state.street === 'complete' ? state.pots : [],
       legal: game.legalActions(room.game, id) };
   }
-  function broadcast(room) {
+  async function broadcast(room) {
     room.game.log.forEach(item => { if (item.timestamp === undefined) item.timestamp = now(); });
     if (!game.isPlaying(room.game)) room.lastSettlement = game.settlement(room.game);
-    for (const [id, socketId] of room.connections) io.sockets.sockets.get(socketId)?.emit('state', view(room, id));
+    const states = await Promise.all([...room.connections].map(async ([id, socketId]) => [socketId, await view(room, id)]));
+    for (const [socketId, state] of states) io.sockets.sockets.get(socketId)?.emit('state', state);
   }
   function autoEligible(room, id, amount) {
     return room.rebuyPolicy.mode === 'auto' && amount <= room.rebuyPolicy.cap
@@ -712,13 +725,13 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
       } else logError(error);
     });
   }
-  function bind(socket, room, id) {
-    if (socket.data.accountId && socket.data.sessionHash && activeSession.get(socket.data.sessionHash, socket.data.accountId, now()) &&
+  async function bind(socket, room, id) {
+    if (socket.data.accountId && socket.data.sessionHash && (await activeSession.get(socket.data.sessionHash, socket.data.accountId, now())) &&
       !room.accounts.has(id) && ![...room.accounts.values()].includes(socket.data.accountId)) {
       room.accounts.set(id, socket.data.accountId);
     }
     if (room.accounts.get(id) === socket.data.accountId && socket.data.accountProfile && socket.data.sessionHash &&
-      activeSession.get(socket.data.sessionHash, socket.data.accountId, now())) room.identities.set(id, tableIdentity(socket.data.accountProfile));
+      (await activeSession.get(socket.data.sessionHash, socket.data.accountId, now()))) room.identities.set(id, tableIdentity(socket.data.accountProfile));
     const previousId = room.connections.get(id);
     if (previousId && previousId !== socket.id) {
       const previous = io.sockets.sockets.get(previousId);
@@ -778,6 +791,15 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
   }
   const cleanup = setInterval(sweep, cleanupIntervalMs);
   cleanup.unref();
+  const roomWork = new Map();
+  function scheduleRoom(key, task) {
+    const previous = roomWork.get(key) || Promise.resolve();
+    const result = previous.then(task);
+    const settled = result.then(() => {}, () => {});
+    roomWork.set(key, settled);
+    settled.then(() => { if (roomWork.get(key) === settled) roomWork.delete(key); });
+    return result;
+  }
 
   io.use(async (socket, next) => {
     if (accountsEnabled) {
@@ -809,22 +831,22 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
           requireValue(++requests <= 40, 'Too many requests. Try again in a moment.');
           if (entryEvents.has(event)) entryLimit(socket, event);
           validatePayload(event, payload);
-          const response = fn(payload);
-          if (response && typeof response.then === 'function') response.then(value => ack({ ok: true, ...value })).catch(fail);
-          else ack({ ok: true, ...response });
+          const key = event === 'create' ? payload.leagueId ? `league:${payload.leagueId}` : `socket:${socket.id}`
+            : `room:${socket.data.identity?.code || payload.code || socket.id}`;
+          scheduleRoom(key, () => fn(payload)).then(value => ack({ ok: true, ...value })).catch(fail);
         } catch (error) { fail(error); }
       });
     }
-    on('create', payload => {
+    on('create', async payload => {
       requireValue(!socket.data.identity, 'Leave your current table first.');
       requireValue(rooms.size < 1000, 'Server is full. Try again later.');
       let league = null;
       let leagueSettings = null;
       if (payload.leagueId) {
         requireValue(accountsEnabled && socket.data.accountId && socket.data.sessionHash &&
-          activeSession.get(socket.data.sessionHash, socket.data.accountId, now()), 'Sign in to start a league table.');
-        league = leagueStore.get(payload.leagueId);
-        requireValue(league && ['commissioner', 'co'].includes(leagueStore.member(league.id, socket.data.accountId)?.role), 'Only league commissioners and co-commissioners can start a league table.');
+          (await activeSession.get(socket.data.sessionHash, socket.data.accountId, now())), 'Sign in to start a league table.');
+        league = (await leagueStore.get(payload.leagueId));
+        requireValue(league && ['commissioner', 'co'].includes((await leagueStore.member(league.id, socket.data.accountId))?.role), 'Only league commissioners and co-commissioners can start a league table.');
         const existingCode = liveByLeague.get(league.id);
         if (existingCode && rooms.has(existingCode)) return { roomCode: existingCode, existing: true };
         leagueSettings = JSON.parse(league.table_settings_json);
@@ -835,14 +857,14 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
       do { code = Array.from({ length: 8 }, () => ALPHABET[randomInt(ALPHABET.length)]).join(''); } while (rooms.has(code));
       const token = randomBytes(32).toString('hex');
       const room = { code, nightId: randomUUID(), startedAt: now(), endedAt: null, hostId: id, game: state,
-        leagueId: league?.id ?? null, seasonId: league ? leagueStore.activeSeason(league.id)?.id ?? null : null,
+        leagueId: league?.id ?? null, seasonId: league ? (await leagueStore.activeSeason(league.id))?.id ?? null : null,
         tokens: new Map([[id, token]]), tokenHashes: new Map([[id, hashToken(token)]]), accounts: new Map(),
         connections: new Map(), rebuyRequests: new Map(), autoRebuys: new Map(), cosmetics: new Map(), identities: new Map(),
         rebuyPolicy: normalizeRebuyPolicy(payload.rebuyPolicy), pushSubscriptions: new Map(), presence: new Map(),
         lastActive: now(), revision: 0, lastSettlement: null };
       rooms.set(code, room); if (league) liveByLeague.set(league.id, code);
-      seedCosmetics(socket, room, id); bind(socket, room, id); broadcast(room);
-      return { token, playerId: id, roomCode: code, state: view(room, id) };
+      seedCosmetics(socket, room, id); (await bind(socket, room, id)); (await broadcast(room));
+      return { token, playerId: id, roomCode: code, state: (await view(room, id)) };
     });
     on('table-preview', payload => {
       const room = rooms.get(payload.code.toUpperCase());
@@ -852,7 +874,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
       requireValue(room.game.players.length < 10, 'This table has 10 players.');
       return { players: room.game.players.length, ...room.game.settings };
     });
-    on('join', payload => {
+    on('join', async payload => {
       requireValue(!socket.data.identity, 'Leave your current table first.');
       const room = rooms.get(payload.code.toUpperCase());
       requireValue(room, 'Room not found. Check the eight-letter code.');
@@ -862,22 +884,22 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
       room.game = game.addPlayer(room.game, id, payload.name);
       const token = randomBytes(32).toString('hex');
       room.tokens.set(id, token); room.tokenHashes.set(id, hashToken(token)); room.revision++;
-      seedCosmetics(socket, room, id); bind(socket, room, id); broadcast(room);
-      return { token, playerId: id, roomCode: room.code, state: view(room, id) };
+      seedCosmetics(socket, room, id); (await bind(socket, room, id)); (await broadcast(room));
+      return { token, playerId: id, roomCode: room.code, state: (await view(room, id)) };
     });
-    on('rejoin', payload => {
+    on('rejoin', async payload => {
       requireValue(!socket.data.identity, 'Already seated on this connection.');
       const room = rooms.get(payload.code.toUpperCase());
       requireValue(room, 'Room no longer exists. Create a new table.');
       requireValue(safeTokenEqual(room.tokens.get(payload.playerId), payload.token), 'Seat token is invalid.');
       if (!room.cosmetics.has(payload.playerId)) seedCosmetics(socket, room, payload.playerId);
-      bind(socket, room, payload.playerId); broadcast(room);
-      return { playerId: payload.playerId, roomCode: room.code, state: view(room, payload.playerId) };
+      (await bind(socket, room, payload.playerId)); (await broadcast(room));
+      return { playerId: payload.playerId, roomCode: room.code, state: (await view(room, payload.playerId)) };
     });
     function mutate(event, fn, permission = null) {
-      on(event, payload => {
+      on(event, async payload => {
         const { room, id } = member(socket, payload);
-        if (permission) requireRoomAccess(room, id, socket, permission);
+        if (permission) (await requireRoomAccess(room, id, socket, permission));
         requireValue(payload.revision === room.revision, 'Table changed. Please try again.');
         const previousTurn = room.game.turn;
         const wasPlaying = game.isPlaying(room.game);
@@ -885,9 +907,9 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
         room.game = nextState; room.revision++; room.lastActive = now();
         if (wasPlaying && nextState.street === 'complete') processAutoRebuys(room);
         if (room.game.street === 'complete' && !game.isPlaying(room.game)) persist(room);
-        broadcast(room);
+        (await broadcast(room));
         sendTurnPush(room, previousTurn);
-        return { state: view(room, id) };
+        return { state: (await view(room, id)) };
       });
     }
     mutate('start-hand', room => game.startHand(room.game, now()), 'manage');
@@ -895,28 +917,31 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     mutate('showdown-pick', (room, _id, payload) => game.pickWinners(room.game, payload.potId, payload.winnerIds), 'manage');
     mutate('host-settings', (room, _id, payload) => game.configure(room.game, payload.settings), 'manage');
     mutate('host:reorderSeats', (room, _id, payload) => game.reorderSeats(room.game, payload.order), 'manage');
-    on('seat:cosmetics', payload => {
+    on('seat:cosmetics', async payload => {
       const { room, id } = member(socket, payload);
       requireValue(Object.keys(payload).some(key => ['avatar', 'color', 'note'].includes(key)), 'Choose a seat style first.');
       const next = { ...room.cosmetics.get(id), ...Object.fromEntries(['avatar', 'color', 'note'].filter(key => Object.hasOwn(payload, key)).map(key => [key, payload[key]])) };
       requireValue(![...room.cosmetics].some(([otherId, value]) => otherId !== id && value.color === next.color), 'That seat color is already in use.');
-      room.cosmetics.set(id, next); room.lastActive = now(); broadcast(room);
-      return { state: view(room, id) };
+      room.cosmetics.set(id, next); room.lastActive = now(); (await broadcast(room));
+      return { state: (await view(room, id)) };
     });
-    on('host:rebuyPolicy', payload => {
-      const { room, id } = member(socket, payload); requireRoomAccess(room, id, socket, 'manage');
+    on('host:rebuyPolicy', async payload => {
+      const { room, id } = member(socket, payload); (await requireRoomAccess(room, id, socket, 'manage'));
       const policy = { mode: payload.mode, ...(payload.cap === undefined ? {} : { cap: payload.cap }),
         ...(payload.maxPerPlayer === undefined ? {} : { maxPerPlayer: payload.maxPerPlayer }) };
       requireValue(validRebuyPolicy(policy), 'Invalid rebuy policy.');
       room.rebuyPolicy = normalizeRebuyPolicy(policy); room.lastActive = now();
-      broadcast(room);
-      return { state: view(room, id) };
+      (await broadcast(room));
+      return { state: (await view(room, id)) };
     });
-    on('host:endNight', payload => {
-      const { room, id } = member(socket, payload); requireRoomAccess(room, id, socket, 'manage');
+    on('host:endNight', async payload => {
+      const { room, id } = member(socket, payload); (await requireRoomAccess(room, id, socket, 'manage'));
       requireValue(payload.revision === undefined || payload.revision === room.revision, 'Table changed. Please try again.');
       requireValue(!game.isPlaying(room.game) && room.game.handNumber > 0, 'Finish a hand before ending the night.');
-      if (!room.leagueId) { persist(room, true); return {}; }
+      if (!room.leagueId) {
+        requireValue(await persist(room, true), 'Night could not be saved. Try again.');
+        return {};
+      }
       room.closing = true;
       return persist(room, true).then(saved => {
         if (!saved) {
@@ -949,7 +974,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
       room.presence.set(id, payload.hidden); room.lastActive = now();
       return {};
     });
-    on('rebuy:request', payload => {
+    on('rebuy:request', async payload => {
       const { room, id } = member(socket, payload);
       requireValue(!room.rebuyRequests.has(id), 'You already have a pending rebuy request.');
       const amount = payload.amount ?? room.game.settings.startingStack;
@@ -958,23 +983,23 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
         try { approveAuto(room, id, amount); }
         catch (error) { if (!(error instanceof RequestError)) throw error; }
       }
-      broadcast(room);
+      (await broadcast(room));
       return {};
     });
-    on('rebuy:cancel', payload => {
+    on('rebuy:cancel', async payload => {
       const { room, id } = member(socket, payload);
       requireValue(room.rebuyRequests.has(id), 'There is no pending rebuy request to cancel.');
-      room.rebuyRequests.delete(id); room.lastActive = now(); broadcast(room);
+      room.rebuyRequests.delete(id); room.lastActive = now(); (await broadcast(room));
       return {};
     });
-    on('rebuy:deny', payload => {
-      const { room, id } = member(socket, payload); requireRoomAccess(room, id, socket, 'manage');
+    on('rebuy:deny', async payload => {
+      const { room, id } = member(socket, payload); (await requireRoomAccess(room, id, socket, 'manage'));
       const request = room.rebuyRequests.get(payload.playerId);
       requireValue(request, 'That rebuy request is no longer pending.');
       room.rebuyRequests.delete(payload.playerId); room.lastActive = now();
       const target = io.sockets.sockets.get(room.connections.get(payload.playerId));
       target?.emit('rebuy-result', { type: 'denied' });
-      broadcast(room);
+      (await broadcast(room));
       return {};
     });
     mutate('rebuy:approve', (room, _id, payload) => {
@@ -991,7 +1016,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
       requireValue(room.game.turn && !room.connections.has(room.game.turn), 'Only the disconnected current player can be folded by the host.');
       return game.act(room.game, room.game.turn, { type: 'fold' });
     }, 'manage');
-    on('leave', payload => {
+    on('leave', async payload => {
       const { room, id } = member(socket, payload);
       requireValue(payload.revision === room.revision, 'Table changed. Please try again.');
       room.game = game.removePlayer(room.game, id);
@@ -999,7 +1024,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
       if (!room.game.players.length) { persist(room, true); if (room.leagueId) liveByLeague.delete(room.leagueId); rooms.delete(room.code); }
       else {
         if (room.hostId === id) room.hostId = room.game.players[0].id;
-        broadcast(room);
+        (await broadcast(room));
       }
       return {};
     });
@@ -1009,18 +1034,24 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
       detach(room, payload.playerId, 'The host removed your seat.');
       return state;
     }, 'owner');
-    socket.on('disconnect', () => {
+    socket.on('disconnect', async () => {
       const identity = socket.data.identity;
       const room = rooms.get(identity?.code);
       if (room && room.connections.get(identity.id) === socket.id) {
         room.connections.delete(identity.id);
-        broadcast(room);
+        (await broadcast(room));
       }
     });
   });
   return { app, httpServer, io, rooms, sweep,
-    listen: (port = 0, host = '127.0.0.1') => new Promise(resolve => httpServer.listen(port, host, () => resolve(httpServer.address()))),
-    close: () => new Promise(resolve => { clearInterval(cleanup); io.close(async () => { await store.close?.(); resolve(); }); }) };
+    listen: async (port = 0, host = '127.0.0.1') => {
+      await store.init();
+      return new Promise(resolve => httpServer.listen(port, host, () => resolve(httpServer.address())));
+    },
+    close: () => new Promise(resolve => { clearInterval(cleanup); io.close(async () => {
+      await Promise.allSettled([...rooms.values()].map(room => room.persistChain).filter(Boolean));
+      await store.close?.(); resolve();
+    }); }) };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

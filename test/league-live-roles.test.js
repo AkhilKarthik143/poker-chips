@@ -21,12 +21,12 @@ test('league co-host controls follow the signed-in roster role, even after role 
     cookies[name] = `tm_session=${token}`;
   }
   const leagueId = randomUUID();
-  roster.create({ id: leagueId, name: 'Friday Night', inviteCode: 'ABCDEFGH',
+  (await roster.create({ id: leagueId, name: 'Friday Night', inviteCode: 'ABCDEFGH',
     settings: { startingStack: 1000, smallBlind: 5, bigBlind: 10, blindMinutes: 0, centsPer1000Chips: 0 },
-    account: accounts.owner, memberId: randomUUID(), time: Date.now() });
-  const coMember = roster.join(leagueId, accounts.co, randomUUID(), Date.now());
-  roster.join(leagueId, accounts.member, randomUUID(), Date.now());
-  roster.setRole(leagueId, coMember.id, 'co');
+    account: accounts.owner, memberId: randomUUID(), time: Date.now() }));
+  const coMember = (await roster.join(leagueId, accounts.co, randomUUID(), Date.now()));
+  (await roster.join(leagueId, accounts.member, randomUUID(), Date.now()));
+  (await roster.setRole(leagueId, coMember.id, 'co'));
   const server = createServer({ store, mailer: { enabled: true, send: async () => {} } });
   const { port } = await server.listen();
   const base = `http://127.0.0.1:${port}`;
@@ -71,7 +71,7 @@ test('league co-host controls follow the signed-in roster role, even after role 
   assert.equal(demoted.status, 200);
   assert.deepEqual((await roleUpdate).permissions, { manage: false, owner: false });
   assert.equal((await ask(co, 'host:rebuyPolicy', { token: coSeat.token, mode: 'host' })).ok, false);
-  roster.setRole(leagueId, coMember.id, 'co');
+  (await roster.setRole(leagueId, coMember.id, 'co'));
   const anonymousReconnect = await open();
   const stolenSeat = await ask(anonymousReconnect, 'rejoin', { code: created.roomCode, playerId: coSeat.playerId, token: coSeat.token });
   assert.deepEqual(stolenSeat.state.permissions, { manage: false, owner: false });
@@ -91,12 +91,15 @@ test('league co-host controls follow the signed-in roster role, even after role 
   const freshSession = randomBytes(32).toString('hex');
   await store.saveSession(hashSecret(freshSession), accounts.co.id, Date.now() + 60_000);
   const activeCo = await open(`tm_session=${freshSession}`);
-  assert.equal((await ask(activeCo, 'rejoin', { code: created.roomCode, playerId: coSeat.playerId, token: coSeat.token })).state.permissions.manage, true);
+  const activeRejoin = await ask(activeCo, 'rejoin', { code: created.roomCode, playerId: coSeat.playerId, token: coSeat.token });
+  assert.equal(activeRejoin.ok, true, activeRejoin.error);
+  assert.equal(activeRejoin.state.permissions.manage, true);
   const seats = new Map([[created.playerId, [owner, created.token]], [coSeat.playerId, [activeCo, coSeat.token]],
     [memberSeat.playerId, [member, memberSeat.token]], [guestSeat.playerId, [guest, guestSeat.token]]]);
   for (let i = 0; i < 4 && room.game.street !== 'complete'; i++) {
     const [actor, token] = seats.get(room.game.turn);
-    assert.equal((await ask(actor, 'action', { token, revision: room.revision, type: 'fold' })).ok, true);
+    const folded = await ask(actor, 'action', { token, revision: room.revision, type: 'fold' });
+    assert.equal(folded.ok, true, folded.error);
   }
   assert.equal(room.game.street, 'complete');
   assert.equal((await ask(activeCo, 'host:endNight', { token: coSeat.token, revision: room.revision })).ok, true);

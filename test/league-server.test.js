@@ -71,6 +71,7 @@ test('league roster, locked season, saved results, review trail and private room
   const foldA = await emit(a, 'action', { token: start.token, revision: hand.state.revision, type: 'fold' });
   assert.equal(foldA.ok, true);
   const foldB = await emit(b, 'action', { token: joinedSeat.token, revision: foldA.state.revision, type: 'fold' });
+  assert.equal(foldB.ok, true, JSON.stringify({ error: foldB.error, errors }));
   assert.equal(foldB.state.street, 'complete');
   const saveNight = store.saveNight.bind(store);
   store.saveNight = async () => { throw new Error('disk full'); };
@@ -91,8 +92,8 @@ test('league roster, locked season, saved results, review trail and private room
   assert.equal(nights.data.nights[0].participants.length, 3);
   assert.equal(nights.data.nights[0].results.length, 2, 'guest is outside standings');
   const privateValues = [aCookie.split(';')[0], bCookie.split(';')[0], cCookie.split(';')[0],
-    ...store.db.prepare('SELECT id,email FROM accounts').all().flatMap(row => [row.id, row.email]),
-    ...store.db.prepare('SELECT claim_hash FROM night_players').all().map(row => row.claim_hash)];
+    ...(await store.db.prepare('SELECT id,email FROM accounts').all()).flatMap(row => [row.id, row.email]),
+    ...(await store.db.prepare('SELECT claim_hash FROM night_players').all()).map(row => row.claim_hash)];
   for (const response of [created.data, start.state, joinedSeat.state, subSeat.state, standings.data, nights.data,
     (await api(`/api/leagues/${leagueId}/records`, 'GET', null, aCookie)).data]) {
     for (const value of privateValues) assert.equal(JSON.stringify(response).includes(value), false, `league data leaked ${value.slice(0, 8)}`);
@@ -109,11 +110,11 @@ test('league roster, locked season, saved results, review trail and private room
   assert.equal((await api(`/api/leagues/${leagueId}/nights`, 'GET', null, aCookie)).data.nights[0].voidReason, null);
   assert.equal((await api(`/api/leagues/${leagueId}/seasons/${seasonId}/close`, 'POST', {}, aCookie)).data.championMemberId, created.data.members[0].memberId);
   assert.notEqual((await api(`/api/leagues/${leagueId}/nights/${nightId}/void`, 'POST', { reason: 'Too late' }, aCookie)).status, 200);
-  const closedResults = store.db.prepare('SELECT member_id,rank,net FROM league_night_results WHERE night_id = ? ORDER BY member_id').all(nightId);
-  store.db.prepare(`UPDATE night_players SET net = net + CASE name WHEN 'Alex' THEN 100 WHEN 'Blair' THEN -100 ELSE 0 END
-    WHERE night_id = ?`).run(nightId);
-  new LeagueStore(store.db).finalizeNight(nightId);
-  assert.deepEqual(store.db.prepare('SELECT member_id,rank,net FROM league_night_results WHERE night_id = ? ORDER BY member_id').all(nightId), closedResults);
+  const closedResults = (await store.db.prepare('SELECT member_id,rank,net FROM league_night_results WHERE night_id = ? ORDER BY member_id').all(nightId));
+  (await store.db.prepare(`UPDATE night_players SET net = net + CASE name WHEN 'Alex' THEN 100 WHEN 'Blair' THEN -100 ELSE 0 END
+    WHERE night_id = ?`).run(nightId));
+  (await new LeagueStore(store.db).finalizeNight(nightId));
+  assert.deepEqual((await store.db.prepare('SELECT member_id,rank,net FROM league_night_results WHERE night_id = ? ORDER BY member_id').all(nightId)), closedResults);
   const beforeDelete = (await api(`/api/leagues/${leagueId}/seasons/${seasonId}/standings`, 'GET', null, bCookie)).data.standings;
   assert.equal((await api('/api/me', 'DELETE', { confirm: 'DELETE' }, aCookie)).status, 200);
   const afterDelete = (await api(`/api/leagues/${leagueId}/seasons/${seasonId}/standings`, 'GET', null, bCookie)).data.standings;

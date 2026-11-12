@@ -22,15 +22,15 @@ test('username claim, cooldown, owner revert, hold, deletion and exact boundary'
   const store = new SqliteStore(':memory:');
   const first = await store.createAccount('first', 'first@example.com', 'First', 0);
   const second = await store.createAccount('second', 'second@example.com', 'Second', 0);
-  assert.deepEqual((await Promise.all([store.updateProfile(first.id, { username: 'PokerAce' }, 100, THIRTY_DAYS),
-    store.updateProfile(second.id, { username: 'pokerace' }, 100, THIRTY_DAYS)])).map(result => result.reason || result.account.username), ['PokerAce', 'taken']);
-  assert.equal(store.usernameAvailability(first.id, 'OtherName', 101, THIRTY_DAYS), 'cooldown');
+  assert.deepEqual((await Promise.all([(await store.updateProfile(first.id, { username: 'PokerAce' }, 100, THIRTY_DAYS)),
+    (await store.updateProfile(second.id, { username: 'pokerace' }, 100, THIRTY_DAYS))])).map(result => result.reason || result.account.username), ['PokerAce', 'taken']);
+  assert.equal((await store.usernameAvailability(first.id, 'OtherName', 101, THIRTY_DAYS)), 'cooldown');
   assert.equal((await store.updateProfile(first.id, { username: 'OtherName' }, 100 + THIRTY_DAYS, THIRTY_DAYS)).account.username, 'OtherName');
-  assert.equal(store.usernameAvailability(second.id, 'pokerace', 101 + THIRTY_DAYS, THIRTY_DAYS), 'held');
+  assert.equal((await store.usernameAvailability(second.id, 'pokerace', 101 + THIRTY_DAYS, THIRTY_DAYS)), 'held');
   assert.equal((await store.updateProfile(first.id, { username: 'PokerAce' }, 102 + THIRTY_DAYS, THIRTY_DAYS)).account.username, 'PokerAce');
   await store.deleteAccount(first.id, 103 + THIRTY_DAYS);
-  assert.equal(store.usernameAvailability(second.id, 'PokerAce', 104 + THIRTY_DAYS, THIRTY_DAYS), 'held');
-  assert.equal(store.usernameAvailability(second.id, 'PokerAce', 103 + 2 * THIRTY_DAYS, THIRTY_DAYS), null);
+  assert.equal((await store.usernameAvailability(second.id, 'PokerAce', 104 + THIRTY_DAYS, THIRTY_DAYS)), 'held');
+  assert.equal((await store.usernameAvailability(second.id, 'PokerAce', 103 + 2 * THIRTY_DAYS, THIRTY_DAYS)), null);
   await store.close();
 });
 

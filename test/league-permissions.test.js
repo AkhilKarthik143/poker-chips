@@ -25,12 +25,12 @@ async function fixture() {
     cookies[role] = `tm_session=${token}`;
   }
   const id = randomUUID();
-  roster.create({ id, name: 'Friday Night', inviteCode: 'ABCDEFGH',
+  (await roster.create({ id, name: 'Friday Night', inviteCode: 'ABCDEFGH',
     settings: { startingStack: 1000, smallBlind: 5, bigBlind: 10, blindMinutes: 0, centsPer1000Chips: 0 },
-    account: people.commissioner, memberId: randomUUID(), time: Date.now() });
-  const member = roster.join(id, people.member, randomUUID(), Date.now());
-  const co = roster.join(id, people.co, randomUUID(), Date.now());
-  roster.setRole(id, co.id, 'co');
+    account: people.commissioner, memberId: randomUUID(), time: Date.now() }));
+  const member = (await roster.join(id, people.member, randomUUID(), Date.now()));
+  const co = (await roster.join(id, people.co, randomUUID(), Date.now()));
+  (await roster.setRole(id, co.id, 'co'));
   const server = createServer({ store, mailer: { enabled: true, send: async () => {} } });
   const { port } = await server.listen();
   return { base: `http://127.0.0.1:${port}`, server, store, roster, id, memberId: member.id, cookies };
@@ -69,11 +69,11 @@ test('league roster caps at 30 active members and guest mode hides league routes
   try {
     for (let index = 3; index < 30; index++) {
       const account = await f.store.createAccount(randomUUID(), `seat${index}@example.com`, `Seat ${index}`, Date.now());
-      f.roster.join(f.id, account, randomUUID(), Date.now());
+      (await f.roster.join(f.id, account, randomUUID(), Date.now()));
     }
     const extra = await f.store.createAccount(randomUUID(), 'extra@example.com', 'Extra', Date.now());
-    assert.throws(() => f.roster.join(f.id, extra, randomUUID(), Date.now()), /full/);
-    assert.equal(f.roster.roster(f.id).filter(row => row.leftAt === null).length, 30);
+    await assert.rejects(f.roster.join(f.id, extra, randomUUID(), Date.now()), /full/);
+    assert.equal((await f.roster.roster(f.id)).filter(row => row.leftAt === null).length, 30);
   } finally { await f.server.close(); }
   const guestServer = createServer({ store: createStore(null) });
   const { port } = await guestServer.listen();
@@ -90,12 +90,12 @@ test('deleting a sole commissioner archives their empty league', async () => {
     const owner = await store.createAccount(randomUUID(), 'only@example.com', 'Only', Date.now());
     const roster = new LeagueStore(store.db);
     const leagueId = randomUUID();
-    roster.create({ id: leagueId, name: 'Solo League', inviteCode: 'HJKLMNPQ',
+    (await roster.create({ id: leagueId, name: 'Solo League', inviteCode: 'HJKLMNPQ',
       settings: { startingStack: 1000, smallBlind: 5, bigBlind: 10, blindMinutes: 0, centsPer1000Chips: 0 },
-      account: owner, memberId: randomUUID(), time: Date.now() });
+      account: owner, memberId: randomUUID(), time: Date.now() }));
     await store.deleteAccount(owner.id);
-    assert.equal(roster.get(leagueId), null);
-    assert.equal(store.db.prepare('SELECT COUNT(*) AS n FROM accounts').get().n, 0);
+    assert.equal((await roster.get(leagueId)), null);
+    assert.equal((await store.db.prepare('SELECT COUNT(*) AS n FROM accounts').get()).n, 0);
   } finally { await store.close(); }
 });
 

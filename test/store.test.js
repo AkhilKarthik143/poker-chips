@@ -10,7 +10,7 @@ const hash = value => createHash('sha256').update(value).digest('hex');
 
 test('SQLite night upsert is idempotent, retains departed seats and preserves zero-sum nets', async t => {
   const store = new SqliteStore(':memory:');
-  t.after(() => store.close());
+  t.after(async () => (await store.close()));
   const row = (id, cashOut) => ({ id, name: id, claimHash: hash(id), buyIn: 100, cashOut,
     net: cashOut - 100, handsPlayed: 1, handsWon: Number(cashOut > 100), vpipHands: 1,
     pfrHands: 0, raises: 0, calls: 1, checks: 0, folds: 0, allIns: 0, showdowns: 1, showdownWins: Number(cashOut > 100) });
@@ -19,7 +19,7 @@ test('SQLite night upsert is idempotent, retains departed seats and preserves ze
   await store.saveNight(snapshot);
   await store.saveNight({ ...snapshot, updatedAt: 3, endedAt: 3 });
   const saved = await store.getNight('night-1');
-  assert.equal(store.db.prepare('SELECT count(*) AS n FROM nights').get().n, 1);
+  assert.equal((await store.db.prepare('SELECT count(*) AS n FROM nights').get()).n, 1);
   assert.equal(saved.players.length, 2);
   assert.equal(saved.players.reduce((sum, player) => sum + player.net, 0), 0);
   assert.equal(saved.players.find(player => player.seat_id === 'departed').claim_hash, hash('departed'));

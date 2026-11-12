@@ -43,9 +43,44 @@ A successful response is `{"ok":true}`. Create a room and join it from a second 
 - Free instances sleep. Rooms disappear on restart/spin-down, and cold starts can be slow. **Wake it up before game night**, then create your room.
 - For updates, commit and `git push`; the Blueprint uses the repository’s default branch.
 - Core gameplay needs no secrets or environment file. The optional Web Push feature requires the three VAPID values below.
-- Optional accounts need `TABLEMATE_DB_PATH` plus at least one sign-in method: `RESEND_API_KEY` and `MAIL_FROM` for email, or `GOOGLE_CLIENT_ID` for Google. Create a Google OAuth Web application client and add the exact HTTPS service origin under authorized JavaScript origins. No client secret or redirect URI is used. Use a persistent disk for SQLite; a free instance's local files can disappear on restart or redeploy. A real Postgres adapter is not included in this local branch. Rooms remain process-local even when history is saved.
-- Friends require those same SQLite accounts; schema migration 8 runs automatically on startup. Keep the database on persistent storage so friendships and stored request updates survive restarts. Friends do not require a separate service or push keys. Direct account-to-account table invitation delivery is not configured; the app checks the room and uses the existing copy/share link.
-- Uploaded avatar photos use the same SQLite database (schema migration 9). Keep that database on persistent storage to retain photos across restarts and deployments; no separate image bucket is required. The server accepts JPEG, PNG and WebP uploads up to 8 MiB, saves a cropped 256×256 WebP without metadata, and deletes the old image when the avatar changes or the account is deleted.
+- Optional accounts use the remote Turso configuration below. The database also stores nights, sessions, friendships, league records, settings and uploaded avatar photos. Schema migrations 1–9 run before the server accepts traffic. Friends need no separate service or push keys. Direct account-to-account table invitation delivery is not configured; members can share the existing room link. Uploaded photos are cropped to 256×256 WebP before storage and deleted when replaced or when an account is deleted.
+
+## Free persistent accounts on Render
+
+Keep the existing **Free** Render web service. Create a free [Turso Cloud](https://docs.turso.tech/quickstart.md) account and a **libSQL** database. The new Turso Database engine uses a different SDK; this app deliberately uses the supported libSQL client for direct remote access. With the Turso CLI:
+
+```sh
+brew install tursodatabase/tap/turso   # macOS
+turso auth signup                       # or: turso auth login
+turso db create tablemate               # omit --tursodb: create libSQL
+turso db show tablemate --url           # copy the libsql:// URL
+turso db tokens create tablemate        # copy the secret token privately
+```
+
+In the existing [Render service Environment](https://dashboard.render.com/web/srv-daoo6p8473hc73d5nkeg), set these values (never in Git):
+
+| Variable | Value |
+| --- | --- |
+| `TURSO_DATABASE_URL` | Exact `libsql://…` URL from `turso db show tablemate --url` |
+| `TURSO_AUTH_TOKEN` | Write-capable token from `turso db tokens create tablemate` |
+| `GOOGLE_CLIENT_ID` | Existing Tablemate Google OAuth Web application client ID |
+
+Leave `TABLEMATE_DB_PATH` unset on Render Free. The app will refuse to start if the remote URL/token is incomplete or the database cannot connect or migrate. It never stores account data in an ephemeral Render file. `RESEND_API_KEY` and `MAIL_FROM` are needed **only** if email-link sign-in should also be available; Google sign-in works without them.
+
+In [Google Cloud Credentials](https://console.cloud.google.com/apis/credentials), open the existing Tablemate **Web application** OAuth client and add `https://poker-chips-o7n9.onrender.com` to **Authorized JavaScript origins**. Keep the localhost origins if you still use the local demo. This implementation uses the Google Identity Services JavaScript callback, so no redirect URI or client secret is required. The client ID is public; the Turso auth token is secret.
+
+Redeploy, then open `https://poker-chips-o7n9.onrender.com/api/config`. It should report `accounts: true` and a non-null `googleClientId`. Open the home page, choose **Sign in → Continue with Google**, complete the popup, and check that **My profile** opens. Sign out, sign back in with the same Google account, and confirm the same username and profile. Redeploy once more and repeat to verify persistence. If the database is temporarily unavailable, `/api/config` returns HTTP 503 with `accounts: false`; account APIs fail closed while guest tables remain usable. Render Free can still spin down and lose *live in-memory rooms*, although Turso account and night data survives.
+
+### Existing local SQLite data
+
+The production service currently has accounts disabled, so it has no persistent account database to migrate. If you have a **local** `data/tablemate.db` with accounts you want to keep, stop the local server, back up the file, and import that existing SQLite file into Turso **instead of creating a new blank database**. The [Turso import command](https://docs.turso.tech/cli/db/import.md) expects WAL journal mode:
+
+```sh
+sqlite3 data/tablemate.db 'PRAGMA wal_checkpoint(TRUNCATE); PRAGMA journal_mode=WAL;'
+turso db import data/tablemate.db
+```
+
+Use the imported database's URL and a new write token in Render. Do not commit the database file, token or a `.env` file. Verify the imported `schema_version` is 9 and sign in with the same Google identity; the stable Google subject and sessions remain linked to the existing account. Existing local data is **not** copied automatically when you set Turso variables.
 
 ## Optional character creator build
 

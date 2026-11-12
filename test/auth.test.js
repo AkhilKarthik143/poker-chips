@@ -63,7 +63,7 @@ test('magic link is single-use, session is private and logout invalidates it', a
   const created = await new Promise(resolve => socket.emit('create', { name: 'Alex', settings: {} }, resolve));
   assert.equal(created.ok, true);
   assert.equal(created.state.signedIn, true);
-  for (const secret of [me.email, token, cookie.split(';')[0], store.db.prepare('SELECT id FROM accounts').get().id]) {
+  for (const secret of [me.email, token, cookie.split(';')[0], (await store.db.prepare('SELECT id FROM accounts').get()).id]) {
     assert.equal(JSON.stringify(created.state).includes(secret), false);
   }
   await post('/api/auth/logout', {}, cookie);
@@ -180,7 +180,7 @@ test('Google sign-in verifies a credential, links by subject and uses the normal
   const deleted = await fetch(url + '/api/me', { method: 'DELETE', headers: { Cookie: cookie, 'Content-Type': 'application/json' },
     body: JSON.stringify({ confirm: 'DELETE' }) });
   assert.equal(deleted.status, 200);
-  assert.equal(store.db.prepare('SELECT COUNT(*) AS n FROM google_identities').get().n, 0);
+  assert.equal((await store.db.prepare('SELECT COUNT(*) AS n FROM google_identities').get()).n, 0);
 });
 
 test('Google-only accounts work without mail delivery', async t => {

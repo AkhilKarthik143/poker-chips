@@ -18,7 +18,7 @@ const friendsStore = new FriendsStore(store.db);
 const demoEmail = 'alex@preview.tablemate.test';
 
 async function seed() {
-  if (store.db.prepare('SELECT COUNT(*) AS count FROM accounts').get().count) return;
+  if ((await store.db.prepare('SELECT COUNT(*) AS count FROM accounts').get()).count) return;
   const now = Date.now();
   const people = [
     { name: 'Alex', username: 'alex', hair: 'pixie', email: demoEmail },
@@ -34,16 +34,16 @@ async function seed() {
   }
   const settings = { startingStack: 1000, smallBlind: 5, bigBlind: 10, blindMinutes: 0, centsPer1000Chips: 0 };
   const leagueId = randomUUID();
-  leagueStore.create({ id: leagueId, name: 'Friday Night', inviteCode: 'FRDAYABC', settings,
+  await leagueStore.create({ id: leagueId, name: 'Friday Night', inviteCode: 'FRDAYABC', settings,
     account: people[0].account, memberId: randomUUID(), time: now - 40 * 86_400_000 });
   for (const person of people.slice(1)) {
-    const member = leagueStore.join(leagueId, person.account, randomUUID(), now - 40 * 86_400_000);
-    if (person.username === 'sam') leagueStore.setRole(leagueId, member.id, 'co');
+    const member = await leagueStore.join(leagueId, person.account, randomUUID(), now - 40 * 86_400_000);
+    if (person.username === 'sam') await leagueStore.setRole(leagueId, member.id, 'co');
   }
   const seasonId = randomUUID();
-  leagueStore.createSeason(leagueId, seasonId, 'Fall Sessions',
+  await leagueStore.createSeason(leagueId, seasonId, 'Fall Sessions',
     { type: 'points', table: [10, 7, 5, 3], participation: 1, dropWorst: 0, minNightsPct: 0 }, now - 35 * 86_400_000);
-  leagueStore.activateSeason(leagueId, seasonId, now - 35 * 86_400_000);
+  await leagueStore.activateSeason(leagueId, seasonId, now - 35 * 86_400_000);
   const nights = [
     [350, -100, -150, -100],
     [-200, 450, -150, -100],
@@ -61,16 +61,17 @@ async function seed() {
         handsPlayed: 35 + index * 4, handsWon: 4 + ((index + seat) % 6), vpipHands: 11 + seat * 2,
         pfrHands: 5 + seat, raises: 4 + seat, calls: 6 + seat, checks: 8 + seat, folds: 12 + seat,
         allIns: seat === index ? 1 : 0, showdowns: 4 + seat, showdownWins: 1 + (seat % 3) })) });
-    leagueStore.finalizeNight(nightId);
+    await leagueStore.finalizeNight(nightId);
   }
   await store.createPreset(people[0].account.id, randomUUID(), { name: 'Friday fast', startingStack: 1200,
     smallBlind: 10, bigBlind: 20, blindMinutes: 15, centsPer1000Chips: 0,
     rebuyPolicy: { mode: 'auto', cap: 1200, maxPerPlayer: 2 } }, now - 20 * 86_400_000);
-  friendsStore.change(people[0].account.id, people[1].account.id, 'send', now - 3 * 86_400_000);
-  friendsStore.change(people[1].account.id, people[0].account.id, 'accept', now - 2 * 86_400_000);
-  friendsStore.change(people[2].account.id, people[0].account.id, 'send', now - 86_400_000);
+  await friendsStore.change(people[0].account.id, people[1].account.id, 'send', now - 3 * 86_400_000);
+  await friendsStore.change(people[1].account.id, people[0].account.id, 'accept', now - 2 * 86_400_000);
+  await friendsStore.change(people[2].account.id, people[0].account.id, 'send', now - 86_400_000);
 }
 
+await store.init();
 await seed();
 const server = createServer({ store, devLogin: false, previewMode: true, googleClientId: null,
   mailer: { enabled: true, local: true, async send() {} },

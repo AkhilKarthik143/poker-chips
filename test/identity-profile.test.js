@@ -19,8 +19,8 @@ test('profiles require shared league, hide private users uniformly, and update a
   const leagues = new LeagueStore(store.db);
   const alice = await store.getAccount('alice'); const bob = await store.getAccount('bob');
   const leagueId = '11111111-1111-4111-8111-111111111111';
-  leagues.create({ id: leagueId, name: 'Friday', inviteCode: 'ABCDEFGH', settings: {}, account: alice, memberId: 'member-1', time: 1 });
-  leagues.join(leagueId, bob, 'member-2', 2);
+  (await leagues.create({ id: leagueId, name: 'Friday', inviteCode: 'ABCDEFGH', settings: {}, account: alice, memberId: 'member-1', time: 1 }));
+  (await leagues.join(leagueId, bob, 'member-2', 2));
   const server = createServer({ store, now: () => 1_700_000_000_100, mailer: { enabled: true, send: async () => {} } });
   const { port } = await server.listen(); const root = `http://127.0.0.1:${port}`;
   t.after(() => server.close());

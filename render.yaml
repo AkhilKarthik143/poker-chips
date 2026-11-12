@@ -17,7 +17,9 @@ services:
         sync: false
       - key: VAPID_SUBJECT
         sync: false
-      - key: TABLEMATE_DB_PATH
+      - key: TURSO_DATABASE_URL
+        sync: false
+      - key: TURSO_AUTH_TOKEN
         sync: false
       - key: RESEND_API_KEY
         sync: false

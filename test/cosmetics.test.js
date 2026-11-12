@@ -44,7 +44,7 @@ test('seat cosmetics validate, broadcast, avoid revisions and leave cleanly', as
   await fetch(url + '/api/auth/request', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
   const verified = await fetch(url + '/api/auth/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: new URL(sent[0]).searchParams.get('token') }) });
   const cookie = verified.headers.get('set-cookie');
-  const accountId = store.db.prepare('SELECT id FROM accounts WHERE email = ?').get(email).id;
+  const accountId = (await store.db.prepare('SELECT id FROM accounts WHERE email = ?').get(email)).id;
   await store.saveSettings(accountId, { ...DEFAULT_PREFS, defaultAvatar: 'crown', defaultSeatColor: 'c4', note: 'Ace' }, Date.now());
   const member = await open(cookie);
   // A new seat can join once the hand ends; this separate room avoids changing game flow.
