@@ -974,8 +974,12 @@ function positionSeats() {
   document.querySelectorAll('.seat-oval').forEach(oval => {
     const stage = oval.closest('.table-stage');
     const seats = [...oval.querySelectorAll('.oval-seat')];
-    const compactWaiting = stage.classList.contains('waiting-stage') && seats.length <= 2;
+    const waitingPair = stage.classList.contains('waiting-stage') && seats.length === 2;
+    const compactWaiting = stage.classList.contains('waiting-stage') && seats.length === 1;
+    const compactComplete = stage.classList.contains('complete-stage') && seats.length >= 3 && seats.length <= 4;
+    stage.classList.toggle('waiting-pair', waitingPair);
     stage.classList.toggle('compact-seating', compactWaiting);
+    stage.classList.toggle('compact-complete', compactComplete);
     if (matchMedia('(max-width: 699px)').matches || compactWaiting) {
       stage.classList.add('board-above');
       oval.removeAttribute('style');
@@ -986,12 +990,26 @@ function positionSeats() {
     const width = oval.clientWidth;
     if (!width || !seats.length) return;
     const count = seats.length;
-    const cardWidth = Math.min(176, Math.max(136, Math.floor((width - 24) / (count >= 8 ? 5.1 : count >= 5 ? 4.4 : 3.6))));
+    const cardWidth = waitingPair ? Math.min(240, Math.max(176, Math.floor(width / 4)))
+      : Math.min(176, Math.max(136, Math.floor((width - 24) / (count >= 8 ? 5.1 : count >= 5 ? 4.4 : 3.6))));
     seats.forEach(seat => { seat.style.width = `${cardWidth}px`; });
     const heights = seats.map(seat => seat.getBoundingClientRect().height);
     const tallest = Math.max(...heights);
     const rx = (width - cardWidth - 24) / 2;
     const ownSlot = seats.findIndex(seat => seat.classList.contains('my-seat'));
+    if (waitingPair) {
+      const height = Math.ceil(Math.max(220, tallest + 44));
+      oval.style.height = `${height}px`;
+      seats.forEach((seat, index) => {
+        seat.style.left = `${index === ownSlot ? Math.round(cardWidth / 2 + 12) : Math.round(width - cardWidth / 2 - 12)}px`;
+        seat.style.top = `${Math.round(height / 2)}px`;
+      });
+      const felt = oval.querySelector('.table-felt');
+      felt.style.width = `${Math.round(width - cardWidth / 2)}px`;
+      felt.style.height = `${Math.round(Math.max(150, height - 36))}px`;
+      stage.classList.add('board-above');
+      return;
+    }
     const points = radius => seats.map((_, index) => {
       const angle = Math.PI / 2 + 2 * Math.PI * (index - Math.max(0, ownSlot)) / count;
       return { x: width / 2 + rx * Math.cos(angle), y: radius * Math.sin(angle) };
@@ -1000,7 +1018,7 @@ function positionSeats() {
     const bounds = (point, index, centerY) => ({ left: point.x - cardWidth / 2, right: point.x + cardWidth / 2,
       top: centerY + point.y - heights[index] / 2, bottom: centerY + point.y + heights[index] / 2 });
     const board = stage.querySelector('.pot-board');
-    let ry = Math.max(150, tallest + 24);
+    let ry = compactComplete ? Math.max(96, tallest * .5) : Math.max(150, tallest + 24);
     if (count === 2 && stage.classList.contains('live-stage'))
       ry = Math.max(ry, (board.offsetHeight + tallest) / 2 + 26);
     for (; ry < 1000; ry += 8) {
@@ -1088,6 +1106,7 @@ function render() {
   const playing = !['lobby', 'complete'].includes(state.street);
   const actor = state.players.find(p => p.id === state.turn);
   const total = state.players.reduce((sum, p) => sum + p.contributed, 0);
+  const completeResult = state.lastResult && state.street === 'complete' ? `<section class="result" aria-label="Hand result"><h2>That’s a hand.</h2>${state.lastResult.awards.map(a => `<p>${escape(state.players.find(p => p.id === a.id)?.name || 'Departed player')} <strong>+${number(a.amount)}</strong> · ${escape(a.label)}</p>`).join('')}${[...new Set(state.lastResult.awards.map(a => a.id))].map(id => { const winner = state.players.find(p => p.id === id); return winner ? `<p class="winner-record">${escape(winner.name)} has won ${winner.handsWon} of ${winner.handsPlayed} played hands; dealt ${winner.handsDealt} total tonight.</p>` : ''; }).join('')}</section>` : '';
   const tableRoot = $('#table');
   const enteringTable = tableRoot.hidden;
   const uiState = captureRegion(tableRoot);
@@ -1095,15 +1114,14 @@ function render() {
   $('#lobby').hidden = true; $('#site-footer').hidden = true; $('#table').hidden = false;
   $('#table').innerHTML = `
     ${!ready ? '<div class="reconnect-banner" role="status">Reconnecting… Your seat and chips are saved. Actions will return when the table is in sync.</div>' : ''}
-    <header class="table-heading"><h1><button id="copy-code" title="Copy table code" aria-label="Copy table code ${escape(state.roomCode)}"><span class="header-table-label">Table </span><strong>${escape(state.roomCode)}</strong></button></h1><span>${state.players.length}/10<span class="player-count-label"> players</span></span><span>Blinds <strong>${number(state.settings.smallBlind)}/${number(state.settings.bigBlind)}</strong></span><button id="header-invite">Invite</button><button id="table-settings" aria-label="Table settings${requestCount ? `, ${requestCount} rebuy requests` : ''}" title="Table settings">⚙${requestCount ? `<span class="rebuy-count" aria-hidden="true">${requestCount}</span>` : ''}</button></header>
-    <nav class="table-quick-nav" aria-label="Table shortcuts"><span class="table-connection" role="status">${ready ? '✓ Connected' : '⏸ Reconnecting'}</span><span class="table-turn">${state.legal.active ? 'Your turn' : actor ? `${escape(actor.name)} to act` : state.street === 'complete' ? 'Hand complete' : 'Waiting for host'}</span><button type="button" id="quick-hand-log">Hand log</button><button type="button" id="quick-tonight">Tonight</button>${host && state.permissions.owner && state.canUndo ? '<button type="button" id="quick-undo">Undo</button>' : ''}${host && requestCount ? `<button type="button" id="quick-rebuy">Rebuys (${requestCount})</button>` : ''}</nav>
+    <header class="table-heading"><h1><button id="copy-code" title="Copy table code" aria-label="Copy table code ${escape(state.roomCode)}"><span class="header-table-label">Table </span><strong>${escape(state.roomCode)}</strong></button></h1><span>${state.players.length}/10<span class="player-count-label"> players</span></span><span>Blinds <strong>${number(state.settings.smallBlind)}/${number(state.settings.bigBlind)}</strong></span><button id="header-invite">Invite</button><button id="table-settings" aria-label="Table settings${requestCount ? `, ${requestCount} rebuy requests` : ''}" title="Table settings">⚙${requestCount ? `<span class="rebuy-count" aria-hidden="true">${requestCount}</span>` : ''}</button>
+    <nav class="table-quick-nav" aria-label="Table shortcuts"><span class="table-connection" role="status">${ready ? '✓ Connected' : '⏸ Reconnecting'}</span><span class="table-turn">${state.legal.active ? 'Your turn' : actor ? `${escape(actor.name)} to act` : state.street === 'complete' ? 'Hand complete' : 'Waiting for host'}</span><button type="button" id="quick-hand-log">Hand log</button><button type="button" id="quick-tonight">Tonight</button>${host && state.permissions.owner && state.canUndo ? '<button type="button" id="quick-undo">Undo</button>' : ''}${host && requestCount ? `<button type="button" id="quick-rebuy">Rebuys (${requestCount})</button>` : ''}</nav></header>
     <div class="table-layout"><section class="play-area" aria-label="Poker table">
-      <div class="table-stage ${playing ? 'live-stage' : 'waiting-stage'} ${playing && state.players.length === 2 ? 'heads-up-stage' : ''}"><div class="pot-board ${playing ? 'live-pot' : 'waiting-pot'}"><div class="streets" aria-label="Betting street">${['preflop', 'flop', 'turn', 'river', 'showdown'].map(street => `<span class="${state.street === street ? 'current' : ''}" ${state.street === street ? 'aria-current="step"' : ''}>${state.street === street ? '• ' : ''}${street.toUpperCase()}</span>`).join('')}</div>
-        ${playing ? `<p class="pot-label">Hand ${state.handNumber} · Total pot</p><div class="pot-number">${number(total)}</div><span class="pot-unit">CHIPS</span>` : `<p class="pot-label">${state.street === 'complete' ? 'Hand complete' : 'Your table is open'}</p><h2>${state.players.length < 2 ? 'Waiting for players' : host ? 'Ready to deal' : 'Waiting for host to start'}</h2><p>${(() => { const count = state.players.filter(p => p.stack > 0 && !p.sittingOut).length; return `${count} ${count === 1 ? 'player' : 'players'} ready`; })()}</p>`}
+      <div class="table-stage ${playing ? 'live-stage' : 'waiting-stage'} ${state.street === 'complete' ? 'complete-stage' : ''} ${playing && state.players.length === 2 ? 'heads-up-stage' : ''}"><div class="pot-board ${playing ? 'live-pot' : 'waiting-pot'}"><div class="streets" aria-label="Betting street">${['preflop', 'flop', 'turn', 'river', 'showdown'].map(street => `<span class="${state.street === street ? 'current' : ''}" ${state.street === street ? 'aria-current="step"' : ''}>${state.street === street ? '• ' : ''}${street.toUpperCase()}</span>`).join('')}</div>
+        ${playing ? `<p class="pot-label">Hand ${state.handNumber} · Total pot</p><div class="pot-number">${number(total)}</div><span class="pot-unit">CHIPS</span>` : completeResult ? `<p class="pot-label">Hand ${state.handNumber} complete</p>${completeResult}` : `<p class="pot-label">Your table is open</p><h2>${state.players.length < 2 ? 'Waiting for players' : host ? 'Ready to deal' : 'Waiting for host to start'}</h2><p>${(() => { const count = state.players.filter(p => p.stack > 0 && !p.sittingOut).length; return `${count} ${count === 1 ? 'player' : 'players'} ready`; })()}</p>`}
         <p class="street-instruction" aria-live="polite">${instructions[state.street]}</p>
         ${state.street === 'showdown' && state.pots.length > 1 ? `<div class="pot-summary">${state.pots.map((p, i) => `<span>${i ? `Side pot ${i}` : 'Main pot'} · ${number(p.amount)}</span>`).join('')}</div>` : ''}</div>
       ${seatOval(state.seatOrder)}</div><div class="table-meta"><span>Action moves clockwise</span><span id="blind-clock"></span></div>
-      ${state.lastResult && state.street === 'complete' ? `<section class="result"><h2>That’s a hand.</h2>${state.lastResult.awards.map(a => `<p>${escape(state.players.find(p => p.id === a.id)?.name || 'Departed player')} <strong>+${number(a.amount)}</strong> · ${escape(a.label)}</p>`).join('')}${[...new Set(state.lastResult.awards.map(a => a.id))].map(id => { const winner = state.players.find(p => p.id === id); return winner ? `<p class="winner-record">${escape(winner.name)} has won ${winner.handsWon} of ${winner.handsPlayed} played hands; dealt ${winner.handsDealt} total tonight.</p>` : ''; }).join('')}</section>` : ''}
       ${state.street === 'showdown' ? `<section class="showdown"><h2>Who takes the pot?</h2><p class="helper">${host ? 'Select every tied winner for each pot. Chips settle after all pots are assigned; odd chips go left of the dealer.' : 'The host or co-host is selecting winners from the physical cards.'}</p>${state.pots.map((pot, index) => `<form class="winner-form" data-pot="${pot.id}"><h3>${index ? `Side pot ${index}` : 'Main pot'} · ${number(pot.amount)} chips</h3>${pot.winners ? `<p class="helper">Selected: ${pot.winners.map(id => escape(state.players.find(p => p.id === id).name)).join(' + ')}</p>` : pot.eligible.map(id => `<label for="winner-${pot.id}-${id}"><input id="winner-${pot.id}-${id}" type="checkbox" name="winner" value="${escape(id)}" ${!host ? 'disabled' : ''}>${escape(state.players.find(p => p.id === id).name)}</label>`).join('')}${host && !pot.winners ? '<button class="primary" type="submit">Confirm winner(s)</button>' : ''}</form>`).join('')}</section>` : ''}
     </section><details class="rail-drawer" id="table-rail" ${railMedia.matches ? 'open' : ''}><summary>Players, hand log & controls</summary><aside class="sidebar">
       <details class="panel" id="players-panel" open><summary>Players <span>${state.players.length}/10</span></summary><ul class="players-list">${state.seatOrder.map(id => { const p = state.players.find(p => p.id === id); const cosmetic = state.cosmetics?.[id] || { avatar:'chip',color:'c1',note:'' }; return `<li class="seat-color-${escape(cosmetic.color)}"><strong>${tableAvatar(id, cosmetic, p.name, 24)} ${escape(p.name)}${tableUsername(id)}${p.id === state.playerId ? ' · You' : ''}</strong><span>${p.sittingOut ? '⏸ Away' : p.connected ? '✓ Connected' : '⏸ Offline'}</span>${cosmetic.note ? `<span class="seat-note">${escape(cosmetic.note)}</span>` : ''}<span>Won ${p.handsWon} · Played ${p.handsPlayed} · Dealt ${p.handsDealt}</span></li>`; }).join('')}</ul><div class="panel-content"><button id="donate-chips" ${playing || me.stack < 1 || state.players.length < 2 ? 'disabled' : ''}>Donate chips</button><button id="open-tonight-players">Tonight</button><p class="helper">${playing ? 'Available between hands.' : 'Give chips from your stack to another player.'}</p></div></details>

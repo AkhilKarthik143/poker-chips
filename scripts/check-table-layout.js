@@ -40,10 +40,15 @@ async function inspect(page, label, width, height, takeShot = false) {
     const rect = node => node.getBoundingClientRect().toJSON();
     const stage = document.querySelector('.table-stage');
     const board = stage.querySelector('.pot-board');
+    const header = document.querySelector('.table-heading');
     const dock = document.querySelector('.dock');
     const map = stage.querySelector('.seat-order-guide');
     const seats = [...stage.querySelectorAll('.oval-seat')];
-    return { stage: rect(stage), board: rect(board), seats: seats.map(seat => ({ rect: rect(seat),
+    return { stage: rect(stage), board: rect(board), header: rect(header),
+      headerButtons: [...header.querySelectorAll('button')].map(rect),
+      shortcutsInHeader: header.contains(document.querySelector('.table-quick-nav')),
+      resultInBoard: !document.querySelector('.result') || board.contains(document.querySelector('.result')),
+      seats: seats.map(seat => ({ rect: rect(seat),
       avatars: [...seat.querySelectorAll('.seat-avatar-frame img,.seat-avatar-frame canvas,.seat-avatar-frame svg')].map(rect),
       photosLoaded: [...seat.querySelectorAll('.seat-avatar-frame img')].every(image => image.complete && image.naturalWidth > 0),
       roles: [...seat.querySelectorAll('.seat-roles span')].map(rect),
@@ -60,6 +65,16 @@ async function inspect(page, label, width, height, takeShot = false) {
       waitingCopy: board.textContent.replace(/\s+/g, ' ') };
   });
   assert.ok(data.scrollWidth <= data.viewportWidth + 1, `${label} ${width}: horizontal overflow`);
+  assert.equal(data.shortcutsInHeader, true, `${label} ${width}: table shortcuts are outside header`);
+  assert.equal(data.resultInBoard, true, `${label} ${width}: result is detached from status board`);
+  for (const [index, button] of data.headerButtons.entries()) {
+    assert.ok(button.left >= data.header.left - 1 && button.right <= data.header.right + 1 &&
+      button.top >= data.header.top - 1 && button.bottom <= data.header.bottom + 1,
+    `${label} ${width}: header button ${index + 1} escapes header`);
+    for (const other of data.headerButtons.slice(index + 1))
+      assert.equal(intersects(button, other), false, `${label} ${width}: header buttons overlap`);
+  }
+  assert.ok(data.header.bottom < data.stage.top, `${label} ${width}: header overlaps table`);
   assert.ok(data.board.left >= data.stage.left - 1 && data.board.right <= data.stage.right + 1,
     `${label} ${width}: board outside stage`);
   assert.equal(intersects(data.board, data.dock), false, `${label} ${width}: board covered by action dock ${JSON.stringify({board:data.board,dock:data.dock})}`);
@@ -217,7 +232,34 @@ try {
   for (const [width, height] of sizes) await inspect(two.page, 'complete-2', width, height, [390, 1280].includes(width));
   assert.deepEqual(two.errors, [], 'two-player table page errors');
   await two.context.close();
-  process.stdout.write(`Table layout passed: waiting 1/2/3/4/6/8/10, active 2/10, showdown and complete across ${sizes.length} viewports; screenshots in ${shots}\n`);
+
+  const three = await createTable();
+  const guests = [await joinSocket(three.code, 'Second player'), await joinSocket(three.code, 'Third player')];
+  await three.page.locator('.oval-seat').nth(2).waitFor();
+  await three.page.locator('#start-hand').click();
+  await three.page.locator('.live-stage').waitFor();
+  for (let turn = 0; turn < 15 && guests[0].state.street !== 'complete'; turn++) {
+    const current = guests[0].state;
+    if (current.street === 'showdown') {
+      await three.page.locator('.winner-form input[name="winner"]').first().check();
+      await three.page.locator('.winner-form button[type="submit"]').click();
+      await waitRevision(guests[0], current.revision);
+      continue;
+    }
+    const guest = guests.find(item => item.state.playerId === current.turn);
+    if (guest) await act(guest, guest.state.legal.toCall > 0 ? 'fold' : 'check');
+    else if (await three.page.locator('[data-action="fold"]:not([disabled])').count())
+      await three.page.locator('[data-action="fold"]:not([disabled])').click();
+    else await three.page.locator('[data-action="check"]:not([disabled])').click();
+    await waitRevision(guests[0], current.revision);
+  }
+  assert.equal(guests[0].state.street, 'complete', 'three-player hand completes');
+  await three.page.locator('.complete-stage').waitFor();
+  for (const [width, height] of sizes)
+    await inspect(three.page, 'complete-3', width, height, [390, 1280].includes(width));
+  assert.deepEqual(three.errors, [], 'three-player table page errors');
+  await three.context.close();
+  process.stdout.write(`Table layout passed: waiting 1/2/3/4/6/8/10, active 2/10, showdown and complete 2/3 across ${sizes.length} viewports; screenshots in ${shots}\n`);
 } finally {
   sockets.forEach(socket => socket.disconnect());
   await browser.close(); await server.close();

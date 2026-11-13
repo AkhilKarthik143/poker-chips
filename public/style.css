@@ -1266,6 +1266,10 @@ body:not(.in-game) .toast{top:auto;bottom:16px}
 .waiting-stage.compact-seating .seat-oval{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,240px));grid-template-rows:none;grid-auto-rows:auto;justify-content:center;align-items:stretch;gap:16px;height:auto;margin:0 auto 8px}
 .waiting-stage.compact-seating .table-felt{display:none}
 .waiting-stage.compact-seating .oval-seat{position:relative;left:auto;top:auto;width:100%;min-height:0;transform:none}
+@media(min-width:700px){
+  .waiting-stage.waiting-pair .table-felt{align-items:center;padding-bottom:0}
+  .waiting-stage.waiting-pair .table-felt::after{content:'↻  Clockwise order';color:var(--text-primary);font-size:12px;font-weight:800;letter-spacing:.03em}
+}
 
 @media(max-width:699px){
   .table-stage .pot-board{position:relative;top:auto;left:auto;right:auto;bottom:auto;width:100%;max-width:100%;min-width:0;min-height:0;margin:0 0 16px;padding:12px;transform:none}
@@ -1331,4 +1335,38 @@ body:not(.in-game) .toast{top:auto;bottom:16px}
   .table-page{padding-bottom:24px}
   .dock{position:relative;bottom:auto;left:auto;right:auto}
   .raise-panel{position:fixed;top:50%;bottom:auto;left:50%;right:auto;max-height:calc(100dvh - 16px);transform:translate(-50%,-50%)}
+}
+
+/* Table identity, connection and shortcuts belong to the same header. */
+.table-heading{flex-wrap:wrap;column-gap:12px;row-gap:8px;margin-bottom:12px}
+.table-heading>span{white-space:nowrap}
+.table-heading .table-quick-nav{flex:0 1 auto;min-width:0;margin:0 0 0 auto;padding:0;border:0;border-radius:0;background:transparent;box-shadow:none;gap:6px}
+.table-heading .table-connection{margin-right:0}
+.table-heading .table-turn{white-space:nowrap}
+.table-heading .table-quick-nav button{min-height:44px;padding:7px 10px;font-size:13px}
+
+/* Keep the completed-hand recap with the table status. */
+.table-stage.complete-stage .pot-board{width:min(100%,760px);margin-bottom:8px}
+.complete-stage .pot-board .result{width:100%;margin:0;padding:0;border:0;border-radius:0;background:transparent;box-shadow:none;text-align:left}
+.complete-stage .pot-board .result h2{max-width:none;margin:0 0 8px;text-align:center;font-size:22px}
+.complete-stage .pot-board .result p{font-size:13px;line-height:1.45;overflow-wrap:anywhere}
+.complete-stage .pot-board .winner-record{margin-top:6px;color:var(--text-secondary)}
+.complete-stage .pot-board .street-instruction{margin-top:8px}
+@media(min-width:700px){.table-stage.compact-complete .seat-oval{margin-top:-40px}}
+
+@media(max-width:699px){
+  .table-heading{display:flex;align-items:center;gap:6px;margin-bottom:12px}
+  .table-heading h1{order:0;flex:1 1 150px;width:auto;min-width:0;margin:0}
+  .table-heading #header-invite{order:1}
+  .table-heading #table-settings{order:2;flex:none}
+  .table-heading>span{order:3;flex:1 1 auto;font-size:12px}
+  .table-heading .table-quick-nav{order:4;flex:1 0 100%;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;margin:2px 0 0;padding:8px 0 0;border-top:1px solid var(--border-seat-empty);gap:6px}
+  .table-heading .table-quick-nav:has(#quick-undo):not(:has(#quick-rebuy)){grid-template-columns:repeat(3,minmax(0,1fr))}
+  .table-heading .table-quick-nav:has(#quick-undo):not(:has(#quick-rebuy)) button{grid-row:2}
+  .table-heading .table-quick-nav:has(#quick-undo):not(:has(#quick-rebuy)) #quick-hand-log{grid-column:1}
+  .table-heading .table-quick-nav:has(#quick-undo):not(:has(#quick-rebuy)) #quick-tonight{grid-column:2}
+  .table-heading .table-quick-nav:has(#quick-undo):not(:has(#quick-rebuy)) #quick-undo{grid-column:3}
+  .table-heading .table-connection{grid-column:1}
+  .table-heading .table-turn{grid-column:2;text-align:right;white-space:normal}
+  .table-heading .table-quick-nav button{min-height:48px}
 }
