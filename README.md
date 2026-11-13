@@ -9,7 +9,7 @@ Physical cards. Virtual chips. A mobile-first chip bank and authoritative bettin
 1. The host creates a table, chooses a starting stack and blinds, and optionally enables a blind timer.
 2. Friends open the **same service URL** on their phones, tap **Join a table**, and enter the eight-letter code and their names. For local testing, phones must use your computer’s LAN address on the same Wi-Fi; `localhost` on a phone is the phone itself.
 3. Deal physical hole cards. The host taps **Start first hand**. The server moves the dealer button, posts blinds and identifies the current player. With two players the dealer posts the small blind and acts first preflop.
-4. Use Fold, Check, Call, Raise or All-in. A raise amount is the **total bet for that street**, including chips already in front of you. Quick buttons offer minimum, half-pot, pot and all-in. Half-pot/pot raises use the pot after calling.
+4. Use Fold, Check, Call, Raise or All-in. A raise amount is the **total bet for that street**, including chips already in front of you. Quick buttons offer minimum, half-pot and pot; All-in has its own review step. Half-pot/pot raises use the pot after calling.
 5. When the street changes, reveal the appropriate physical community cards. If everyone remaining is all-in, betting skips to showdown: physically complete the board before choosing winners.
 6. At showdown, compare the real cards. The host selects every tied winner **for each pot**, then confirms. The app only offers eligible players. All payouts settle together once every pot is assigned. Split-pot odd chips go clockwise from the dealer, starting with the first winning player to the dealer’s left.
 7. Collect the cards and start the next hand. **Host controls** provide rebuys/add-ons, settings, kick and undo. **Your seat** provides sit-out and leave.
@@ -17,6 +17,8 @@ Physical cards. Virtual chips. A mobile-first chip bank and authoritative bettin
 ## Share a room invite
 
 From the table’s **Invite** or **Invite players** control, share the QR code, copy the room code, copy the invite link, or use the device share sheet when available. The link uses the current service origin and includes only the public room code (`?code=ABCDEFGH`). Opening it fills the existing **Join a table** code field; the guest still chooses a name and confirms the normal join flow. The QR is generated locally with the vendored `qrcode-generator` browser library, so no invite data is sent to a QR service.
+
+On phones, the entry form appears first. At the table, Hand log and Tonight are one tap away above the seats, while Fold, Check/Call and Raise stay in the bottom action dock. The [mobile UX audit](MOBILE_UX.md) records the scenarios, accessibility checks, palette options and real-phone test plan.
 
 ## Local run
 
@@ -62,7 +64,7 @@ The profile builder combines one of 24 existing icons with a shape, one of 12 ba
 
 ### Layered character avatars
 
-Signed-in members can also use a layered character avatar. Eleven transparent 256×256 layers combine skin, hair, face, outfit and accessories. The catalog uses local SVG sources in `avatar-art/`, a single manifest, and 12 colors; grayscale layers are tinted at render time. Hair choices include pixie, afro, braids, ponytail and mohawk alongside the original styles. The server stores a versioned, allowlisted part/color spec (maximum 600 bytes) for character avatars; uploaded photos are stored separately in SQLite. Existing icon avatars remain valid. At tables, a character is shown only when its owner has enabled avatar display.
+Signed-in members can also use a layered character avatar. Thirteen transparent 256×256 layers combine skin, face shape, nose, brows, hair, outfit and accessories. The catalog uses local SVG sources in `avatar-art/`, a single manifest, and 12 colors; grayscale layers are tinted at render time. Hair choices include pixie, afro, braids, ponytail and mohawk alongside the original styles. The Unity editor has live previews, choice thumbnails, Undo, Redo, Shuffle, Reset and explicit Save. Older saved characters retain their original appearance. The server stores a versioned, allowlisted part/color spec (maximum 600 bytes) for character avatars; uploaded photos are stored separately in SQLite. Existing icon avatars remain valid. At tables, a character is shown only when its owner has enabled avatar display. See [AVATAR_PIPELINE.md](AVATAR_PIPELINE.md) for the shared rendering path and verification.
 
 `npm run avatars:build` rasterizes the SVGs to PNG using Playwright/Chromium and copies them to both `public/avatar-layers/` and Unity `Resources/AvatarLayers/`. `npm run avatars:check` regenerates and byte-compares those assets, then checks the generated server, browser and C# part enums. To add a part, create an SVG in the matching `avatar-art/` slot, add its ID and tint setting to `avatar-art/manifest.json`, run `npm run avatars:build` and `node scripts/gen-avatar-enums.js`, then run both check commands. Keep transparent art inside the 256×256 canvas and use grayscale for tintable parts.
 
@@ -92,6 +94,8 @@ The home Friends link shows an unread update count. The Friends page separates i
 At a table, a signed-in player can tap or focus another verified account seat to see a small account sheet and send a request. Guest and own seats do not offer that action, and sending a request does not change the hand or table revision. If a member opens Friends from the table invite sheet, they can copy or share the existing room URL after the server checks that the table still exists and has space. Tablemate does not deliver an account-to-account room invite; the normal QR, copy and device share flows remain available. Friendships are independent of leagues and never affect who may join a table.
 
 Friends APIs: `GET /api/friends`, `GET /api/friends/summary`, `GET /api/friends/search?q=`, `POST /api/friends/:username/{send,accept,decline,cancel,remove,block,unblock}`, `POST /api/friends/notifications/read`, `GET /api/friends/table/:code/:seatId`, `POST /api/friends/table/:code/:seatId/request`, and `GET /api/friends/invite/:code`. Mutations use the authenticated account from the session; clients cannot supply a sender ID. Migration 8 adds unique unordered relationship pairs, blocks and account notification rows. `GET /api/me/export` includes friendships, blocked users and friend updates. With accounts disabled, these APIs return 404 and guest play stays unchanged.
+
+Account profiles and leagues have share links and locally generated QR codes. A recipient sees a preview and confirms **Add Friend** or **Join League**. If sign-in or account setup is needed, the invitation resumes afterward. Only commissioners and co-commissioners can reveal or rotate a league invite code. The link contains a public profile share ID or league invite code; it never contains an account ID or session token. Table invitations continue using the room code. Copy and device sharing have clear fallback actions.
 
 Tablemate is an **informal tally for friends, not a gambling or payments platform**. It never moves money.
 
