@@ -27,7 +27,7 @@ async function createTable(browser, url, width, height, name) {
   await page.locator('#entry-submit').click();
   await page.locator('#copy-code').waitFor();
   assert.equal(await page.evaluate(() => window.scrollY), 0, 'new table begins at its header');
-  const code = (await page.locator('#copy-code').innerText()).trim();
+  const code = (await page.locator('#copy-code strong').innerText()).trim();
   return { context, page, code };
 }
 
@@ -52,13 +52,35 @@ test('phone entry, guarded actions, ten seats, quick access and viewport layout'
   await guestPage.locator('#copy-code').waitFor();
   assert.equal(await guestPage.evaluate(() => window.scrollY), 0, 'joined table begins at its header');
   await first.page.locator('.oval-seat').nth(1).waitFor();
+  await guestPage.locator('#table-settings').click();
+  assert.equal(await guestPage.locator('#manage-table').evaluate(el => el.open), true);
+  assert.equal(await guestPage.locator('#your-seat').evaluate(el => el.open), true);
+  await guestPage.locator('#rebuy-request-amount').fill('125');
+  await guestPage.locator('#rebuy-request-form button[type="submit"]').click();
+  await guestPage.locator('.rebuy-request-controls [role="status"]').getByText(/Pending/).waitFor();
+  await first.page.locator('#table-settings').getByText('1').waitFor();
+  await first.page.locator('#table-settings').click();
+  await first.page.locator('#your-seat > summary').focus();
+  await first.page.keyboard.press('Tab');
+  assert.equal(await first.page.evaluate(() => document.activeElement?.matches('#manage-table > summary')), true,
+    'keyboard focus wraps to the Manage Table heading');
+  await capture(first.page, 'manage-360x740.png');
+  await first.page.locator('#open-rebuy-requests-host').click();
+  await first.page.locator('[data-rebuy-approve]').click();
+  await guestPage.locator('.oval-seat.my-seat .oval-stack').getByText('1,125').waitFor();
+  await first.page.locator('#rebuy-requests-dialog [data-close-rebuy]').click();
+  await first.page.locator('#manage-table > summary').click();
+  await guestPage.locator('#manage-table > summary').click();
   await first.page.locator('#start-hand').click();
   await first.page.locator('#all-in-guard').waitFor();
-  await first.page.locator('#quick-hand-log').click();
-  assert.equal(await first.page.locator('#hand-log').evaluate(el => el.open), true);
+  await first.page.locator('#table-rail > summary').click();
+  assert.equal(await first.page.locator('#hand-log').isVisible(), true, 'one tap opens hand activity');
+  assert.equal(await first.page.locator('.workspace-players').count(), 0, 'seat cards replace the duplicate players list');
+  await first.page.locator('#table-settings').click();
   await first.page.locator('#quick-tonight').click();
   await first.page.locator('#tonight-dialog').waitFor({ state: 'visible' });
   await first.page.locator('#tonight-dialog [data-close-tonight]').first().click();
+  await first.page.locator('#manage-table > summary').click();
   const active = first.page.locator('#all-in-guard');
   assert.equal(await active.isEnabled(), true, 'host is first to act in a heads-up hand');
   await first.page.locator('#toggle-raise').click();
@@ -76,9 +98,11 @@ test('phone entry, guarded actions, ten seats, quick access and viewport layout'
   await active.click();
   await first.page.locator('#dialog-form button[type=submit]').click();
   await first.page.locator('#seat-dialog').waitFor({ state: 'hidden' });
-  await first.page.locator('#quick-undo').click();
+  await first.page.locator('#table-settings').click();
+  await first.page.locator('#undo').click();
   assert.match(await first.page.locator('#dialog-title').innerText(), /Undo last action/);
   await first.page.locator('#dialog-close').click();
+  await first.page.locator('#manage-table > summary').click();
 
   const ten = await createTable(browser, url, 360, 740, 'Host ten');
   for (let i = 2; i <= 10; i++) await socketPlayer(url, ten.code, `Player ${i}`, sockets);
@@ -87,6 +111,7 @@ test('phone entry, guarded actions, ten seats, quick access and viewport layout'
   await ten.page.locator('#kick-form button[type=submit]').click();
   assert.match(await ten.page.locator('#dialog-title').innerText(), /Remove Player 2/);
   await ten.page.locator('#dialog-close').click();
+  await ten.page.locator('#manage-table > summary').click();
   await ten.page.locator('#table-rail').evaluate(el => { el.open = false; });
   await ten.page.locator('#start-hand').click();
   await ten.page.locator('.turn-label').waitFor();
@@ -102,6 +127,13 @@ test('phone entry, guarded actions, ten seats, quick access and viewport layout'
     assert.ok(layout.statuses.every(value => parseFloat(value) >= 12), `${width}: seat status below 12px`);
     await capture(ten.page, `table-${width}x${height}.png`);
   }
+  await ten.page.setViewportSize({ width: 390, height: 844 });
+  await ten.page.evaluate(async () => { await document.fonts.ready; await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); });
+  assert.equal(await ten.page.locator('#table-rail').evaluate(el => el.open), false, 'tablet rail closes when moving to phone layout');
+  await ten.page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  const bottomSeat = await ten.page.evaluate(() => ({ seat: Math.max(...[...document.querySelectorAll('.table-stage .oval-seat')].map(el => el.getBoundingClientRect().bottom)),
+    dock: document.querySelector('.dock').getBoundingClientRect().top }));
+  assert.ok(bottomSeat.seat <= bottomSeat.dock - 4, `last mobile seat scrolls clear of action dock ${JSON.stringify(bottomSeat)}`);
   await ten.page.setViewportSize({ width: 360, height: 740 });
   await ten.page.evaluate(() => { document.documentElement.style.fontSize = '32px'; });
   await ten.page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));

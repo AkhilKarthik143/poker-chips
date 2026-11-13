@@ -42,10 +42,12 @@ async function inspect(page, label, width, height, takeShot = false) {
     const board = stage.querySelector('.pot-board');
     const header = document.querySelector('.table-heading');
     const dock = document.querySelector('.dock');
+    const sidebar = document.querySelector('.sidebar');
     const map = stage.querySelector('.seat-order-guide');
     const seats = [...stage.querySelectorAll('.oval-seat')];
-    return { stage: rect(stage), board: rect(board), header: rect(header),
-      headerButtons: [...header.querySelectorAll('button')].map(rect),
+    return { stage: rect(stage), board: rect(board), header: rect(header), sidebar: rect(sidebar),
+      headerButtons: [...header.querySelectorAll('button')].filter(button => getComputedStyle(button).display !== 'none').map(rect),
+      duplicatePlayers: document.querySelectorAll('.workspace-players').length,
       shortcutsInHeader: header.contains(document.querySelector('.table-quick-nav')),
       resultInBoard: !document.querySelector('.result') || board.contains(document.querySelector('.result')),
       seats: seats.map(seat => ({ rect: rect(seat),
@@ -66,6 +68,9 @@ async function inspect(page, label, width, height, takeShot = false) {
   });
   assert.ok(data.scrollWidth <= data.viewportWidth + 1, `${label} ${width}: horizontal overflow`);
   assert.equal(data.shortcutsInHeader, true, `${label} ${width}: table shortcuts are outside header`);
+  assert.equal(data.duplicatePlayers, 0, `${label} ${width}: duplicate player list is still rendered`);
+  if (width >= 1200) assert.ok(data.stage.width >= Math.min(width - 40, 1460) - 8,
+    `${label} ${width}: table has not reclaimed the sidebar width`);
   assert.equal(data.resultInBoard, true, `${label} ${width}: result is detached from status board`);
   for (const [index, button] of data.headerButtons.entries()) {
     assert.ok(button.left >= data.header.left - 1 && button.right <= data.header.right + 1 &&
@@ -75,9 +80,12 @@ async function inspect(page, label, width, height, takeShot = false) {
       assert.equal(intersects(button, other), false, `${label} ${width}: header buttons overlap`);
   }
   assert.ok(data.header.bottom < data.stage.top, `${label} ${width}: header overlaps table`);
+  if (width >= 1200 && height >= 700)
+    assert.ok(data.sidebar.bottom <= data.dock.top - 4,
+      `${label} ${width}: sidebar stretches behind the action dock`);
   assert.ok(data.board.left >= data.stage.left - 1 && data.board.right <= data.stage.right + 1,
     `${label} ${width}: board outside stage`);
-  assert.equal(intersects(data.board, data.dock), false, `${label} ${width}: board covered by action dock ${JSON.stringify({board:data.board,dock:data.dock})}`);
+  assert.equal(intersects(data.board, data.dock, -1), false, `${label} ${width}: board covered by action dock ${JSON.stringify({board:data.board,dock:data.dock})}`);
   assert.deepEqual(data.map.nodes, data.seats.map((_, index) => index + 1), `${label} ${width}: seat map order differs from cards`);
   assert.equal(data.map.own, 1, `${label} ${width}: seat map needs one local marker`);
   assert.equal(data.map.visible, width < 700 && !data.compact, `${label} ${width}: seat map visibility`);
@@ -86,6 +94,9 @@ async function inspect(page, label, width, height, takeShot = false) {
     for (const seat of data.seats) assert.equal(intersects(data.map.rect, seat.rect), false, `${label} ${width}: seat map overlaps card`);
   }
   for (const [index, seat] of data.seats.entries()) {
+    if (width >= 1200 && height >= 700 && label.startsWith('active-') && !label.includes('large-text'))
+      assert.ok(seat.rect.bottom <= data.dock.top - 4,
+        `${label} ${width}: seat ${index + 1} covered by action dock ${JSON.stringify({seat:seat.rect,dock:data.dock,stage:data.stage})}`);
     assert.equal(seat.photosLoaded, true, `${label} ${width}: seat ${index + 1} photo failed to load`);
     assert.equal(seat.nameCount, 1, `${label} ${width}: seat ${index + 1} has duplicate names`);
     assert.equal(seat.visibleName, true, `${label} ${width}: seat ${index + 1} name clipped`);
@@ -195,6 +206,15 @@ try {
   await table.page.locator('#start-hand').click();
   await table.page.locator('.live-stage').waitFor();
   for (const [width, height] of sizes) await inspect(table.page, 'active-10', width, height, [320, 390, 1280].includes(width));
+  await table.page.setViewportSize({ width: 1280, height: 800 });
+  const fullTableWidth = (await table.page.locator('.table-stage').boundingBox()).width;
+  await table.page.locator('#activity-trigger').click();
+  assert.equal(await table.page.locator('#table-rail').evaluate(el => el.open), true, 'desktop hand log opens');
+  assert.equal(await table.page.locator('#hand-log').isVisible(), true, 'hand activity remains available');
+  assert.equal((await table.page.locator('.table-stage').boundingBox()).width, fullTableWidth, 'activity drawer does not resize the table');
+  await table.page.screenshot({ path: `${shots}activity-drawer-1280x800.png`, animations: 'disabled' });
+  await table.page.keyboard.press('Escape');
+  assert.equal(await table.page.locator('#table-rail').evaluate(el => el.open), false, 'Escape closes activity drawer');
   for (const theme of ['felt', 'midnight', 'burgundy', 'graphite', 'daylight', 'miami-vice', 'royal-flush', 'retro-arcade', 'system']) {
     await table.page.evaluate(value => { document.documentElement.dataset.theme = value; }, theme);
     for (const [width, height] of [[390, 844], [1280, 800]])
@@ -206,6 +226,18 @@ try {
   await table.page.evaluate(() => { document.documentElement.style.fontSize = ''; });
   assert.deepEqual(table.errors, [], 'table page errors');
   await table.context.close();
+
+  for (const count of [3, 6]) {
+    const mid = await createTable();
+    for (let index = 1; index < count; index++) await joinSocket(mid.code, `Player ${index + 1}`);
+    await mid.page.locator('.oval-seat').nth(count - 1).waitFor();
+    await mid.page.locator('#start-hand').click();
+    await mid.page.locator('.live-stage').waitFor();
+    for (const [width, height] of sizes)
+      await inspect(mid.page, `active-${count}`, width, height, [390, 1280].includes(width));
+    assert.deepEqual(mid.errors, [], `${count}-player table page errors`);
+    await mid.context.close();
+  }
 
   const two = await createTable();
   const peer = await joinSocket(two.code, 'Second long name', peerToken);
@@ -224,8 +256,11 @@ try {
     }
   }
   assert.equal(peer.state.street, 'showdown', 'two-player hand reaches showdown');
-  await two.page.locator('.showdown').waitFor();
+  await two.page.locator('#showdown-action').waitFor();
   for (const [width, height] of sizes) await inspect(two.page, 'showdown-2', width, height, [390, 1280].includes(width));
+  await two.page.setViewportSize({ width: 390, height: 844 });
+  await two.page.locator('#showdown-action').click();
+  await two.page.screenshot({ path: `${shots}showdown-sheet-390x844.png`, fullPage: true, animations: 'disabled' });
   await two.page.locator('.winner-form input[name="winner"]').first().check();
   await two.page.locator('.winner-form button[type="submit"]').click();
   await two.page.locator('.result').waitFor();
@@ -241,6 +276,8 @@ try {
   for (let turn = 0; turn < 15 && guests[0].state.street !== 'complete'; turn++) {
     const current = guests[0].state;
     if (current.street === 'showdown') {
+      if (!await three.page.locator('#showdown-drawer').evaluate(el => el.open))
+        await three.page.locator('#showdown-action').click();
       await three.page.locator('.winner-form input[name="winner"]').first().check();
       await three.page.locator('.winner-form button[type="submit"]').click();
       await waitRevision(guests[0], current.revision);
@@ -259,7 +296,7 @@ try {
     await inspect(three.page, 'complete-3', width, height, [390, 1280].includes(width));
   assert.deepEqual(three.errors, [], 'three-player table page errors');
   await three.context.close();
-  process.stdout.write(`Table layout passed: waiting 1/2/3/4/6/8/10, active 2/10, showdown and complete 2/3 across ${sizes.length} viewports; screenshots in ${shots}\n`);
+  process.stdout.write(`Table layout passed: waiting 1/2/3/4/6/8/10, active 2/3/6/10, showdown and complete 2/3 across ${sizes.length} viewports; screenshots in ${shots}\n`);
 } finally {
   sockets.forEach(socket => socket.disconnect());
   await browser.close(); await server.close();
