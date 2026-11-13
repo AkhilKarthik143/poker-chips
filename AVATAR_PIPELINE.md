@@ -24,3 +24,5 @@ The modular slot catalog was informed by [Kopes SpriteComposer 2D](https://githu
 - Unity: build `BuildScript.BuildWebGL` in Unity 6000.3.26f1, then `node scripts/install-unity-build.js`
 
 Screenshots and measured build sizes belong in `artifacts/qa/` during review. The avatar artwork is static at the poker table, so additional Unity layers do not add a Unity runtime cost to gameplay.
+
+The checked-in WebGL download (data, framework, loader, wasm) measured 8,083,125 bytes before this change and 8,105,171 bytes after it: an increase of 22,046 bytes (0.27%). This is a compressed-file comparison, not a mobile network or startup benchmark. Headless Chromium loaded the finished editor without page errors or horizontal overflow at 360×740, 390×844, 768×1024, and 1280×800. Physical iOS Safari and Android Chrome performance still need device testing.
