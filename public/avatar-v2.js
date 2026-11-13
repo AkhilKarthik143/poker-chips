@@ -5,9 +5,10 @@ const imageCache = new Map();
 const renderCache = new Map();
 const subscribers = new Map();
 let compositions = 0;
-const pick = { bg: _spec => 'disc', hairBack: spec => spec.hair, body: _spec => 'base',
+const pick = { bg: _spec => 'disc', hairBack: spec => spec.hair, body: spec => spec.face || 'base',
+  nose: spec => spec.nose || 'none',
   outfit: spec => spec.outfit, mouth: spec => spec.mouth, eyes: spec => spec.eyes,
-  facialHair: spec => spec.facialHair, hairFront: spec => spec.hair, glasses: spec => spec.glasses,
+  facialHair: spec => spec.facialHair, brows: spec => spec.brows || 'none', hairFront: spec => spec.hair, glasses: spec => spec.glasses,
   hat: spec => spec.hat, frame: spec => spec.frame };
 const tint = { bg: spec => catalog.palette[spec.bg], hairBack: spec => catalog.palette[spec.hairColor],
   body: spec => catalog.skinTones[spec.skin], outfit: spec => catalog.palette[spec.outfitColor],

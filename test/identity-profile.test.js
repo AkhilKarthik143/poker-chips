@@ -82,7 +82,7 @@ test('table view exposes only opted-in username and enum avatar', async t => {
   assert.deepEqual(Object.keys(state.identities[created.playerId]), ['avatar']);
   assert.equal('username' in state.identities[created.playerId], false);
   for (const secret of ['secret@example.com', 'id-secret', token, 'showUsernameAtTables']) assert.equal(JSON.stringify(state).includes(secret), false);
-  const changedAvatar = { ...defaultAvatarV2('id-secret'), hat: 'cowboy' };
+  const changedAvatar = { ...defaultAvatarV2('id-secret'), brows: 'raised' };
   const avatarState = new Promise(resolve => guest.once('state', resolve));
   const avatarResponse = await fetch(root + '/api/me/profile', { method: 'PUT', headers: { Cookie: `tm_session=${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ avatar: changedAvatar }) });

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
@@ -11,14 +12,21 @@ public sealed class CreatorUI : MonoBehaviour
     private WebBridge bridge;
     private RectTransform footer;
     private RectTransform optionsContent;
+    private RectTransform tabsContent;
     private Text status;
     private Button save;
+    private Button undo;
+    private Button redo;
+    private readonly List<string> undoHistory = new List<string>();
+    private readonly List<string> redoHistory = new List<string>();
     private string tab = "hair";
     private bool landscape;
     private Font font;
     private static readonly Color Ink = new Color32(35, 47, 65, 255);
     private static readonly Color Paper = new Color32(255, 253, 245, 255);
     private static readonly Color Mint = new Color32(196, 242, 158, 255);
+    private static readonly Color Lilac = new Color32(231, 220, 255, 255);
+    private static readonly Color Soft = new Color32(248, 246, 238, 255);
 
     public void Initialize(AvatarSpec initial, LayerCompositor layers, WebBridge pageBridge)
     {
@@ -66,6 +74,46 @@ public sealed class CreatorUI : MonoBehaviour
         return button;
     }
 
+    private static void Selected(Button button, bool selected, Color selectedColor, bool swatch)
+    {
+        button.GetComponent<Image>().color = swatch || selected ? selectedColor : Soft;
+        if (!selected) return;
+        UnityEngine.UI.Outline outline = button.gameObject.AddComponent<UnityEngine.UI.Outline>();
+        outline.effectColor = Ink;
+        outline.effectDistance = new Vector2(2, -2);
+    }
+
+    private static string LabelFor(string value)
+    {
+        if (value == "facialHair") return "Beard";
+        if (value == "bg") return "Backdrop";
+        if (value.StartsWith("s") && value.Length == 2 && char.IsDigit(value[1])) return "Tone " + value[1];
+        if (value.StartsWith("c") && int.TryParse(value.Substring(1), out int color)) return "Color " + color;
+        return char.ToUpperInvariant(value[0]) + value.Substring(1);
+    }
+
+    private void AddThumbnail(Button button, string value)
+    {
+        string slot = tab == "skin" || tab == "face" ? "body" : tab == "hair" ? "hairFront" : tab;
+        if (slot == "bg" || slot == "frame") return;
+        string part = tab == "skin" ? spec.face : value;
+        Sprite sprite = compositor.PreviewSprite(slot, part);
+        if (sprite == null) return;
+        RectTransform thumb = new GameObject("Preview", typeof(RectTransform), typeof(Image)).GetComponent<RectTransform>();
+        thumb.SetParent(button.transform, false);
+        Image image = thumb.GetComponent<Image>(); image.sprite = sprite; image.preserveAspect = true;
+        image.raycastTarget = false;
+        if (tab == "skin") image.color = Catalog.ColorFor(value, true);
+        else if (tab == "face") image.color = Catalog.ColorFor(spec.skin, true);
+        else if (tab == "hair") image.color = Catalog.ColorFor(spec.hairColor, false);
+        else if (tab == "facialHair") image.color = Catalog.ColorFor(spec.facialHairColor, false);
+        else if (tab == "outfit") image.color = Catalog.ColorFor(spec.outfitColor, false);
+        Place(thumb, Vector2.zero, new Vector2(0, 1), new Vector2(4, 4), new Vector2(46, -4));
+        Text label = button.transform.Find("Label").GetComponent<Text>();
+        label.fontSize = 12;
+        Place(label.rectTransform, Vector2.zero, Vector2.one, new Vector2(46, 0), new Vector2(-2, 0));
+    }
+
     private RectTransform Scroll(string name, Transform parent, bool horizontal)
     {
         RectTransform viewport = Panel(name, parent, Paper);
@@ -92,44 +140,59 @@ public sealed class CreatorUI : MonoBehaviour
         scaler.referenceResolution = new Vector2(360, 640); scaler.matchWidthOrHeight = 0.5f;
         RectTransform header = Panel("Header", canvasNode.transform, Paper);
         Place(header, new Vector2(0, 1), Vector2.one, new Vector2(0, -76), Vector2.zero);
-        Text title = Label("Title", header, "MAKE YOUR TABLEMATE", 19, TextAnchor.MiddleLeft);
-        Place(title.rectTransform, Vector2.zero, Vector2.one, new Vector2(18, 24), new Vector2(-18, 0));
-        status = Label("Status", header, "Choose a look, then save.", 12, TextAnchor.MiddleLeft);
-        Place(status.rectTransform, Vector2.zero, Vector2.one, new Vector2(18, 0), new Vector2(-18, -48));
+        Button back = Action("Back", header, "Back", () => bridge.Navigate("/me.html"), Soft);
+        Place(back.GetComponent<RectTransform>(), new Vector2(0, 0), new Vector2(0, 1),
+            new Vector2(12, 18), new Vector2(76, -18));
+        save = Action("Save", header, "Save", Save, Mint);
+        Place(save.GetComponent<RectTransform>(), new Vector2(1, 0), Vector2.one,
+            new Vector2(-84, 18), new Vector2(-12, -18));
+        Text title = Label("Title", header, "YOUR LOOK", 17, TextAnchor.MiddleCenter);
+        Place(title.rectTransform, Vector2.zero, Vector2.one, new Vector2(82, 29), new Vector2(-82, 0));
+        status = Label("Status", header, "Choose a look, then save.", 11, TextAnchor.MiddleCenter);
+        Place(status.rectTransform, Vector2.zero, Vector2.one, new Vector2(82, 3), new Vector2(-82, -40));
 
         footer = Panel("Controls", canvasNode.transform, Paper);
         RectTransform tabs = Scroll("Tabs", footer, true);
         Place(tabs, new Vector2(0, 1), Vector2.one, new Vector2(12, -60), new Vector2(-12, -8));
-        RectTransform tabContent = tabs.GetComponent<ScrollRect>().content;
-        string[] names = { "skin", "hair", "eyes", "mouth", "facialHair", "hat", "glasses", "outfit", "bg", "frame" };
+        tabsContent = tabs.GetComponent<ScrollRect>().content;
+        string[] names = { "skin", "face", "hair", "brows", "eyes", "nose", "mouth", "facialHair", "hat", "glasses", "outfit", "bg", "frame" };
         for (int index = 0; index < names.Length; index++)
         {
             string choice = names[index];
-            Button button = Action("Tab_" + choice, tabContent, choice, () => { tab = choice; BuildOptions(); }, Mint);
+            Button button = Action("Tab_" + choice, tabsContent, LabelFor(choice), () => {
+                tab = choice; optionsContent.anchoredPosition = Vector2.zero; BuildOptions();
+            }, Soft);
             RectTransform rect = button.GetComponent<RectTransform>();
-            Place(rect, new Vector2(0, 0), new Vector2(0, 1), new Vector2(index * 84, 0), new Vector2(index * 84 + 78, 0));
+            Place(rect, new Vector2(0, 0), new Vector2(0, 1), new Vector2(index * 96, 0), new Vector2(index * 96 + 90, 0));
         }
-        tabContent.sizeDelta = new Vector2(names.Length * 84, 0);
+        tabsContent.sizeDelta = new Vector2(names.Length * 96, 0);
         RectTransform options = Scroll("Options", footer, false);
         Place(options, Vector2.zero, Vector2.one, new Vector2(12, 62), new Vector2(-12, -66));
         optionsContent = options.GetComponent<ScrollRect>().content;
 
+        Text preview = Label("PreviewLabel", canvasNode.transform, "LIVE PREVIEW", 11, TextAnchor.MiddleCenter);
+        preview.raycastTarget = false;
+        Place(preview.rectTransform, new Vector2(0, 1), Vector2.one, new Vector2(0, -104), new Vector2(0, -78));
+
         RectTransform actions = Panel("Actions", footer, Paper);
         Place(actions, Vector2.zero, new Vector2(1, 0), new Vector2(12, 6), new Vector2(-12, 56));
-        string[] labels = { "Shuffle", "Reset", "Save", "Back" };
-        Action[] handlers = { Randomize, Reset, Save, () => bridge.Navigate("/me.html") };
+        string[] labels = { "Undo", "Redo", "Shuffle", "Reset" };
+        Action[] handlers = { Undo, Redo, Randomize, Reset };
         for (int index = 0; index < labels.Length; index++)
         {
             int number = index;
-            Button button = Action(labels[index], actions, labels[index], handlers[index], index == 2 ? Mint : Paper);
+            Button button = Action(labels[index], actions, labels[index], handlers[index], Soft);
+            button.transform.Find("Label").GetComponent<Text>().fontSize = 14;
             Place(button.GetComponent<RectTransform>(), new Vector2(number * .25f, 0),
                 new Vector2((number + 1) * .25f, 1), new Vector2(2, 0), new Vector2(-2, 0));
-            if (index == 2) save = button;
+            if (index == 0) undo = button;
+            if (index == 1) redo = button;
         }
+        UpdateHistoryButtons();
         Resize(); BuildOptions();
     }
 
-    private void Update() { if (landscape != (Screen.width > Screen.height)) Resize(); }
+    private void Update() { if (landscape != (Screen.width > Screen.height)) { Resize(); BuildOptions(); } }
 
     private void Resize()
     {
@@ -137,13 +200,13 @@ public sealed class CreatorUI : MonoBehaviour
         if (landscape)
         {
             Place(footer, new Vector2(.47f, 0), Vector2.one, Vector2.zero, new Vector2(0, -76));
-            compositor.transform.position = new Vector3(-.7f, 0, 0);
+            compositor.GetComponent<IdleAnimator>().SetRestPosition(new Vector3(-.7f, 0, 0));
             Camera.main.orthographicSize = 1f;
         }
         else
         {
-            Place(footer, Vector2.zero, new Vector2(1, 0), Vector2.zero, new Vector2(0, 270));
-            compositor.transform.position = new Vector3(0, .3f, 0);
+            Place(footer, Vector2.zero, new Vector2(1, 0), Vector2.zero, new Vector2(0, 288));
+            compositor.GetComponent<IdleAnimator>().SetRestPosition(new Vector3(0, .3f, 0));
             Camera.main.orthographicSize = 1.4f;
         }
     }
@@ -153,8 +216,11 @@ public sealed class CreatorUI : MonoBehaviour
         switch (tab)
         {
             case "skin": return AvatarParts.SkinIds;
+            case "face": return AvatarParts.Body;
             case "hair": return AvatarParts.HairFront;
+            case "brows": return AvatarParts.Brows;
             case "eyes": return AvatarParts.Eyes;
+            case "nose": return AvatarParts.Nose;
             case "mouth": return AvatarParts.Mouth;
             case "facialHair": return AvatarParts.FacialHair;
             case "hat": return AvatarParts.Hat;
@@ -167,19 +233,24 @@ public sealed class CreatorUI : MonoBehaviour
 
     private void BuildOptions()
     {
+        foreach (Transform child in tabsContent)
+            SelectedTab(child.GetComponent<Button>(), child.name == "Tab_" + tab);
         foreach (Transform child in optionsContent) Destroy(child.gameObject);
         string[] values = Options();
-        int rows = Mathf.CeilToInt(values.Length / 4f);
+        int columns = landscape ? 4 : 3;
+        int rows = Mathf.CeilToInt(values.Length / (float)columns);
         int top = 0;
         for (int index = 0; index < values.Length; index++)
         {
-            string value = values[index]; int col = index % 4; int row = index / 4;
-            Color color = tab == "skin" ? Catalog.ColorFor(value, true) : tab == "bg" ? Catalog.ColorFor(value, false) : Mint;
-            Button button = Action("Option_" + value, optionsContent, value, () => Choose(value), color);
-            Place(button.GetComponent<RectTransform>(), new Vector2(col * .25f, 1),
-                new Vector2((col + 1) * .25f, 1), new Vector2(2, -row * 52 - 50), new Vector2(-2, -row * 52 - 2));
+            string value = values[index]; int col = index % columns; int row = index / columns;
+            Color color = tab == "skin" ? Catalog.ColorFor(value, true) : tab == "bg" ? Catalog.ColorFor(value, false) : Lilac;
+            Button button = Action("Option_" + value, optionsContent, LabelFor(value), () => Choose(value), color);
+            AddThumbnail(button, value);
+            Selected(button, CurrentValue() == value, color, tab == "skin" || tab == "bg");
+            Place(button.GetComponent<RectTransform>(), new Vector2(col / (float)columns, 1),
+                new Vector2((col + 1) / (float)columns, 1), new Vector2(3, -row * 58 - 54), new Vector2(-3, -row * 58 - 2));
         }
-        top += rows * 52;
+        top += rows * 58;
         string colorField = tab == "hair" ? "hairColor" : tab == "facialHair" ? "facialHairColor"
             : tab == "outfit" ? "outfitColor" : "";
         if (colorField != "")
@@ -189,24 +260,60 @@ public sealed class CreatorUI : MonoBehaviour
             top += 28;
             for (int index = 0; index < AvatarParts.PaletteIds.Length; index++)
             {
-                string value = AvatarParts.PaletteIds[index]; int col = index % 4; int row = index / 4;
-                Button button = Action("Color_" + value, optionsContent, value,
-                    () => { SetColor(colorField, value); Refresh(); }, Catalog.ColorFor(value, false));
-                Place(button.GetComponent<RectTransform>(), new Vector2(col * .25f, 1),
-                    new Vector2((col + 1) * .25f, 1), new Vector2(2, -top - row * 52 - 50), new Vector2(-2, -top - row * 52 - 2));
+                string value = AvatarParts.PaletteIds[index]; int col = index % columns; int row = index / columns;
+                Color color = Catalog.ColorFor(value, false);
+                Button button = Action("Color_" + value, optionsContent, LabelFor(value),
+                    () => { SetColor(colorField, value); Refresh(); BuildOptions(); }, color);
+                Selected(button, CurrentColor(colorField) == value, color, true);
+                Place(button.GetComponent<RectTransform>(), new Vector2(col / (float)columns, 1),
+                    new Vector2((col + 1) / (float)columns, 1), new Vector2(3, -top - row * 58 - 54), new Vector2(-3, -top - row * 58 - 2));
             }
-            top += 3 * 52;
+            top += Mathf.CeilToInt(AvatarParts.PaletteIds.Length / (float)columns) * 58;
         }
         optionsContent.sizeDelta = new Vector2(0, top);
     }
 
-    private void Choose(string value)
+    private static void SelectedTab(Button button, bool selected)
+    {
+        button.GetComponent<Image>().color = selected ? Mint : Soft;
+        button.transform.Find("Label").GetComponent<Text>().fontStyle = selected ? FontStyle.Bold : FontStyle.Normal;
+    }
+
+    private string CurrentValue()
     {
         switch (tab)
         {
+            case "skin": return spec.skin;
+            case "face": return spec.face;
+            case "hair": return spec.hair;
+            case "brows": return spec.brows;
+            case "eyes": return spec.eyes;
+            case "nose": return spec.nose;
+            case "mouth": return spec.mouth;
+            case "facialHair": return spec.facialHair;
+            case "hat": return spec.hat;
+            case "glasses": return spec.glasses;
+            case "outfit": return spec.outfit;
+            case "bg": return spec.bg;
+            default: return spec.frame;
+        }
+    }
+
+    private string CurrentColor(string field) => field == "hairColor" ? spec.hairColor
+        : field == "facialHairColor" ? spec.facialHairColor : spec.outfitColor;
+
+    private void Choose(string value)
+    {
+        if (CurrentValue() == value) return;
+        Remember();
+        switch (tab)
+        {
             case "skin": spec.skin = value; break;
+            case "face": spec.face = value; break;
             case "hair": spec.hair = value; break;
+            case "brows": spec.brows = value; break;
             case "eyes": spec.eyes = value; break;
+            case "nose": spec.nose = value; break;
             case "mouth": spec.mouth = value; break;
             case "facialHair": spec.facialHair = value; break;
             case "hat": spec.hat = value; break;
@@ -215,11 +322,13 @@ public sealed class CreatorUI : MonoBehaviour
             case "bg": spec.bg = value; break;
             case "frame": spec.frame = value; break;
         }
-        Refresh();
+        Refresh(); BuildOptions();
     }
 
     private void SetColor(string field, string value)
     {
+        if (CurrentColor(field) == value) return;
+        Remember();
         if (field == "hairColor") spec.hairColor = value;
         else if (field == "facialHairColor") spec.facialHairColor = value;
         else if (field == "outfitColor") spec.outfitColor = value;
@@ -229,16 +338,53 @@ public sealed class CreatorUI : MonoBehaviour
 
     private void Randomize()
     {
+        Remember();
         spec.skin = Pick(AvatarParts.SkinIds); spec.hair = Pick(AvatarParts.HairFront);
-        spec.hairColor = Pick(AvatarParts.PaletteIds); spec.eyes = Pick(AvatarParts.Eyes);
+        spec.face = Pick(AvatarParts.Body); spec.nose = Pick(AvatarParts.Nose);
+        spec.hairColor = Pick(AvatarParts.PaletteIds); spec.brows = Pick(AvatarParts.Brows); spec.eyes = Pick(AvatarParts.Eyes);
         spec.mouth = Pick(AvatarParts.Mouth); spec.facialHair = Pick(AvatarParts.FacialHair);
         spec.facialHairColor = Pick(AvatarParts.PaletteIds); spec.hat = Pick(AvatarParts.Hat);
         spec.glasses = Pick(AvatarParts.Glasses); spec.outfit = Pick(AvatarParts.Outfit);
         spec.outfitColor = Pick(AvatarParts.PaletteIds); spec.bg = Pick(AvatarParts.PaletteIds);
-        spec.frame = Pick(AvatarParts.Frame); Refresh();
+        spec.frame = Pick(AvatarParts.Frame); Refresh(); BuildOptions();
     }
 
-    private void Reset() { spec = AvatarSpec.FromJson(original.ToJson()); Refresh(); }
+    private void Reset()
+    {
+        if (spec.ToJson() == original.ToJson()) return;
+        Remember(); spec = AvatarSpec.FromJson(original.ToJson()); Refresh(); BuildOptions();
+    }
+
+    private void Remember()
+    {
+        undoHistory.Add(spec.ToJson());
+        if (undoHistory.Count > 30) undoHistory.RemoveAt(0);
+        redoHistory.Clear(); UpdateHistoryButtons();
+    }
+
+    private void Undo()
+    {
+        if (undoHistory.Count == 0) return;
+        redoHistory.Add(spec.ToJson());
+        int last = undoHistory.Count - 1;
+        spec = AvatarSpec.FromJson(undoHistory[last]); undoHistory.RemoveAt(last);
+        Refresh(); BuildOptions(); UpdateHistoryButtons();
+    }
+
+    private void Redo()
+    {
+        if (redoHistory.Count == 0) return;
+        undoHistory.Add(spec.ToJson());
+        int last = redoHistory.Count - 1;
+        spec = AvatarSpec.FromJson(redoHistory[last]); redoHistory.RemoveAt(last);
+        Refresh(); BuildOptions(); UpdateHistoryButtons();
+    }
+
+    private void UpdateHistoryButtons()
+    {
+        if (undo != null) undo.interactable = undoHistory.Count > 0;
+        if (redo != null) redo.interactable = redoHistory.Count > 0;
+    }
 
     public void Refresh()
     {

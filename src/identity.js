@@ -20,12 +20,16 @@ export const validateUsername = value => usernameError(value) === null;
 const V2_KEYS = ['v', 'skin', 'hair', 'hairColor', 'eyes', 'mouth', 'facialHair', 'facialHairColor',
   'hat', 'glasses', 'outfit', 'outfitColor', 'bg', 'frame'];
 export function validAvatarV2(value) {
-  if (!object(value) || value.v !== 2 || Object.keys(value).length !== V2_KEYS.length ||
+  if (!object(value) || value.v !== 2 ||
+    !Object.keys(value).every(key => V2_KEYS.includes(key) || ['brows', 'face', 'nose'].includes(key)) ||
     !V2_KEYS.every(key => Object.hasOwn(value, key))) return false;
   try { if (JSON.stringify(value).length > 600) return false; } catch { return false; }
   return Object.hasOwn(AVATAR_PARTS.skinTones, value.skin) &&
     AVATAR_PARTS.parts.hairFront.includes(value.hair) && AVATAR_PARTS.parts.hairBack.includes(value.hair) &&
     AVATAR_PARTS.parts.eyes.includes(value.eyes) && AVATAR_PARTS.parts.mouth.includes(value.mouth) &&
+    (!Object.hasOwn(value, 'brows') || AVATAR_PARTS.parts.brows.includes(value.brows)) &&
+    (!Object.hasOwn(value, 'face') || AVATAR_PARTS.parts.body.includes(value.face)) &&
+    (!Object.hasOwn(value, 'nose') || AVATAR_PARTS.parts.nose.includes(value.nose)) &&
     AVATAR_PARTS.parts.facialHair.includes(value.facialHair) && AVATAR_PARTS.parts.hat.includes(value.hat) &&
     AVATAR_PARTS.parts.glasses.includes(value.glasses) && AVATAR_PARTS.parts.outfit.includes(value.outfit) &&
     AVATAR_PARTS.parts.frame.includes(value.frame) &&

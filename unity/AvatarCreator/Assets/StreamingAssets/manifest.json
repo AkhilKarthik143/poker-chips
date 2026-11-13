@@ -82,6 +82,16 @@
           "id": "base",
           "file": "svg/body/base.svg",
           "tintable": true
+        },
+        {
+          "id": "round",
+          "file": "svg/body/round.svg",
+          "tintable": true
+        },
+        {
+          "id": "angular",
+          "file": "svg/body/angular.svg",
+          "tintable": true
         }
       ]
     },
@@ -122,6 +132,27 @@
       ]
     },
     {
+      "slot": "nose",
+      "zOrder": 35,
+      "parts": [
+        {
+          "id": "none",
+          "file": "svg/nose/none.svg",
+          "tintable": false
+        },
+        {
+          "id": "button",
+          "file": "svg/nose/button.svg",
+          "tintable": false
+        },
+        {
+          "id": "soft",
+          "file": "svg/nose/soft.svg",
+          "tintable": false
+        }
+      ]
+    },
+    {
       "slot": "mouth",
       "zOrder": 40,
       "parts": [
@@ -143,6 +174,11 @@
         {
           "id": "neutral",
           "file": "svg/mouth/neutral.svg",
+          "tintable": false
+        },
+        {
+          "id": "laugh",
+          "file": "svg/mouth/laugh.svg",
           "tintable": false
         }
       ]
@@ -170,6 +206,11 @@
           "id": "wink",
           "file": "svg/eyes/wink.svg",
           "tintable": false
+        },
+        {
+          "id": "surprised",
+          "file": "svg/eyes/surprised.svg",
+          "tintable": false
         }
       ]
     },
@@ -196,6 +237,37 @@
           "id": "beard",
           "file": "svg/facialHair/beard.svg",
           "tintable": true
+        }
+      ]
+    },
+    {
+      "slot": "brows",
+      "zOrder": 65,
+      "parts": [
+        {
+          "id": "none",
+          "file": "svg/brows/none.svg",
+          "tintable": false
+        },
+        {
+          "id": "soft",
+          "file": "svg/brows/soft.svg",
+          "tintable": false
+        },
+        {
+          "id": "raised",
+          "file": "svg/brows/raised.svg",
+          "tintable": false
+        },
+        {
+          "id": "playful",
+          "file": "svg/brows/playful.svg",
+          "tintable": false
+        },
+        {
+          "id": "focused",
+          "file": "svg/brows/focused.svg",
+          "tintable": false
         }
       ]
     },

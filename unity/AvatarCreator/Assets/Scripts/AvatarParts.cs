@@ -4,15 +4,17 @@ public static class AvatarParts
 {
     public const int ManifestVersion = 2;
     public const int Size = 256;
-    public static readonly string[] Slots = { "bg", "hairBack", "body", "outfit", "mouth", "eyes", "facialHair", "hairFront", "glasses", "hat", "frame" };
-    public static readonly int[] ZOrders = { 0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100 };
+    public static readonly string[] Slots = { "bg", "hairBack", "body", "outfit", "nose", "mouth", "eyes", "facialHair", "brows", "hairFront", "glasses", "hat", "frame" };
+    public static readonly int[] ZOrders = { 0, 10, 20, 30, 35, 40, 50, 60, 65, 70, 80, 90, 100 };
     public static readonly string[] Bg = { "disc" };
     public static readonly string[] HairBack = { "bald", "crop", "curls", "bob", "sweep", "waves", "pixie", "afro", "braids", "ponytail", "mohawk" };
-    public static readonly string[] Body = { "base" };
+    public static readonly string[] Body = { "base", "round", "angular" };
     public static readonly string[] Outfit = { "tee", "hoodie", "jacket", "vest", "jersey", "blazer" };
-    public static readonly string[] Mouth = { "smile", "grin", "smirk", "neutral" };
-    public static readonly string[] Eyes = { "round", "happy", "sleepy", "wink" };
+    public static readonly string[] Nose = { "none", "button", "soft" };
+    public static readonly string[] Mouth = { "smile", "grin", "smirk", "neutral", "laugh" };
+    public static readonly string[] Eyes = { "round", "happy", "sleepy", "wink", "surprised" };
     public static readonly string[] FacialHair = { "none", "stubble", "mustache", "beard" };
+    public static readonly string[] Brows = { "none", "soft", "raised", "playful", "focused" };
     public static readonly string[] HairFront = { "bald", "crop", "curls", "bob", "sweep", "waves", "pixie", "afro", "braids", "ponytail", "mohawk" };
     public static readonly string[] Glasses = { "none", "shades", "rounds" };
     public static readonly string[] Hat = { "none", "visor", "cowboy", "beanie" };

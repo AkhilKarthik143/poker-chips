@@ -10,7 +10,8 @@ const server = createServer({ store: new SqliteStore(':memory:') });
 const { port } = await server.listen();
 const browser = await chromium.launch({ headless: true });
 const first = defaultAvatarV2('render-check');
-const second = { ...first, hair: first.hair === 'bob' ? 'curls' : 'bob', hat: 'cowboy', outfitColor: 'c6' };
+const second = { ...first, face: 'round', nose: 'button', hair: first.hair === 'bob' ? 'curls' : 'bob',
+  brows: 'raised', eyes: 'surprised', mouth: 'laugh', hat: 'cowboy', outfitColor: 'c6' };
 try {
   const page = await browser.newPage({ viewport: { width: 520, height: 320 } });
   await page.goto(`http://127.0.0.1:${port}/`);
@@ -32,7 +33,7 @@ try {
       images: window.AvatarV2.stats().images };
   }, first);
   assert.equal(result.distinct, true); assert.equal(result.identical, true);
-  assert.equal(result.compositions, 0); assert.ok(result.images >= 11 && result.images <= 22);
+  assert.equal(result.compositions, 0); assert.ok(result.images >= 15 && result.images <= 28);
   await mkdir(new URL('../artifacts/qa/', import.meta.url), { recursive: true });
   await page.evaluate(second => {
     const fixture = document.querySelector('#avatar-fixture'); fixture.append(window.AvatarV2.render(second, 128, 'Second'));

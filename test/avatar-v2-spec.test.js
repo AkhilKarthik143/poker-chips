@@ -27,6 +27,11 @@ test('v1 and v2 specs form a strict union and defaults are deterministic', () =>
   assert.deepEqual(avatarForAccount({ id: 'account-id', avatar_json: null }), v2);
   assert.deepEqual(avatarForAccount({ id: 'account-id', avatar_json: JSON.stringify(v1) }), v1);
   assert.deepEqual(avatarForAccount({ id: 'account-id', avatar_json: JSON.stringify(v2) }), v2);
+  assert.equal(validAvatar({ ...v2, brows: 'raised' }), true);
+  assert.equal(validAvatar({ ...v2, face: 'round', nose: 'button', brows: 'focused' }), true);
+  assert.equal(validAvatar({ ...v2, brows: 'unknown' }), false);
+  assert.equal(validAvatar({ ...v2, face: 'unknown' }), false);
+  assert.equal(validAvatar({ ...v2, nose: 'unknown' }), false);
   for (const invalid of [
     { ...v2, v: 3 }, { ...v2, hair: 'not-a-part' }, { ...v2, bg: '__proto__' },
     { ...v2, surprise: 'value' }, { ...v2, hairColor: '#ff0000' },

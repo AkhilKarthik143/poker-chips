@@ -21,7 +21,9 @@ window.TablemateAvatarParts = Object.freeze({
       "mohawk"
     ],
     "body": [
-      "base"
+      "base",
+      "round",
+      "angular"
     ],
     "outfit": [
       "tee",
@@ -31,23 +33,37 @@ window.TablemateAvatarParts = Object.freeze({
       "jersey",
       "blazer"
     ],
+    "nose": [
+      "none",
+      "button",
+      "soft"
+    ],
     "mouth": [
       "smile",
       "grin",
       "smirk",
-      "neutral"
+      "neutral",
+      "laugh"
     ],
     "eyes": [
       "round",
       "happy",
       "sleepy",
-      "wink"
+      "wink",
+      "surprised"
     ],
     "facialHair": [
       "none",
       "stubble",
       "mustache",
       "beard"
+    ],
+    "brows": [
+      "none",
+      "soft",
+      "raised",
+      "playful",
+      "focused"
     ],
     "hairFront": [
       "bald",
@@ -134,6 +150,12 @@ window.TablemateAvatarParts = Object.freeze({
       "parts": {
         "base": {
           "tintable": true
+        },
+        "round": {
+          "tintable": true
+        },
+        "angular": {
+          "tintable": true
         }
       }
     },
@@ -162,6 +184,21 @@ window.TablemateAvatarParts = Object.freeze({
       }
     },
     {
+      "slot": "nose",
+      "zOrder": 35,
+      "parts": {
+        "none": {
+          "tintable": false
+        },
+        "button": {
+          "tintable": false
+        },
+        "soft": {
+          "tintable": false
+        }
+      }
+    },
+    {
       "slot": "mouth",
       "zOrder": 40,
       "parts": {
@@ -175,6 +212,9 @@ window.TablemateAvatarParts = Object.freeze({
           "tintable": false
         },
         "neutral": {
+          "tintable": false
+        },
+        "laugh": {
           "tintable": false
         }
       }
@@ -194,6 +234,9 @@ window.TablemateAvatarParts = Object.freeze({
         },
         "wink": {
           "tintable": false
+        },
+        "surprised": {
+          "tintable": false
         }
       }
     },
@@ -212,6 +255,27 @@ window.TablemateAvatarParts = Object.freeze({
         },
         "beard": {
           "tintable": true
+        }
+      }
+    },
+    {
+      "slot": "brows",
+      "zOrder": 65,
+      "parts": {
+        "none": {
+          "tintable": false
+        },
+        "soft": {
+          "tintable": false
+        },
+        "raised": {
+          "tintable": false
+        },
+        "playful": {
+          "tintable": false
+        },
+        "focused": {
+          "tintable": false
         }
       }
     },

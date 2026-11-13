@@ -33,7 +33,7 @@ async function start() {
   await new Promise((resolve, reject) => { script.onload = resolve; script.onerror = () => reject(new Error('Creator download failed. Use the simple builder.')); document.head.append(script); });
   const config = { dataUrl: `Build/${build.dataset.data}`, frameworkUrl: `Build/${build.dataset.framework}`,
     codeUrl: `Build/${build.dataset.code}`, streamingAssetsUrl: 'StreamingAssets', companyName: 'Tablemate',
-    productName: 'Tablemate Avatar Creator', productVersion: '1.0' };
+    productName: 'Tablemate Avatar Creator', productVersion: '1.1' };
   window.tablemateUnityInstance = await window.createUnityInstance(document.querySelector('#unity-canvas'), config,
     value => { progress.value = value; });
   loading.hidden = true;

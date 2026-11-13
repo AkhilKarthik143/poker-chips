@@ -15,11 +15,16 @@ function validV2(spec) {
   if (!catalog || !spec || typeof spec !== 'object' || Array.isArray(spec) || spec.v !== 2) return false;
   const fields = ['v', 'skin', 'hair', 'hairColor', 'eyes', 'mouth', 'facialHair', 'facialHairColor',
     'hat', 'glasses', 'outfit', 'outfitColor', 'bg', 'frame'];
-  if (Object.keys(spec).length !== fields.length || !fields.every(key => Object.hasOwn(spec, key))) return false;
+  if (!Object.keys(spec).every(key => fields.includes(key) || ['brows', 'face', 'nose'].includes(key)) ||
+    !fields.every(key => Object.hasOwn(spec, key))) return false;
   try { if (JSON.stringify(spec).length > 600) return false; } catch { return false; }
   return Object.hasOwn(catalog.skinTones, spec.skin) && catalog.parts.hairFront.includes(spec.hair) &&
     catalog.parts.hairBack.includes(spec.hair) && catalog.parts.eyes.includes(spec.eyes) &&
-    catalog.parts.mouth.includes(spec.mouth) && catalog.parts.facialHair.includes(spec.facialHair) &&
+    catalog.parts.mouth.includes(spec.mouth) &&
+    (!Object.hasOwn(spec, 'brows') || catalog.parts.brows.includes(spec.brows)) &&
+    (!Object.hasOwn(spec, 'face') || catalog.parts.body.includes(spec.face)) &&
+    (!Object.hasOwn(spec, 'nose') || catalog.parts.nose.includes(spec.nose)) &&
+    catalog.parts.facialHair.includes(spec.facialHair) &&
     catalog.parts.hat.includes(spec.hat) && catalog.parts.glasses.includes(spec.glasses) &&
     catalog.parts.outfit.includes(spec.outfit) && catalog.parts.frame.includes(spec.frame) &&
     ['hairColor', 'facialHairColor', 'outfitColor', 'bg'].every(key => Object.hasOwn(catalog.palette, spec[key]));

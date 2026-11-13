@@ -7,7 +7,10 @@ public sealed class LayerCompositor : MonoBehaviour
     private readonly Dictionary<string, SpriteRenderer> renderers = new Dictionary<string, SpriteRenderer>();
     public bool Ready => catalog != null && catalog.Ready;
     public SpriteRenderer Eyes => renderers["eyes"];
+    public SpriteRenderer Brows => renderers["brows"];
+    public SpriteRenderer Mouth => renderers["mouth"];
     public SpriteRenderer Hat => renderers["hat"];
+    public Sprite PreviewSprite(string slot, string id) => catalog.Sprite(slot, id);
 
     public void Initialize(Catalog source)
     {
@@ -44,10 +47,12 @@ public sealed class LayerCompositor : MonoBehaviour
         {
             case "bg": return "disc";
             case "hairBack": case "hairFront": return spec.hair;
-            case "body": return "base";
+            case "body": return spec.face;
+            case "nose": return spec.nose;
             case "outfit": return spec.outfit;
             case "mouth": return spec.mouth;
             case "eyes": return spec.eyes;
+            case "brows": return spec.brows;
             case "facialHair": return spec.facialHair;
             case "glasses": return spec.glasses;
             case "hat": return spec.hat;
