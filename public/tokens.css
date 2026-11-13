@@ -11,7 +11,7 @@
   --net-up:#22643f; --net-down:#a63128;
   --card-face-bg:#fbf8f1; --card-face-red:#c4453a; --card-face-black:#1a1a1a; --card-back-bg:#6434df;
   --dp-color-ground:var(--bg-page); --dp-color-panel:var(--bg-panel); --dp-color-ink:var(--text-primary); --dp-color-outline:var(--border-seat-empty);
-  --dp-color-accent:var(--accent); --dp-color-accent-secondary:#ff78c5; --dp-color-accent-secondary-ink:#253044;
+  --dp-color-accent:var(--accent); --dp-color-focus:#6434df; --dp-color-accent-ink:#ffffff; --dp-color-accent-secondary:#ff78c5; --dp-color-accent-secondary-ink:#253044;
   --dp-color-accent-warm:#ffd05b; --dp-color-accent-warm-ink:#253044; --dp-color-accent-fresh:#9bf1cd; --dp-color-accent-fresh-ink:#253044;
   --dp-color-field-soft:var(--bg-table); --dp-color-selection:var(--bg-seat-occupied); --dp-color-rule-muted:#b8b6c5;
   --dp-color-ink-muted:var(--text-secondary); --dp-color-disabled-ink:var(--text-disabled); --dp-color-disabled-outline:var(--border-seat-empty);
@@ -171,4 +171,16 @@
   --dp-color-disabled-outline:#a1bcc9; --dp-color-placeholder:#e4edf7; --dp-color-felt:#214b48; --dp-color-disabled-surface:#274347;
   --dp-color-danger-ink:#3f1b2d; --dp-color-active-ink:#29361c;
   --dp-typography-display:"Host Grotesk","Trebuchet MS",sans-serif; --dp-typography-reading:"Instrument Sans","Avenir Next",sans-serif;
+}
+
+/* A user preference that can overlay any room theme. Keep palette values here. */
+:root[data-contrast="high"]{
+  color-scheme:dark;
+  --bg-page:#070d18;--bg-panel:#0b1627;--bg-stage:#0b1627;--bg-table:#15283c;--bg-felt-highlight:#1b3348;--bg-seat-empty:#112438;--bg-seat-occupied:#14283d;--bg-active-seat:#24364b;--bg-action-bar:#070d18;
+  --text-primary:#ffffff;--text-secondary:#f1f5ff;--text-disabled:#dce6f5;--text-on-felt:#ffffff;--text-on-felt-muted:#f1f5ff;
+  --border-seat-empty:#f1f5ff;--border-action-bar-top:#f1f5ff;--border-felt:#f1f5ff;--border-your-seat:#ffe071;
+  --accent:#ffe071;--accent-hover:#ffeb9d;--dp-color-outline:#f1f5ff;--dp-color-rule-muted:#dce6f5;--dp-color-focus:#ffe071;
+  --dp-color-panel:#0b1627;--dp-color-ground:#070d18;--dp-color-ink:#ffffff;--dp-color-ink-muted:#f1f5ff;
+  --dp-color-accent:#ffe071;--dp-color-accent-ink:#070d18;--dp-color-selection:#24364b;--dp-color-field-soft:#14283d;
+  --seat-c1:#ffb3c1;--seat-c2:#a2f5dd;--seat-c3:#ffe18e;--seat-c4:#bdb7ff;--seat-c5:#9ee6ff;--seat-c6:#ffc59c;--seat-c7:#d3f4a8;--seat-c8:#f4b9ed;--seat-c9:#b7d0ff;--seat-c10:#f7e6b5;--seat-c11:#a5f1f4;--seat-c12:#ffc9c9;
 }

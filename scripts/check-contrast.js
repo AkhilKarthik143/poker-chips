@@ -1,7 +1,6 @@
 import { readFileSync } from 'node:fs';
 
 const source = readFileSync(new URL('../public/tokens.css', import.meta.url), 'utf8');
-const styleSource = readFileSync(new URL('../public/style.css', import.meta.url), 'utf8');
 const baseBlock = source.match(/^:root\s*\{([^}]*)\}/m)?.[1];
 if (!baseBlock) throw new Error('Missing base token block in public/tokens.css');
 
@@ -23,7 +22,7 @@ for (const match of source.matchAll(/:root\[data-theme="([a-z-]+)"\]\s*,\s*\[dat
   themes.set(match[1], new Map([...base, ...parseTokens(match[2])]));
 }
 const highContrast = new Map(base);
-for (const match of styleSource.matchAll(/:root\[data-contrast="high"\]\s*\{([^}]*)\}/g)) {
+for (const match of source.matchAll(/:root\[data-contrast="high"\]\s*\{([^}]*)\}/g)) {
   for (const [key, value] of parseTokens(match[1])) highContrast.set(key, value);
 }
 
@@ -113,6 +112,17 @@ for (const surface of ['bg-page', 'bg-panel', 'bg-seat-occupied', 'bg-seat-empty
   }
   const border = contrast(highContrast, 'border-seat-empty', surface);
   if (border < 4.5) failures.push(`high contrast: border on ${surface} ${border.toFixed(2)}:1 (needs 4.5:1)`);
+}
+for (const surface of ['bg-page', 'bg-panel', 'bg-seat-occupied', 'bg-seat-empty', 'bg-table']) {
+  const focus = contrast(highContrast, 'dp-color-focus', surface);
+  if (focus < 3) failures.push(`high contrast: focus ring on ${surface} ${focus.toFixed(2)}:1 (needs 3:1)`);
+}
+for (const name of ['felt', 'midnight']) {
+  const theme = themes.get(name);
+  for (const surface of ['bg-page', 'bg-panel', 'bg-seat-occupied']) {
+    const focus = contrast(theme, 'dp-color-focus', surface);
+    if (focus < 3) failures.push(`${name}: focus ring on ${surface} ${focus.toFixed(2)}:1 (needs 3:1)`);
+  }
 }
 if (failures.length) {
   process.stderr.write(`Contrast checks failed:\n${failures.map(item => `- ${item}`).join('\n')}\n`);

@@ -156,6 +156,9 @@ function wireThemePicker(root) {
 function status(text, connected = false) {
   $('#connection').textContent = text;
   $('#connection').className = `connection ${connected ? 'online' : 'offline'}`;
+  $('#entry-status').hidden = connected;
+  if (!connected) $('#entry-status').textContent = `${text}. You can enter your details now; joining will be available when connected.`;
+  if (state) $('#table-announcement').textContent = connected ? `Connected. ${text}.` : `${text}. Actions are paused until the table reconnects.`;
 }
 async function request(event, data = {}) {
   if (!socket.connected) throw new Error('Connection lost. Your seat is saved; waiting to reconnect.');
@@ -210,11 +213,16 @@ function receive(value) {
   if (lastTurn !== state.turn) raiseOpen = false;
   lastTurn = state.turn;
   render();
+  if (!previousState || previousState.turn !== state.turn || previousState.street !== state.street) {
+    const actor = state.players.find(player => player.id === state.turn);
+    $('#table-announcement').textContent = state.turn === state.playerId ? `Your turn. ${number(state.legal.toCall)} chips to call.` : actor ? `${actor.name} to act.` : state.street === 'complete' ? 'Hand complete.' : 'Waiting for the host.';
+  }
   reportPresence();
   if ($('#rebuy-requests-dialog').open) renderRebuyRequests();
 }
 function reset(message) {
   state = null; lastTurn = null; raiseOpen = false; alertWinHands = []; window.Alerts?.reset(); saveIdentity(null);
+  $('#table-announcement').textContent = '';
   document.querySelectorAll('dialog[open]').forEach(dialog => dialog.close());
   status(socket.connected ? 'Connected' : 'Reconnecting', socket.connected);
   document.body.classList.remove('in-game');
@@ -259,15 +267,26 @@ function entryMode(value) {
   mode = value;
   $('#create-tab').setAttribute('aria-selected', String(mode === 'create'));
   $('#join-tab').setAttribute('aria-selected', String(mode === 'join'));
+  $('#create-tab').tabIndex = mode === 'create' ? 0 : -1;
+  $('#join-tab').tabIndex = mode === 'join' ? 0 : -1;
   $('#create-fields').hidden = mode !== 'create'; $('#join-fields').hidden = mode !== 'join';
   $('#room-code').required = mode === 'join';
   $('#create-fields').querySelectorAll('input, select').forEach(el => { el.disabled = mode !== 'create'; });
   $('#entry-submit').innerHTML = `${mode === 'create' ? 'Create a table' : 'Take a seat'} <span aria-hidden="true">↗</span>`;
   $('#entry-caption').textContent = mode === 'create' ? 'You’re the host. House rules, your call.' : 'Same table code. Same good company.';
+  $('#entry-error').hidden = true;
 }
 $('#create-tab').addEventListener('click', () => entryMode('create'));
 $('#join-tab').addEventListener('click', () => entryMode('join'));
+document.querySelector('.tabs').addEventListener('keydown', event => {
+  if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+  event.preventDefault();
+  const next = event.key === 'Home' ? 'create' : event.key === 'End' ? 'join' : mode === 'create' ? 'join' : 'create';
+  entryMode(next);
+  $(`#${next}-tab`).focus();
+});
 $('#room-code').addEventListener('input', () => $('#room-code').removeAttribute('aria-invalid'));
+$('#entry-form').addEventListener('input', () => { $('#entry-error').hidden = true; });
 $('#entry-form').addEventListener('submit', async event => {
   event.preventDefault(); if (busy || !ready) return;
   window.Alerts?.unlock();
@@ -286,7 +305,7 @@ $('#entry-form').addEventListener('submit', async event => {
     rememberNight(result, data.name);
     saveIdentity({ code: result.roomCode, playerId: result.playerId, token: result.token });
     receive(result.state); status('At the table', true);
-  } catch (error) { toast(error.message); }
+  } catch (error) { $('#entry-error').textContent = error.message; $('#entry-error').hidden = false; toast(error.message); }
   finally { busy = false; if (state) render(); setButtons(); }
 });
 
@@ -448,7 +467,9 @@ function applyInviteCodeFromQuery() {
   else {
     input.value = '';
     input.setAttribute('aria-invalid', 'true');
-    toast('This invite link has an invalid room code. Enter a valid 8-letter code to join.');
+    const message = 'This invite link has an invalid room code. Enter a valid 8-letter code to join.';
+    $('#entry-error').textContent = message; $('#entry-error').hidden = false;
+    toast(message);
   }
 }
 function donationDialog() {
@@ -483,6 +504,7 @@ function openSeatReorder() {
   openSheet(dialog, { labelledBy: 'seat-reorder-title' });
 }
 function handLog() {
+  if (!state.log.length) return '<li>No actions yet. Start a hand to see the log.</li>';
   let previous = null;
   return state.log.slice().reverse().map(item => {
     const group = item.hand !== previous ? `<li class="log-group">${item.hand ? `Hand ${item.hand}` : 'Lobby'}</li>` : ''; previous = item.hand;
@@ -888,7 +910,8 @@ function seatOval(order) {
     const statusKind = playing && p.folded ? 'folded' : playing && p.inHand && p.stack === 0 ? 'allin' : p.sittingOut || !p.connected ? 'away' : p.id === state.turn ? 'active' : 'ready';
     const cosmetic = state.cosmetics?.[id] || { avatar: 'chip', color: 'c1' };
     const social = state.socialSeats?.includes(id);
-    return `<article class="oval-seat slot-${index} seat-color-${escape(cosmetic.color)} ${social ? 'social-seat' : ''} ${[2, 3].includes(state.identities?.[id]?.avatar?.v) ? 'character-seat' : ''} ${p.id === state.turn ? 'acting' : ''} ${p.id === state.playerId ? 'my-seat' : ''} ${playing && p.folded ? 'folded-seat' : ''}" ${social ? `data-friend-seat="${escape(id)}" role="button" tabindex="0" aria-label="View ${escape(p.name)}'s account and friendship"` : ''}><div class="oval-name"><small>${index + 1}</small>${tableAvatar(id, cosmetic, p.name, 64)}<strong title="${escape(p.name)}">${escape(p.name)}</strong>${tableUsername(id)}</div><span class="seat-owner">${p.id === state.playerId ? `You • Seat ${index + 1}` : `Seat ${index + 1}`}</span><div class="seat-roles">${Object.entries(roles).filter(([, id]) => id === p.id).map(([role]) => `<span class="role-${role}" title="${role === 'D' ? 'Dealer' : role === 'SB' ? 'Small blind' : 'Big blind'}">${role}</span>`).join('')}</div><strong class="oval-stack" title="${number(p.stack)} chips" aria-label="${number(p.stack)} chips">${compactStack(p.stack)}</strong><small>Bet ${number(p.streetBet)}</small><span class="oval-status status-${statusKind} ${!playing && p.connected && !p.sittingOut ? 'ready-pill' : ''}">${status}</span></article>`;
+    const seatLabel = `Seat ${index + 1}, ${p.name}${p.id === state.playerId ? ', you' : ''}, ${number(p.stack)} chips, bet ${number(p.streetBet)}, ${status.replace(/^[^A-Za-z]+/, '')}, ${p.connected ? 'connected' : 'offline'}`;
+    return `<article class="oval-seat slot-${index} seat-color-${escape(cosmetic.color)} ${social ? 'social-seat' : ''} ${[2, 3].includes(state.identities?.[id]?.avatar?.v) ? 'character-seat' : ''} ${p.id === state.turn ? 'acting' : ''} ${p.id === state.playerId ? 'my-seat' : ''} ${playing && p.folded ? 'folded-seat' : ''}" ${social ? `data-friend-seat="${escape(id)}" role="button" tabindex="0" aria-label="${escape(seatLabel)}. View account and friendship"` : `role="group" aria-label="${escape(seatLabel)}"`}><div class="oval-name"><small>${index + 1}</small>${tableAvatar(id, cosmetic, p.name, 64)}<strong title="${escape(p.name)}">${escape(p.name)}</strong>${tableUsername(id)}</div><span class="seat-owner">${p.id === state.playerId ? `You • Seat ${index + 1}` : `Seat ${index + 1}`}</span><div class="seat-roles">${Object.entries(roles).filter(([, id]) => id === p.id).map(([role]) => `<span class="role-${role}" title="${role === 'D' ? 'Dealer' : role === 'SB' ? 'Small blind' : 'Big blind'}">${role}</span>`).join('')}</div><strong class="oval-stack" title="${number(p.stack)} chips" aria-label="${number(p.stack)} chips">${compactStack(p.stack)}</strong><small>Bet ${number(p.streetBet)}</small><span class="oval-status status-${statusKind} ${!playing && p.connected && !p.sittingOut ? 'ready-pill' : ''}">${status}</span></article>`;
   }).join('')}</div>`;
 }
 async function openFriendSeat(seatId) {
@@ -928,6 +951,11 @@ async function openFriendSeat(seatId) {
 }
 function positionSeats() {
   document.querySelectorAll('.seat-oval').forEach(oval => {
+    if (matchMedia('(max-width: 699px)').matches) {
+      oval.removeAttribute('style');
+      oval.querySelectorAll('.oval-seat, .oval-stack, .table-felt').forEach(element => element.removeAttribute('style'));
+      return;
+    }
     const width = oval.clientWidth;
     const occupied = oval.querySelectorAll('.oval-seat').length;
     const hasCharacters = Boolean(oval.querySelector('.character-seat'));
@@ -1014,12 +1042,14 @@ function render() {
   const actor = state.players.find(p => p.id === state.turn);
   const total = state.players.reduce((sum, p) => sum + p.contributed, 0);
   const tableRoot = $('#table');
+  const enteringTable = tableRoot.hidden;
   const uiState = captureRegion(tableRoot);
   document.body.classList.add('in-game');
   $('#lobby').hidden = true; $('#site-footer').hidden = true; $('#table').hidden = false;
   $('#table').innerHTML = `
     ${!ready ? '<div class="reconnect-banner" role="status">Reconnecting… Your seat and chips are saved. Actions will return when the table is in sync.</div>' : ''}
-    <header class="table-heading"><h1><button id="copy-code" title="Copy table code"><span class="header-table-label">Table </span><strong>${escape(state.roomCode)}</strong></button></h1><span>${state.players.length}/10<span class="player-count-label"> players</span></span><span>Blinds <strong>${number(state.settings.smallBlind)}/${number(state.settings.bigBlind)}</strong></span><button id="header-invite">Invite</button><button id="table-settings" aria-label="Table settings${requestCount ? `, ${requestCount} rebuy requests` : ''}" title="Table settings">⚙${requestCount ? `<span class="rebuy-count" aria-hidden="true">${requestCount}</span>` : ''}</button></header>
+    <header class="table-heading"><h1><button id="copy-code" title="Copy table code" aria-label="Copy table code ${escape(state.roomCode)}"><span class="header-table-label">Table </span><strong>${escape(state.roomCode)}</strong></button></h1><span>${state.players.length}/10<span class="player-count-label"> players</span></span><span>Blinds <strong>${number(state.settings.smallBlind)}/${number(state.settings.bigBlind)}</strong></span><button id="header-invite">Invite</button><button id="table-settings" aria-label="Table settings${requestCount ? `, ${requestCount} rebuy requests` : ''}" title="Table settings">⚙${requestCount ? `<span class="rebuy-count" aria-hidden="true">${requestCount}</span>` : ''}</button></header>
+    <nav class="table-quick-nav" aria-label="Table shortcuts"><span class="table-connection" role="status">${ready ? '✓ Connected' : '⏸ Reconnecting'}</span><span class="table-turn">${state.legal.active ? 'Your turn' : actor ? `${escape(actor.name)} to act` : state.street === 'complete' ? 'Hand complete' : 'Waiting for host'}</span><button type="button" id="quick-hand-log">Hand log</button><button type="button" id="quick-tonight">Tonight</button>${host && state.permissions.owner && state.canUndo ? '<button type="button" id="quick-undo">Undo</button>' : ''}${host && requestCount ? `<button type="button" id="quick-rebuy">Rebuys (${requestCount})</button>` : ''}</nav>
     <div class="table-layout"><section class="play-area" aria-label="Poker table">
       <div class="table-stage"><div class="pot-board ${playing ? 'live-pot' : 'waiting-pot'}"><div class="streets" aria-label="Betting street">${['preflop', 'flop', 'turn', 'river', 'showdown'].map(street => `<span class="${state.street === street ? 'current' : ''}" ${state.street === street ? 'aria-current="step"' : ''}>${state.street === street ? '• ' : ''}${street.toUpperCase()}</span>`).join('')}</div>
         ${playing ? `<p class="pot-label">Hand ${state.handNumber} · Total pot</p><div class="pot-number">${number(total)}</div><span class="pot-unit">CHIPS</span>` : `<p class="pot-label">${state.street === 'complete' ? 'Hand complete' : 'Your table is open'}</p><h2>${state.players.length < 2 ? 'Waiting for players' : host ? 'Ready to deal' : 'Waiting for host to start'}</h2><p>${state.players.filter(p => p.stack > 0 && !p.sittingOut).length} players ready</p>`}
@@ -1037,7 +1067,7 @@ function render() {
     <section class="dock" aria-label="Your betting controls"><div class="dock-inner"><div class="dock-summary"><div class="turn-label ${state.legal.active ? '' : 'waiting'}${ready && !state.legal.active && actor ? ' other-turn' : ''}" role="status">${!ready ? 'RECONNECTING' : state.legal.active ? 'YOUR TURN' : state.street === 'showdown' ? 'SHOWDOWN' : actor ? `${escape(actor.name).toUpperCase()} TO ACT` : host ? 'HOST · TABLE CONTROLS' : 'WAITING FOR HOST'}</div><div class="balance"><span>Your stack</span><strong>${number(me.stack)}</strong></div><div class="balance"><span>To call</span><strong>${number(state.legal.toCall)}</strong></div></div>
       ${!playing ? `<div class="lobby-actions"><button id="invite-players">Invite players</button><button id="change-seat">Change seat</button><button id="set-buy-in">${host ? 'Set buy-in' : 'View buy-in'}</button><button id="open-tonight-dock">Tonight</button>${host ? `<button id="open-rebuy-requests-dock" ${requestCount ? '' : 'disabled'}>Rebuy requests (${requestCount})</button><button id="start-hand" class="primary" ${state.players.filter(p => p.stack > 0 && !p.sittingOut).length < 2 ? 'disabled' : ''}>${state.handNumber ? 'Start next hand' : 'Start game'} →</button>` : '<span class="helper">Your host starts the hand.</span>'}</div>` : ''}
       ${me.stack === 0 ? `<div class="rebuy-dock-row"><button type="button" id="open-rebuy-request-dock">${(state.rebuyRequests || []).some(item => item.id === me.id) ? 'Rebuy request pending' : 'Request rebuy'}</button></div>` : ''}
-      ${state.turn ? `<div class="actions"><button data-action="fold" class="quiet" aria-label="${state.legal.canCheck && state.legal.toCall === 0 ? 'Fold unavailable because you can check for 0 chips' : 'Fold'}" title="${state.legal.canCheck && state.legal.toCall === 0 ? 'You can check for 0 chips.' : 'Fold this hand.'}" ${!state.legal.active || (state.legal.canCheck && state.legal.toCall === 0) ? 'disabled' : ''}>Fold</button><button data-action="${state.legal.canCheck ? 'check' : 'call'}" class="neutral" ${!state.legal.active ? 'disabled' : ''}>${state.legal.canCheck ? 'Check' : `Call ${number(state.legal.toCall)}`}</button><button id="toggle-raise" class="primary" aria-expanded="${raiseOpen}" ${!state.legal.canRaise ? 'disabled' : ''}>${state.currentBet ? 'Raise' : 'Bet'}</button><button data-action="all-in" class="all-in" ${!state.legal.canAllIn ? 'disabled' : ''}>All-in</button></div>` : ''}
+      ${state.turn ? `<div class="actions"><button data-action="fold" class="quiet" aria-label="${state.legal.canCheck && state.legal.toCall === 0 ? 'Fold unavailable because you can check for 0 chips' : 'Fold'}" title="${state.legal.canCheck && state.legal.toCall === 0 ? 'You can check for 0 chips.' : 'Fold this hand.'}" ${!state.legal.active || (state.legal.canCheck && state.legal.toCall === 0) ? 'disabled' : ''}>Fold</button><button data-action="${state.legal.canCheck ? 'check' : 'call'}" class="neutral" ${!state.legal.active ? 'disabled' : ''}>${state.legal.canCheck ? 'Check' : `Call ${number(state.legal.toCall)}`}</button><button id="toggle-raise" class="primary" aria-expanded="${raiseOpen}" aria-controls="raise-form" ${!state.legal.canRaise ? 'disabled' : ''}>${state.currentBet ? 'Raise' : 'Bet'}</button><button id="all-in-guard" class="all-in" ${!state.legal.canAllIn ? 'disabled' : ''}>All-in · review</button></div>` : ''}
       ${raiseOpen && state.legal.canRaise ? (() => {
         const min = Math.min(state.legal.minRaiseTo, state.legal.maxRaiseTo);
         const max = state.legal.maxRaiseTo;
@@ -1045,16 +1075,18 @@ function render() {
         const sliderControl = matchMedia('(max-width: 699px)').matches
           ? `<div class="range-adjust range-adjust-mobile"><label for="raise-range">Adjust with slider</label>${sliderInput}</div>`
           : `<details class="range-adjust"><summary>Adjust with slider</summary>${sliderInput}</details>`;
-        return `<form id="raise-form" class="raise-panel"><div><label for="raise-amount">${state.currentBet ? 'Raise' : 'Bet'} to · multiples of ${number(state.settings.smallBlind)}</label><div class="amount-stepper"><button type="button" data-raise-step="-1" aria-label="Decrease by one small blind">−</button><input id="raise-amount" aria-label="Raise to amount" type="number" inputmode="numeric" min="${min}" max="${max}" value="${min}" step="${state.settings.smallBlind}" required><button type="button" data-raise-step="1" aria-label="Increase by one small blind">+</button></div>${sliderControl}</div><button class="primary raise-submit" type="submit">Confirm</button><div class="quick-bets"><button type="button" data-quick="min">Min</button><button type="button" data-quick="half">½ pot</button><button type="button" data-quick="three-quarter">¾ pot</button><button type="button" data-quick="pot">Pot</button><button type="button" data-quick="all">All-in</button></div></form>`;
+        return `<form id="raise-form" class="raise-panel" aria-label="Raise amount"><div class="raise-sheet-header"><strong>${state.currentBet ? 'Raise' : 'Bet'} to · multiples of ${number(state.settings.smallBlind)}</strong><button type="button" id="close-raise" aria-label="Close raise amount">Close</button></div><div><label for="raise-amount">Amount in chips</label><div class="amount-stepper"><button type="button" data-raise-step="-1" aria-label="Decrease by one small blind">−</button><input id="raise-amount" aria-label="Raise to amount" type="number" inputmode="numeric" min="${min}" max="${max}" value="${min}" step="${state.settings.smallBlind}" required><button type="button" data-raise-step="1" aria-label="Increase by one small blind">+</button></div>${sliderControl}</div><div class="quick-bets"><button type="button" data-quick="min">Min</button><button type="button" data-quick="half">½ pot</button><button type="button" data-quick="three-quarter">¾ pot</button><button type="button" data-quick="pot">Pot</button></div><button class="primary raise-submit" type="submit">Confirm ${state.currentBet ? 'raise' : 'bet'}</button></form>`;
       })() : ''}
     </div></section>`;
   restoreRegion(tableRoot, uiState);
+  if (enteringTable) window.scrollTo(0, 0);
   window.AvatarV2?.hydrate(tableRoot);
   document.querySelectorAll('#table .theme-picker-section').forEach(wireThemePicker);
   wireTable(me, total); updateClock(); setButtons(); renderSeatReorder();
   ellipseObserver.disconnect();
   document.querySelectorAll('.seat-oval').forEach(el => ellipseObserver.observe(el));
   positionSeats();
+  updateKeyboardInset();
 }
 function hostPanel(playing, actor, owner) {
   const requestCount = (state.rebuyRequests || []).length;
@@ -1070,6 +1102,13 @@ function wireTable(me, pot) {
     catch { toast(`Your table code is ${state.roomCode}.`); }
   });
   $('#table-settings').addEventListener('click', () => openControls());
+  $('#quick-hand-log').addEventListener('click', () => openControls('hand-log'));
+  $('#quick-tonight').addEventListener('click', openTonight);
+  $('#quick-rebuy')?.addEventListener('click', openRebuyRequests);
+  const confirmUndo = () => showDialog('Undo last action?', '<p>This restores the table to its previous state for everyone. Check the hand log afterward.</p>', async () => {
+    const result = await request('undo'); if (result.state) receive(result.state);
+  }, 'Undo last action');
+  $('#quick-undo')?.addEventListener('click', confirmUndo);
   $('#donate-chips').addEventListener('click', donationDialog);
   $('#header-invite').addEventListener('click', inviteDialog);
   document.querySelectorAll('[data-friend-seat]').forEach(seat => {
@@ -1086,7 +1125,7 @@ function wireTable(me, pot) {
   $('#open-rebuy-request-dock')?.addEventListener('click', () => openControls('your-seat'));
   document.querySelectorAll('[data-open-seat]').forEach(button => button.addEventListener('click', inviteDialog));
   $('#start-hand')?.addEventListener('click', () => run('start-hand'));
-  $('#undo')?.addEventListener('click', () => run('undo'));
+  $('#undo')?.addEventListener('click', confirmUndo);
   $('#host-fold')?.addEventListener('click', () => run('host-fold'));
   $('#end-league-night')?.addEventListener('click', endLeagueNight);
   $('#sit-out').addEventListener('click', () => run('sit-out', { value: !me.sittingOut }));
@@ -1100,7 +1139,14 @@ function wireTable(me, pot) {
   $('#open-tonight-dock')?.addEventListener('click', openTonight);
   $('#toggle-push')?.addEventListener('click', () => togglePushNotifications().catch(error => toast(error.message)));
   document.querySelectorAll('[data-action]').forEach(el => el.addEventListener('click', () => run('action', { type: el.dataset.action })));
+  $('#all-in-guard')?.addEventListener('click', () => {
+    if (!ready || !state.legal.canAllIn) return;
+    showDialog('Go all-in?', `<p>Commit your full stack of <strong>${number(me.stack)} chips</strong> to this hand?</p><p class="helper">Your cards stay on the real table. This action cannot be taken back by you.</p>`, async () => {
+      const result = await request('action', { type: 'all-in' }); if (result.state) receive(result.state);
+    }, 'Confirm all-in');
+  });
   $('#toggle-raise')?.addEventListener('click', () => { raiseOpen = !raiseOpen; render(); });
+  $('#close-raise')?.addEventListener('click', () => { raiseOpen = false; render(); $('#toggle-raise')?.focus({ preventScroll: true }); });
   $('#raise-amount')?.addEventListener('input', e => {
     const range = $('#raise-range');
     const amount = Number(e.target.value);
@@ -1124,7 +1170,7 @@ function wireTable(me, pot) {
     const min = state.legal.minRaiseTo; const max = state.legal.maxRaiseTo;
     const sb = state.settings.smallBlind;
     const snap = value => snapToBlind(value, sb);
-    const amounts = { min, half: snap(state.currentBet + (pot + state.legal.fullToCall) / 2), pot: snap(state.currentBet + pot + state.legal.fullToCall), 'three-quarter': snap(state.currentBet + (pot + state.legal.fullToCall) * .75), all: max };
+    const amounts = { min, half: snap(state.currentBet + (pot + state.legal.fullToCall) / 2), pot: snap(state.currentBet + pot + state.legal.fullToCall), 'three-quarter': snap(state.currentBet + (pot + state.legal.fullToCall) * .75) };
     const amount = Math.min(max, Math.max(min, amounts[el.dataset.quick]));
     $('#raise-amount').value = amount; $('#raise-range').value = sliderPosition(amount, min, max);
   }));
@@ -1139,7 +1185,15 @@ function wireTable(me, pot) {
     run('host:rebuyPolicy', mode === 'auto' ? { mode, cap: Number($('#host-policy-cap').value), maxPerPlayer: Number($('#host-policy-limit').value) } : { mode });
   });
   $('#rebuy-form')?.addEventListener('submit', event => { event.preventDefault(); run('rebuy', { playerId: $('#rebuy-player').value, amount: Number($('#rebuy-amount').value) }); });
-  $('#kick-form')?.addEventListener('submit', event => { event.preventDefault(); run('kick', { playerId: $('#kick-player').value }); });
+  $('#kick-form')?.addEventListener('submit', event => {
+    event.preventDefault();
+    const playerId = $('#kick-player').value;
+    const player = state.players.find(item => item.id === playerId);
+    if (!player) return;
+    showDialog(`Remove ${player.name}?`, `<p>Remove <strong>${escape(player.name)}</strong> from this table? They will lose their seat.</p>`, async () => {
+      const result = await request('kick', { playerId }); if (result.state) receive(result.state);
+    }, 'Remove player');
+  });
   document.querySelectorAll('.winner-form').forEach(form => form.addEventListener('submit', event => {
     event.preventDefault(); const winnerIds = [...form.querySelectorAll('input:checked')].map(el => el.value);
     if (!winnerIds.length) return toast('Select at least one winner for this pot.');
@@ -1159,6 +1213,10 @@ function updateKeyboardInset() {
   const viewport = window.visualViewport;
   const inset = viewport ? Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop) : 0;
   document.documentElement.style.setProperty('--keyboard-inset', `${inset}px`);
+  document.documentElement.style.setProperty('--visual-viewport-height', `${viewport?.height || window.innerHeight}px`);
+  document.documentElement.dataset.keyboardOpen = inset > 80 ? 'true' : 'false';
+  const dock = $('#table .dock');
+  if (dock) document.documentElement.style.setProperty('--dock-height', `${dock.getBoundingClientRect().height}px`);
 }
 window.visualViewport?.addEventListener('resize', updateKeyboardInset);
 window.visualViewport?.addEventListener('scroll', updateKeyboardInset);
