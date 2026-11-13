@@ -27,7 +27,11 @@ let savedPresets = [];
 let canSavePresets = false;
 const railMedia = matchMedia('(min-width:1200px)');
 railMedia.addEventListener('change', () => render());
-const ellipseObserver = new ResizeObserver(() => positionSeats());
+let observedTableWidth = 0;
+const ellipseObserver = new ResizeObserver(entries => {
+  const width = entries[0]?.contentRect.width;
+  if (width && width !== observedTableWidth) { observedTableWidth = width; positionSeats(); }
+});
 const number = value => Number(value).toLocaleString();
 const compactStack = value => Number(value) >= 1_000_000 ? `${(Number(value) / 1_000_000).toFixed(1).replace(/\.0$/, '')}M` : Number(value) >= 10_000 ? `${(Number(value) / 1_000).toFixed(1).replace(/\.0$/, '')}K` : number(value);
 const snapToBlind = (value, blind) => Math.ceil(value / blind) * blind;
@@ -904,14 +908,29 @@ function wireSeatDrag(dialog) {
 function seatOval(order) {
   const playing = !['lobby', 'complete'].includes(state.street);
   const roles = { D: state.players.find(p => p.seat === state.dealerSeat)?.id, SB: state.smallBlindId, BB: state.bigBlindId };
-  return `<div class="seat-oval live-oval" aria-label="Clockwise seat order"><div class="table-felt" aria-hidden="true"></div>${order.map((id, index) => {
+  const ownSlot = Math.max(0, order.indexOf(state.playerId));
+  const actingSlot = order.indexOf(state.turn);
+  const mapLabel = `Clockwise seat order from your position: ${order.map((_, offset) => {
+    const index = (ownSlot + offset) % order.length;
+    const id = order[index];
+    const player = state.players.find(item => item.id === id);
+    return `Seat ${index + 1}, ${state.identities?.[id]?.username ? `@${state.identities[id].username}` : player.name}${id === state.playerId ? ', you' : ''}${id === state.turn ? ', to act' : ''}`;
+  }).join('; ')}`;
+  const seatMap = `<div class="seat-order-guide"><div class="seat-order-heading"><strong>Seat order · clockwise</strong><span>You: ${ownSlot + 1}${actingSlot >= 0 ? ` · To act: ${actingSlot + 1}` : ''}</span></div><svg viewBox="0 0 320 144" role="img" aria-label="${escape(mapLabel)}"><ellipse class="seat-map-felt" cx="160" cy="72" rx="128" ry="43"/><text class="seat-map-center" x="160" y="76">Seats match the cards below</text>${order.map((id, index) => {
+    const angle = Math.PI / 2 + 2 * Math.PI * (index - ownSlot) / order.length;
+    const x = Math.round(160 + 128 * Math.cos(angle));
+    const y = Math.round(72 + 43 * Math.sin(angle));
+    return `<g class="seat-map-node ${id === state.playerId ? 'is-you' : ''} ${id === state.turn ? 'is-acting' : ''}" data-seat-map-index="${index + 1}" aria-hidden="true">${id === state.turn ? `<circle class="seat-map-turn" cx="${x}" cy="${y}" r="19"/>` : ''}<circle cx="${x}" cy="${y}" r="15"/><text x="${x}" y="${y + 5}">${index + 1}</text></g>`;
+  }).join('')}</svg></div>`;
+  return `<div class="seat-oval live-oval" aria-label="Clockwise seat order">${seatMap}<div class="table-felt" aria-hidden="true"></div>${order.map((id, index) => {
     const p = state.players.find(player => player.id === id);
-    const status = playing && p.folded ? '× Folded' : playing && p.inHand && p.stack === 0 ? '⚡ All-in' : p.sittingOut ? '⏸ Away' : !p.connected ? '⏸ Offline' : p.id === state.turn ? '▶ To act' : playing ? '● In hand' : '✓ Ready';
-    const statusKind = playing && p.folded ? 'folded' : playing && p.inHand && p.stack === 0 ? 'allin' : p.sittingOut || !p.connected ? 'away' : p.id === state.turn ? 'active' : 'ready';
+    const status = playing && p.folded ? '× Folded' : playing && p.inHand && p.stack === 0 ? '⚡ All-in' : !p.connected ? '⏸ Offline' : p.sittingOut ? '⏸ Away' : p.id === state.turn ? '▶ To act' : playing ? '● In hand' : '✓ Ready';
+    const statusKind = playing && p.folded ? 'folded' : playing && p.inHand && p.stack === 0 ? 'allin' : !p.connected || p.sittingOut ? 'away' : p.id === state.turn ? 'active' : 'ready';
     const cosmetic = state.cosmetics?.[id] || { avatar: 'chip', color: 'c1' };
     const social = state.socialSeats?.includes(id);
-    const seatLabel = `Seat ${index + 1}, ${p.name}${p.id === state.playerId ? ', you' : ''}, ${number(p.stack)} chips, bet ${number(p.streetBet)}, ${status.replace(/^[^A-Za-z]+/, '')}, ${p.connected ? 'connected' : 'offline'}`;
-    return `<article class="oval-seat slot-${index} seat-color-${escape(cosmetic.color)} ${social ? 'social-seat' : ''} ${[2, 3].includes(state.identities?.[id]?.avatar?.v) ? 'character-seat' : ''} ${p.id === state.turn ? 'acting' : ''} ${p.id === state.playerId ? 'my-seat' : ''} ${playing && p.folded ? 'folded-seat' : ''}" ${social ? `data-friend-seat="${escape(id)}" role="button" tabindex="0" aria-label="${escape(seatLabel)}. View account and friendship"` : `role="group" aria-label="${escape(seatLabel)}"`}><div class="oval-name"><small>${index + 1}</small>${tableAvatar(id, cosmetic, p.name, 64)}<strong title="${escape(p.name)}">${escape(p.name)}</strong>${tableUsername(id)}</div><span class="seat-owner">${p.id === state.playerId ? `You • Seat ${index + 1}` : `Seat ${index + 1}`}</span><div class="seat-roles">${Object.entries(roles).filter(([, id]) => id === p.id).map(([role]) => `<span class="role-${role}" title="${role === 'D' ? 'Dealer' : role === 'SB' ? 'Small blind' : 'Big blind'}">${role}</span>`).join('')}</div><strong class="oval-stack" title="${number(p.stack)} chips" aria-label="${number(p.stack)} chips">${compactStack(p.stack)}</strong><small>Bet ${number(p.streetBet)}</small><span class="oval-status status-${statusKind} ${!playing && p.connected && !p.sittingOut ? 'ready-pill' : ''}">${status}</span></article>`;
+    const displayName = state.identities?.[id]?.username ? `@${state.identities[id].username}` : p.name;
+    const seatLabel = `Seat ${index + 1}, ${displayName}${p.id === state.playerId ? ', you' : ''}, ${number(p.stack)} chips, bet ${number(p.streetBet)}, ${status.replace(/^[^A-Za-z]+/, '')}, ${p.connected ? 'connected' : 'offline'}`;
+    return `<article class="oval-seat slot-${index} seat-color-${escape(cosmetic.color)} ${social ? 'social-seat' : ''} ${p.id === state.turn ? 'acting' : ''} ${p.id === state.playerId ? 'my-seat' : ''} ${playing && p.folded ? 'folded-seat' : ''}" ${social ? `data-friend-seat="${escape(id)}" role="button" tabindex="0" aria-label="${escape(seatLabel)}. View account and friendship"` : `role="group" aria-label="${escape(seatLabel)}"`}><div class="oval-name"><span class="seat-avatar-frame">${tableAvatar(id, cosmetic, displayName, 40)}</span><strong title="${escape(displayName)}">${escape(displayName)}</strong></div><span class="seat-owner">Seat ${index + 1}${p.id === state.playerId ? ' · You' : ''}</span><div class="seat-roles">${Object.entries(roles).filter(([, id]) => id === p.id).map(([role]) => `<span class="role-${role}" title="${role === 'D' ? 'Dealer' : role === 'SB' ? 'Small blind' : 'Big blind'}">${role}</span>`).join('')}</div><strong class="oval-stack ${number(p.stack).length > 9 ? 'stack-long' : ''}" title="${number(p.stack)} chips" aria-label="${number(p.stack)} chips">${number(p.stack)}</strong><small class="oval-bet">${number(p.streetBet)} chips bet</small><span class="oval-status status-${statusKind} ${!playing && p.connected && !p.sittingOut ? 'ready-pill' : ''}">${status}</span></article>`;
   }).join('')}</div>`;
 }
 async function openFriendSeat(seatId) {
@@ -950,34 +969,62 @@ async function openFriendSeat(seatId) {
   } catch (error) { content.textContent = error.message; }
 }
 function positionSeats() {
+  const dock = document.querySelector('.dock');
+  document.body.classList.toggle('table-dock-in-flow', Boolean(dock && dock.offsetHeight > window.innerHeight * .35));
   document.querySelectorAll('.seat-oval').forEach(oval => {
-    if (matchMedia('(max-width: 699px)').matches) {
+    const stage = oval.closest('.table-stage');
+    const seats = [...oval.querySelectorAll('.oval-seat')];
+    const compactWaiting = stage.classList.contains('waiting-stage') && seats.length <= 2;
+    stage.classList.toggle('compact-seating', compactWaiting);
+    if (matchMedia('(max-width: 699px)').matches || compactWaiting) {
+      stage.classList.add('board-above');
       oval.removeAttribute('style');
-      oval.querySelectorAll('.oval-seat, .oval-stack, .table-felt').forEach(element => element.removeAttribute('style'));
+      oval.querySelectorAll('.oval-seat, .table-felt').forEach(element => element.removeAttribute('style'));
       return;
     }
+    stage.classList.remove('board-above');
     const width = oval.clientWidth;
-    const occupied = oval.querySelectorAll('.oval-seat').length;
-    const hasCharacters = Boolean(oval.querySelector('.character-seat'));
-    const seatsPerWidth = occupied <= 2 ? 2 : occupied === 3 ? 3.5 : occupied === 4 ? 3 : occupied <= 6 ? 4 : 4.5;
-    const cardWidth = Math.min(140, Math.floor((width - 24) / seatsPerWidth));
-    const height = hasCharacters && occupied >= 7 ? 650 : occupied <= 2 ? 380 : occupied <= 4 ? 440 : occupied === 9 ? 580 : 540;
-    const rx = (width - cardWidth - 12) / 2;
-    const ry = (height - (hasCharacters ? 144 : 112)) / 2;
+    if (!width || !seats.length) return;
+    const count = seats.length;
+    const cardWidth = Math.min(176, Math.max(136, Math.floor((width - 24) / (count >= 8 ? 5.1 : count >= 5 ? 4.4 : 3.6))));
+    seats.forEach(seat => { seat.style.width = `${cardWidth}px`; });
+    const heights = seats.map(seat => seat.getBoundingClientRect().height);
+    const tallest = Math.max(...heights);
+    const rx = (width - cardWidth - 24) / 2;
+    const ownSlot = seats.findIndex(seat => seat.classList.contains('my-seat'));
+    const points = radius => seats.map((_, index) => {
+      const angle = Math.PI / 2 + 2 * Math.PI * (index - Math.max(0, ownSlot)) / count;
+      return { x: width / 2 + rx * Math.cos(angle), y: radius * Math.sin(angle) };
+    });
+    const collide = (a, b, gap = 12) => a.left < b.right + gap && a.right + gap > b.left && a.top < b.bottom + gap && a.bottom + gap > b.top;
+    const bounds = (point, index, centerY) => ({ left: point.x - cardWidth / 2, right: point.x + cardWidth / 2,
+      top: centerY + point.y - heights[index] / 2, bottom: centerY + point.y + heights[index] / 2 });
+    const board = stage.querySelector('.pot-board');
+    let ry = Math.max(150, tallest + 24);
+    if (count === 2 && stage.classList.contains('live-stage'))
+      ry = Math.max(ry, (board.offsetHeight + tallest) / 2 + 26);
+    for (; ry < 1000; ry += 8) {
+      const trial = points(ry).map((point, index) => bounds(point, index, 0));
+      if (trial.every((rect, index) => trial.slice(index + 1).every(other => !collide(rect, other)))) break;
+    }
+    const height = Math.ceil(2 * ry + tallest + 32);
     oval.style.height = `${height}px`;
-    const mine = oval.querySelector('.my-seat');
-    const ownSlot = mine ? Number([...mine.classList].find(c => c.startsWith('slot-')).slice(5)) : 0;
-    oval.querySelectorAll('.oval-seat').forEach(seat => {
-      const slot = Number([...seat.classList].find(c => c.startsWith('slot-')).slice(5));
-      const angle = Math.PI / 2 + 2 * Math.PI * (slot - ownSlot) / occupied;
-      seat.style.left = `${width / 2 + rx * Math.cos(angle)}px`;
-      seat.style.top = `${height / 2 + ry * Math.sin(angle)}px`;
-      seat.style.width = `${cardWidth}px`;
-      const stack = seat.querySelector('.oval-stack');
-      if (stack) stack.style.fontSize = `${Math.min(22, (cardWidth - 14) / (stack.textContent.length * .65))}px`;
+    const finalPoints = points(ry);
+    const positioned = finalPoints.map((point, index) => bounds(point, index, height / 2));
+    seats.forEach((seat, index) => {
+      const point = finalPoints[index];
+      seat.style.left = `${Math.round(point.x)}px`;
+      seat.style.top = `${Math.round(height / 2 + point.y)}px`;
     });
     const felt = oval.querySelector('.table-felt');
-    felt.style.width = `${2 * rx}px`; felt.style.height = `${2 * ry}px`;
+    felt.style.width = `${Math.round(2 * rx + cardWidth / 4)}px`;
+    felt.style.height = `${Math.round(2 * ry + tallest / 3)}px`;
+    if (stage.classList.contains('waiting-stage') || width < 700) { stage.classList.add('board-above'); return; }
+    const boardRect = { left: (width - board.offsetWidth) / 2, right: (width + board.offsetWidth) / 2,
+      top: (height - board.offsetHeight) / 2, bottom: (height + board.offsetHeight) / 2 };
+    const dockTop = document.querySelector('.dock')?.getBoundingClientRect().top ?? window.innerHeight;
+    const boardBelowDock = board.getBoundingClientRect().bottom > dockTop - 16;
+    stage.classList.toggle('board-above', boardBelowDock || positioned.some(rect => collide(rect, boardRect, 18)));
   });
 }
 function nodePath(root, element) {
@@ -1051,8 +1098,8 @@ function render() {
     <header class="table-heading"><h1><button id="copy-code" title="Copy table code" aria-label="Copy table code ${escape(state.roomCode)}"><span class="header-table-label">Table </span><strong>${escape(state.roomCode)}</strong></button></h1><span>${state.players.length}/10<span class="player-count-label"> players</span></span><span>Blinds <strong>${number(state.settings.smallBlind)}/${number(state.settings.bigBlind)}</strong></span><button id="header-invite">Invite</button><button id="table-settings" aria-label="Table settings${requestCount ? `, ${requestCount} rebuy requests` : ''}" title="Table settings">⚙${requestCount ? `<span class="rebuy-count" aria-hidden="true">${requestCount}</span>` : ''}</button></header>
     <nav class="table-quick-nav" aria-label="Table shortcuts"><span class="table-connection" role="status">${ready ? '✓ Connected' : '⏸ Reconnecting'}</span><span class="table-turn">${state.legal.active ? 'Your turn' : actor ? `${escape(actor.name)} to act` : state.street === 'complete' ? 'Hand complete' : 'Waiting for host'}</span><button type="button" id="quick-hand-log">Hand log</button><button type="button" id="quick-tonight">Tonight</button>${host && state.permissions.owner && state.canUndo ? '<button type="button" id="quick-undo">Undo</button>' : ''}${host && requestCount ? `<button type="button" id="quick-rebuy">Rebuys (${requestCount})</button>` : ''}</nav>
     <div class="table-layout"><section class="play-area" aria-label="Poker table">
-      <div class="table-stage"><div class="pot-board ${playing ? 'live-pot' : 'waiting-pot'}"><div class="streets" aria-label="Betting street">${['preflop', 'flop', 'turn', 'river', 'showdown'].map(street => `<span class="${state.street === street ? 'current' : ''}" ${state.street === street ? 'aria-current="step"' : ''}>${state.street === street ? '• ' : ''}${street.toUpperCase()}</span>`).join('')}</div>
-        ${playing ? `<p class="pot-label">Hand ${state.handNumber} · Total pot</p><div class="pot-number">${number(total)}</div><span class="pot-unit">CHIPS</span>` : `<p class="pot-label">${state.street === 'complete' ? 'Hand complete' : 'Your table is open'}</p><h2>${state.players.length < 2 ? 'Waiting for players' : host ? 'Ready to deal' : 'Waiting for host to start'}</h2><p>${state.players.filter(p => p.stack > 0 && !p.sittingOut).length} players ready</p>`}
+      <div class="table-stage ${playing ? 'live-stage' : 'waiting-stage'} ${playing && state.players.length === 2 ? 'heads-up-stage' : ''}"><div class="pot-board ${playing ? 'live-pot' : 'waiting-pot'}"><div class="streets" aria-label="Betting street">${['preflop', 'flop', 'turn', 'river', 'showdown'].map(street => `<span class="${state.street === street ? 'current' : ''}" ${state.street === street ? 'aria-current="step"' : ''}>${state.street === street ? '• ' : ''}${street.toUpperCase()}</span>`).join('')}</div>
+        ${playing ? `<p class="pot-label">Hand ${state.handNumber} · Total pot</p><div class="pot-number">${number(total)}</div><span class="pot-unit">CHIPS</span>` : `<p class="pot-label">${state.street === 'complete' ? 'Hand complete' : 'Your table is open'}</p><h2>${state.players.length < 2 ? 'Waiting for players' : host ? 'Ready to deal' : 'Waiting for host to start'}</h2><p>${(() => { const count = state.players.filter(p => p.stack > 0 && !p.sittingOut).length; return `${count} ${count === 1 ? 'player' : 'players'} ready`; })()}</p>`}
         <p class="street-instruction" aria-live="polite">${instructions[state.street]}</p>
         ${state.street === 'showdown' && state.pots.length > 1 ? `<div class="pot-summary">${state.pots.map((p, i) => `<span>${i ? `Side pot ${i}` : 'Main pot'} · ${number(p.amount)}</span>`).join('')}</div>` : ''}</div>
       ${seatOval(state.seatOrder)}</div><div class="table-meta"><span>Action moves clockwise</span><span id="blind-clock"></span></div>
@@ -1084,7 +1131,8 @@ function render() {
   document.querySelectorAll('#table .theme-picker-section').forEach(wireThemePicker);
   wireTable(me, total); updateClock(); setButtons(); renderSeatReorder();
   ellipseObserver.disconnect();
-  document.querySelectorAll('.seat-oval').forEach(el => ellipseObserver.observe(el));
+  observedTableWidth = 0;
+  document.querySelectorAll('.play-area').forEach(el => ellipseObserver.observe(el));
   positionSeats();
   updateKeyboardInset();
 }
