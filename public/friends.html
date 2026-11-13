@@ -2,10 +2,10 @@
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#fffdf5"><title>Friends · Tablemate</title>
 <script src="/helpers.js"></script><script src="/theme-init.js"></script>
-<link rel="stylesheet" href="/tokens.css"><link rel="stylesheet" href="/style.css">
-<script src="/avatar-parts.js" defer></script><script src="/avatar-v2.js" defer></script><script src="/avatar.js" defer></script><script src="/friends.js" defer></script>
+<link rel="stylesheet" href="/tokens.css"><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/invites.css">
+<script src="/avatar-parts.js" defer></script><script src="/avatar-v2.js" defer></script><script src="/avatar.js" defer></script><script src="/vendor/qrcode.js" defer></script><script src="/invites.js" defer></script><script src="/friends.js" defer></script><script src="/invite-actions.js" defer></script>
 </head><body><header class="masthead"><a class="wordmark" href="/">tablemate<span class="wordmark-dot">.</span></a><nav class="account-nav" aria-label="Account"><a href="/">Table</a><a href="/me.html">My stats</a></nav></header>
-<main class="profile-page friends-page"><div class="profile-heading"><p class="eyebrow">YOUR PEOPLE</p><h1>Friends</h1><p>Find your regulars and make the next table easier to share.</p></div>
+<main class="profile-page friends-page"><div class="profile-heading"><p class="eyebrow">YOUR PEOPLE</p><h1>Friends</h1><p>Find your regulars and make the next table easier to share.</p><button id="share-profile" type="button" class="primary">Share My Profile</button><p id="invite-action-status" role="status" aria-live="polite"></p></div>
 <section id="friend-notifications" class="profile-panel" aria-labelledby="friend-notification-title" hidden><h2 id="friend-notification-title">Updates</h2><div id="friend-notification-list"></div><button id="friend-notifications-read" type="button">Mark updates read</button></section>
 <section id="friend-invite-panel" class="profile-panel" aria-labelledby="friend-invite-title" hidden><h2 id="friend-invite-title">Share this table</h2><p id="friend-invite-copy">Copy or share the room link with a friend. Tablemate does not send it for you.</p><button id="friend-share-room" type="button">Share table link</button><input id="friend-invite-url" aria-label="Table invite link" readonly hidden><p id="friend-invite-status" role="status" aria-live="polite"></p></section>
 <section class="profile-panel" aria-labelledby="my-friends-title"><h2 id="my-friends-title">My friends</h2><div id="friend-list" class="friend-list" aria-live="polite">Loading friends…</div></section>

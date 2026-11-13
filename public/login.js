@@ -1,4 +1,12 @@
 /* global document, fetch, location, window */
+const inviteReturn = window.TablemateInvites.remember(window.TablemateInvites.fromQuery());
+if (inviteReturn) {
+  const context = document.querySelector('#login-invite-context');
+  context.hidden = false;
+  context.textContent = inviteReturn.includes('?friend=')
+    ? 'Sign in to view this profile and choose whether to send a friend request.'
+    : 'Sign in to view this league and choose whether to join.';
+}
 fetch('/api/config').then(response => response.json()).then(config => {
   if (!config.accounts) {
     document.querySelector('#login-form').hidden = true;
@@ -13,7 +21,10 @@ fetch('/api/config').then(response => response.json()).then(config => {
     document.querySelector('#signin-divider').hidden = true;
     const status = document.querySelector('#login-status');
     status.textContent = 'This test site uses sample accounts. ';
-    const link = document.createElement('a'); link.href = '/preview/'; link.textContent = 'Open the preview hub to sign in.';
+    const link = document.createElement('a');
+    link.href = window.TablemateInvites.pending()
+      ? `/preview/?return=${encodeURIComponent(window.TablemateInvites.pending())}` : '/preview/';
+    link.textContent = 'Open the preview hub to sign in.';
     status.append(link);
     return;
   }
@@ -44,7 +55,7 @@ fetch('/api/config').then(response => response.json()).then(config => {
           return;
         }
         const account = await response.json();
-        window.location.assign(account.onboarding ? '/welcome.html' : '/me.html');
+        window.location.assign(window.TablemateInvites.nextPath(account.onboarding));
       } catch { status.textContent = 'Could not connect. Try again.'; }
     } });
     try {
@@ -69,7 +80,8 @@ document.querySelector('#login-form').addEventListener('submit', async event => 
   status.textContent = 'Sending…';
   try {
     const response = await fetch('/api/auth/request', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: document.querySelector('#email').value }) });
+      body: JSON.stringify({ email: document.querySelector('#email').value,
+        ...(window.TablemateInvites.pending() ? { returnTo: window.TablemateInvites.pending() } : {}) }) });
     if (!response.ok) { status.textContent = 'Sign-in is unavailable right now.'; return; }
     const result = await response.json();
     if (result.devLink) {

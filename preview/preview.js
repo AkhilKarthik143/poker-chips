@@ -2,6 +2,7 @@
 const status = document.querySelector('#preview-account');
 const demo = document.querySelector('#demo-login');
 const fresh = document.querySelector('#fresh-login');
+window.TablemateInvites.remember(window.TablemateInvites.fromQuery());
 
 async function accountState() {
   try {
@@ -25,7 +26,7 @@ async function signIn(path, button, message) {
     const response = await fetch(path, { method: 'POST' });
     if (!response.ok) throw new Error('Could not open the preview account.');
     const result = await response.json();
-    window.location.assign(result.onboarding ? '/welcome.html' : '/me.html');
+    window.location.assign(window.TablemateInvites.nextPath(result.onboarding));
   } catch (error) { status.textContent = error.message; button.disabled = false; }
 }
 demo.addEventListener('click', () => signIn('/preview/demo-login', demo, 'Opening the sample account…'));

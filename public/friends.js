@@ -1,4 +1,4 @@
-/* global document, window, fetch, navigator, setTimeout, clearTimeout, setInterval */
+/* global document, window, fetch, setTimeout, clearTimeout, setInterval */
 (() => {
 const $ = selector => document.querySelector(selector);
 const params = new URL(window.location.href).searchParams;
@@ -88,20 +88,10 @@ async function shareRoom() {
   const message = $('#friend-invite-status'); message.textContent = 'Checking table…';
   try {
     await api(`/api/friends/invite/${roomCode}`);
-    const url = `${window.location.origin}/?code=${roomCode}`;
-    if (navigator.share) {
-      try { await navigator.share({ title: 'Join my Tablemate table', text: `Room ${roomCode}`, url });
-        message.textContent = 'Share sheet opened. Choose who to send it to.'; return;
-      } catch (error) { if (error.name === 'AbortError') { message.textContent = 'Sharing cancelled.'; return; } }
-    }
-    let copied = false;
-    try { if (navigator.clipboard?.writeText) { await navigator.clipboard.writeText(url); copied = true; } }
-    catch { /* Show the URL for manual copying. */ }
-    if (copied) message.textContent = 'Table link copied. Send it to your friend.';
-    else {
-      const field = $('#friend-invite-url'); field.hidden = false; field.value = url; field.select();
-      message.textContent = 'Copy this link and send it to your friend.';
-    }
+    const url = window.Tablemate.roomInviteUrl(window.location.origin, roomCode);
+    window.TablemateInvites.openShare({ type: 'table', title: `Share table ${roomCode}`,
+      subtitle: `Room ${roomCode}`, url, code: roomCode });
+    message.textContent = '';
   } catch (error) { message.textContent = error.message; }
 }
 $('#friend-search').addEventListener('input', () => { clearTimeout(searchTimer); searchTimer = setTimeout(search, 350); });

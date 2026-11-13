@@ -1,4 +1,5 @@
 /* global document, fetch, location, window */
+window.TablemateInvites.remember(window.TablemateInvites.fromQuery());
 document.querySelector('#verify-button').addEventListener('click', async () => {
   const button = document.querySelector('#verify-button');
   const status = document.querySelector('#verify-status');
@@ -9,6 +10,6 @@ document.querySelector('#verify-button').addEventListener('click', async () => {
       body: JSON.stringify({ token }) });
     if (!response.ok) throw new Error('This link has expired or was already used.');
     const result = await response.json();
-    window.location.assign(result.onboarding ? '/welcome.html' : '/me.html');
+    window.location.assign(window.TablemateInvites.nextPath(result.onboarding));
   } catch (error) { status.textContent = error.message; button.disabled = false; }
 });

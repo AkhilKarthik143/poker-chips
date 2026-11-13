@@ -23,10 +23,10 @@ export function createAuth({ store, mailer, now = Date.now }) {
     return { account, sessionToken };
   };
   return {
-    async request(email, origin) {
+    async request(email, origin, returnTo = null) {
       const token = randomBytes(32).toString('hex');
       await store.saveMagicLink(hashSecret(token), email, now() + 15 * 60_000);
-      const link = `${origin}/verify.html?token=${token}`;
+      const link = `${origin}/verify.html?token=${token}${returnTo ? `&return=${encodeURIComponent(returnTo)}` : ''}`;
       await mailer.send(email, link);
       return link;
     },

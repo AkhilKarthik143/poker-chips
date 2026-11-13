@@ -41,7 +41,8 @@ async function load() {
     league = detail; seasons = seasonData.seasons;
     $('#league-title').textContent = detail.name;
     $('#league-role').textContent = `Your role: ${detail.myRole}`;
-    $('#invite-code').textContent = detail.inviteCode;
+    $('#invite-code').textContent = detail.inviteCode || '';
+    $('#league-invite-code-row').hidden = !detail.inviteCode;
     $('#rotate-invite').hidden = !['commissioner', 'co'].includes(detail.myRole);
     $('#leave-league').hidden = detail.myRole === 'commissioner';
     const liveButton = $('#live-action');
@@ -54,6 +55,7 @@ async function load() {
       liveButton.textContent = 'Start tonight’s table'; liveButton.hidden = false;
       liveButton.onclick = () => window.location.assign(`/?league=${encodeURIComponent(id)}`);
     } else { $('#live-label').textContent = 'The commissioner has not opened a table yet.'; liveButton.hidden = true; }
+    if (new URL(window.location.href).searchParams.get('joined') === '1') status('You joined this league.');
     renderMembers(); renderRules(); renderSeasons();
     await Promise.all([renderStandings(), renderNights()]);
   } catch (error) { status(error.message); }

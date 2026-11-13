@@ -22,6 +22,7 @@ import { THIRTY_DAYS, usernameError, validAvatar, validPrivacy, avatarForAccount
 import { AVATAR_PHOTO_MIME, MAX_AVATAR_PHOTO_BYTES, processAvatarPhoto } from './avatar-photo.js';
 import { hasUnityBuild, unityStatic } from './static-unity.js';
 import { FriendError, FriendsStore } from './friends-store.js';
+import { safeInviteReturn, validFriendShareId, validLeagueInvite } from './invites.js';
 
 const SIX_HOURS = 6 * 60 * 60 * 1000;
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -126,7 +127,12 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     const googleSources = googleEnabled && _req.path === '/login.html';
     res.setHeader('X-Content-Type-Options', 'nosniff');
     // Send only the site origin to Google Identity Services, as Google recommends.
-    res.setHeader('Referrer-Policy', googleSources ? 'strict-origin-when-cross-origin' : 'same-origin');
+    res.setHeader('Referrer-Policy', _req.path === '/invite.html' ? 'no-referrer'
+      : googleSources ? 'strict-origin-when-cross-origin' : 'same-origin');
+    if (_req.path === '/invite.html' || _req.path.startsWith('/api/invites/')) {
+      res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+      res.setHeader('Cache-Control', 'no-store');
+    }
     // Google Identity Services injects button styles; keep its CSP allowance on the sign-in page only.
     res.setHeader('Content-Security-Policy', googleSources
       ? "default-src 'self'; script-src 'self' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src 'self' https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
@@ -165,6 +171,13 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
       req.account = account; next();
     }).catch(error => { logError(error); res.sendStatus(503); });
   }
+  function optionalAccount(req, res, next) {
+    if (!accountsEnabled) { res.status(503).json({ error: 'Accounts are unavailable.' }); return; }
+    auth.accountFromCookie(req.headers.cookie).then(account => { req.account = account; next(); })
+      .catch(error => { logError(error); res.status(503).json({ error: 'Accounts are unavailable.' }); });
+  }
+  const publicOrigin = allowedOrigins?.[0] || process.env.TABLEMATE_PUBLIC_ORIGIN || null;
+  const shareUrl = path => ({ path, url: publicOrigin ? new URL(path, publicOrigin).href : null });
   function allowLinkRequest(req, email) {
     const forwarded = req.headers['x-forwarded-for'];
     const ip = trustProxy && typeof forwarded === 'string' ? forwarded.split(',').at(-1).trim() : req.ip;
@@ -187,8 +200,8 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     let devLink;
     if (email && allowLinkRequest(req, email)) {
       try {
-        const origin = req.get('Origin') || `${req.protocol}://${req.get('Host')}`;
-        const link = await auth.request(email, origin);
+        const origin = allowedOrigins?.[0] || process.env.TABLEMATE_PUBLIC_ORIGIN || req.get('Origin') || `${req.protocol}://${req.get('Host')}`;
+        const link = await auth.request(email, origin, safeInviteReturn(req.body?.returnTo));
         if (devLogin && process.env.NODE_ENV !== 'production' && mailer.local === true &&
           ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress)) devLink = link;
       } catch (error) { logError(error); }
@@ -284,6 +297,40 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
       res.status(400).json({ error: 'Enter at least two username characters.' }); return;
     }
     res.json({ users: (await friendsStore.search(req.account.id, query)) });
+  });
+  app.get('/api/invites/me', requireAccount, async (req, res) => {
+    if (!req.account.username) { res.status(409).json({ error: 'Finish setting up a username before sharing your profile.' }); return; }
+    const shareId = await store.friendShareId(req.account.id);
+    res.json({ ...shareUrl(`/invite.html?friend=${shareId}`),
+      displayName: req.account.display_name, username: req.account.username,
+      avatar: avatarForAccount(req.account) });
+  });
+  app.get('/api/invites/friend/:shareId', optionalAccount, async (req, res) => {
+    if (!validFriendShareId(req.params.shareId)) { res.status(404).json({ error: 'Profile unavailable.' }); return; }
+    const target = await friendsStore.byShareId(req.params.shareId);
+    if (!target?.username) { res.status(404).json({ error: 'Profile unavailable.' }); return; }
+    const status = req.account ? await friendsStore.status(req.account.id, target.id) : 'sign-in';
+    if (status === 'unavailable') { res.status(404).json({ error: 'Profile unavailable.' }); return; }
+    const visible = status === 'self' || privacyForAccount(target).profileVisibility !== 'private';
+    res.json({ displayName: visible ? target.display_name : 'Tablemate player',
+      username: visible ? target.username : null, avatar: visible ? avatarForAccount(target) : null,
+      status, signedIn: Boolean(req.account), needsSetup: Boolean(req.account && !req.account.username) });
+  });
+  app.post('/api/invites/friend/:shareId/:action', apiOrigin, requireAccount, async (req, res) => {
+    if (!validFriendShareId(req.params.shareId) || !['send', 'accept', 'decline'].includes(req.params.action) ||
+      !req.body || Object.keys(req.body).length) { res.status(400).json({ error: 'Invalid friend action.' }); return; }
+    const target = await friendsStore.byShareId(req.params.shareId);
+    if (!target?.username) { res.status(404).json({ error: 'Profile unavailable.' }); return; }
+    const status = await friendsStore.status(req.account.id, target.id);
+    if (status === 'unavailable') { res.status(404).json({ error: 'Profile unavailable.' }); return; }
+    if (req.params.action === 'send' && status !== 'not-friends') {
+      res.status(409).json({ error: 'Friend request state changed. Refresh and try again.' }); return;
+    }
+    if (req.params.action === 'send' && !friendLimit(friendSendLimits, req, 10)) {
+      res.status(429).json({ error: 'Too many friend requests. Try again soon.' }); return;
+    }
+    try { res.json(await friendsStore.change(req.account.id, target.id, req.params.action, now(), { strictSend: true })); }
+    catch (error) { friendFailure(res, error); }
   });
   app.post('/api/friends/notifications/read', apiOrigin, requireAccount, async (req, res) => {
     if (!req.body || Object.keys(req.body).length) { res.status(400).json({ error: 'Invalid request.' }); return; }
@@ -529,7 +576,8 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
   });
   const leagueIdValid = value => typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value);
   const newInvite = () => Array.from({ length: 8 }, () => ALPHABET[randomInt(ALPHABET.length)]).join('');
-  const publicLeague = async league => ({ id: league.id, name: league.name, inviteCode: league.invite_code,
+  const publicLeague = async (league, canInvite = false) => ({ id: league.id, name: league.name,
+    ...(canInvite ? { inviteCode: league.invite_code } : {}),
     tableSettings: JSON.parse(league.table_settings_json), members: (await leagueStore.roster(league.id)) });
   async function requireLeague(req, res, next) {
     if (!leagueIdValid(req.params.id)) { res.sendStatus(404); return; }
@@ -548,6 +596,29 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
       Object.keys(input).every(key => allowed.includes(key)), 'Invalid table settings.');
     return game.createTable(input).settings;
   }
+  app.get('/api/invites/league/:code', optionalAccount, async (req, res) => {
+    const code = req.params.code;
+    if (!validLeagueInvite(code)) { res.status(404).json({ error: 'Invitation unavailable.' }); return; }
+    const league = await leagueStore.byInvite(code);
+    if (!league) { res.status(404).json({ error: 'Invitation unavailable.' }); return; }
+    const member = req.account ? await leagueStore.member(league.id, req.account.id) : null;
+    res.json({ name: league.name, signedIn: Boolean(req.account), needsSetup: Boolean(req.account && !req.account.username), alreadyMember: Boolean(member),
+      ...(member ? { leaguePath: `/league.html?id=${encodeURIComponent(league.id)}` } : {}) });
+  });
+  app.post('/api/invites/league/:code/join', apiOrigin, requireAccount, async (req, res) => {
+    if (!validLeagueInvite(req.params.code) || !req.body || Object.keys(req.body).length) {
+      res.status(400).json({ error: 'Invalid invitation.' }); return;
+    }
+    try {
+      const joined = await leagueStore.joinByInvite(req.params.code, req.account, randomUUID(), now());
+      if (!joined) { res.status(404).json({ error: 'Invitation unavailable.' }); return; }
+      res.json({ alreadyMember: joined.alreadyMember,
+        leaguePath: `/league.html?id=${encodeURIComponent(joined.league.id)}` });
+    } catch (error) {
+      if (error instanceof RequestError) res.status(409).json({ error: error.message });
+      else { logError(error); res.status(503).json({ error: 'League is temporarily unavailable.' }); }
+    }
+  });
   app.use('/api/leagues', requireAccount);
   app.post('/api/leagues', apiOrigin, async (req, res) => {
     if (!req.body || Object.keys(req.body).length !== 1 || !validName(req.body.name)) {
@@ -557,7 +628,7 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     do { inviteCode = newInvite(); } while ((await leagueStore.byInvite(inviteCode)));
     const league = (await leagueStore.create({ id: randomUUID(), name: normalizedName(req.body.name), inviteCode,
       settings: game.createTable().settings, account: req.account, memberId: randomUUID(), time: now() }));
-    res.status(201).json((await publicLeague(league)));
+    res.status(201).json((await publicLeague(league, true)));
   });
   app.get('/api/leagues', async (req, res) => res.json({ leagues: (await leagueStore.mine(req.account.id)) }));
   app.post('/api/leagues/join', apiOrigin, async (req, res) => {
@@ -565,18 +636,21 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
     if (!code || !/^[A-HJ-NP-Z]{8}$/.test(code) || Object.keys(req.body).length !== 1) {
       res.status(400).json({ error: 'Invalid invite code.' }); return;
     }
-    const league = (await leagueStore.byInvite(code));
-    if (!league) { res.sendStatus(404); return; }
-    (await leagueStore.join(league.id, req.account, randomUUID(), now()));
-    res.json((await publicLeague(league)));
+    const joined = await leagueStore.joinByInvite(code, req.account, randomUUID(), now());
+    if (!joined) { res.sendStatus(404); return; }
+    res.json((await publicLeague(joined.league, ['commissioner', 'co'].includes((await leagueStore.member(joined.league.id, req.account.id)).role))));
   });
-  app.get('/api/leagues/:id', requireLeague, async (req, res) => res.json({ ...(await publicLeague(req.league)), myRole: req.leagueMember.role }));
+  app.get('/api/leagues/:id', requireLeague, async (req, res) => res.json({
+    ...(await publicLeague(req.league, ['commissioner', 'co'].includes(req.leagueMember.role))), myRole: req.leagueMember.role }));
+  app.get('/api/leagues/:id/invite', requireLeague, role('commissioner', 'co'), (req, res) => res.json({
+    name: req.league.name, inviteCode: req.league.invite_code,
+    ...shareUrl(`/invite.html?league=${req.league.invite_code}`) }));
   app.patch('/api/leagues/:id', apiOrigin, requireLeague, role('commissioner'), async (req, res) => {
     const body = req.body || {};
     if (Object.keys(body).some(key => !['name', 'tableSettings'].includes(key)) ||
       (body.name !== undefined && !validName(body.name))) { res.status(400).json({ error: 'Invalid league update.' }); return; }
     const settings = body.tableSettings === undefined ? JSON.parse(req.league.table_settings_json) : tableSettings(body.tableSettings);
-    res.json((await publicLeague((await leagueStore.update(req.league.id, body.name ? normalizedName(body.name) : req.league.name, settings)))));
+    res.json((await publicLeague((await leagueStore.update(req.league.id, body.name ? normalizedName(body.name) : req.league.name, settings)), true)));
   });
   app.post('/api/leagues/:id/leave', apiOrigin, requireLeague, async (req, res) => {
     (await leagueStore.leave(req.leagueMember, now())); (await broadcastLeague(req.league.id)); res.json({ left: true });

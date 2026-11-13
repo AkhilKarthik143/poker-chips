@@ -1,5 +1,5 @@
 import { mkdirSync } from 'node:fs';
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { dirname } from 'node:path';
 import { Database } from './database.js';
 
@@ -112,6 +112,10 @@ const photoMigration = `
     updated_at INTEGER NOT NULL
   );
 `;
+const inviteMigration = `
+  ALTER TABLE accounts ADD COLUMN share_id TEXT;
+  CREATE UNIQUE INDEX accounts_share_id ON accounts(share_id);
+`;
 
 export class SqliteStore {
   constructor(path, authToken) {
@@ -128,7 +132,7 @@ export class SqliteStore {
     await this.db.prepare('CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)').run();
     await this.db.prepare('INSERT INTO schema_version (version) SELECT 0 WHERE NOT EXISTS (SELECT 1 FROM schema_version)').run();
     const migrations = [migration, accountsMigration, leagueMigration, settingsMigration, presetsMigration,
-      googleIdentityMigration, identityMigration, friendsMigration, photoMigration];
+      googleIdentityMigration, identityMigration, friendsMigration, photoMigration, inviteMigration];
     for (let index = 0; index < migrations.length; index++) {
       await this.db.transaction(async () => {
         const version = (await this.db.prepare('SELECT version FROM schema_version').get()).version;
@@ -181,6 +185,11 @@ export class SqliteStore {
   }
   async getAccountByEmail(email) { await this.ready; return (await this.db.prepare('SELECT * FROM accounts WHERE email = ?').get(email)) ?? null; }
   async getAccount(id) { await this.ready; return (await this.db.prepare('SELECT * FROM accounts WHERE id = ?').get(id)) ?? null; }
+  async friendShareId(id) { await this.ready;
+    const candidate = randomBytes(16).toString('hex');
+    await this.db.prepare('UPDATE accounts SET share_id = ? WHERE id = ? AND share_id IS NULL').run(candidate, id);
+    return (await this.getAccount(id))?.share_id ?? null;
+  }
   async uniqueDisplayName(name) { await this.ready;
     const taken = this.db.prepare('SELECT 1 FROM accounts WHERE display_name = ? COLLATE NOCASE LIMIT 1');
     if (!(await taken.get(name))) return name;

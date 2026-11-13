@@ -9,6 +9,7 @@ export class FriendsStore {
   constructor(db) { this.db = db; }
   async account(id) { return (await this.db.prepare('SELECT * FROM accounts WHERE id = ?').get(id)) ?? null; }
   async byUsername(username) { return (await this.db.prepare('SELECT * FROM accounts WHERE username_lower = ?').get(username.toLowerCase())) ?? null; }
+  async byShareId(shareId) { return (await this.db.prepare('SELECT * FROM accounts WHERE share_id = ?').get(shareId)) ?? null; }
   publicAccount(account, status) {
     const publicAvatar = privacyForAccount(account).profileVisibility !== 'private';
     return { username: account.username, displayName: account.display_name,
@@ -85,12 +86,15 @@ export class FriendsStore {
     (await this.db.prepare("DELETE FROM friend_events WHERE account_id = ? AND actor_id = ? AND kind = 'request'")
       .run(recipientId, actorId));
   }
-  async change(actorId, targetId, action, time) {
+  async change(actorId, targetId, action, time, { strictSend = false } = {}) {
     if (!(await this.account(actorId)) || !(await this.account(targetId))) throw new FriendError('User not found.', 404);
     if (actorId === targetId) throw new FriendError('You cannot add yourself.', 400);
     const [a, b] = this.pair(actorId, targetId);
     return (await this.db.transaction(async () => {
       let status = (await this.status(actorId, targetId));
+      if (strictSend && action === 'send' && status !== 'not-friends') {
+        throw new FriendError('Friend request state changed. Refresh and try again.');
+      }
       if (action === 'block') {
         (await this.db.prepare('INSERT OR IGNORE INTO friend_blocks (blocker_id,blocked_id,created_at) VALUES (?,?,?)')
           .run(actorId, targetId, time));

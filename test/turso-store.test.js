@@ -39,7 +39,7 @@ test('transactions roll back fully and migrations upgrade old files once', async
   legacy.close();
   const store = new SqliteStore(path);
   await store.init();
-  assert.equal((await store.db.prepare('SELECT version FROM schema_version').get()).version, 9);
+  assert.equal((await store.db.prepare('SELECT version FROM schema_version').get()).version, 10);
   await assert.rejects(store.db.transaction(async () => {
     await store.db.prepare('INSERT INTO accounts (id,email,display_name,created_at) VALUES (?,?,?,?)')
       .run('rollback', 'rollback@example.com', 'Rollback', 1);
@@ -49,7 +49,7 @@ test('transactions roll back fully and migrations upgrade old files once', async
   await store.close();
   const reopened = new SqliteStore(path);
   await reopened.init();
-  assert.equal((await reopened.db.prepare('SELECT version FROM schema_version').get()).version, 9);
+  assert.equal((await reopened.db.prepare('SELECT version FROM schema_version').get()).version, 10);
   assert.equal((await reopened.db.prepare('SELECT COUNT(*) AS n FROM schema_version').get()).n, 1);
   await reopened.close();
 });

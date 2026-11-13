@@ -48,6 +48,15 @@ export class LeagueStore {
       return this.member(leagueId, account.id);
     });
   }
+  async joinByInvite(code, account, memberId, time) {
+    return this.transaction(async () => {
+      const league = await this.byInvite(code);
+      if (!league) return null;
+      const existing = await this.member(league.id, account.id);
+      if (!existing) await this.join(league.id, account, memberId, time);
+      return { league, alreadyMember: Boolean(existing) };
+    });
+  }
   async leave(member, time) {
     if (member.role === 'commissioner') throw new RequestError('Transfer commissioner before leaving.');
     (await this.db.prepare('UPDATE league_members SET left_at = ? WHERE id = ?').run(time, member.id));
