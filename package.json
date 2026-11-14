@@ -15,7 +15,8 @@
     "test": "node --test test/*.test.js",
     "avatars:build": "node scripts/avatar-assets.js",
     "avatars:check": "node scripts/avatar-assets.js --check && node scripts/gen-avatar-enums.js --check",
-    "unity:check": "node scripts/check-unity-sources.js"
+    "unity:check": "node scripts/check-unity-sources.js",
+    "stats:audit": "node scripts/audit-stats.js"
   },
   "dependencies": {
     "@libsql/client": "^0.18.0",

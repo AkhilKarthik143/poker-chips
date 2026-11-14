@@ -152,8 +152,10 @@ export class SqliteStore {
       (await this.db.prepare(`INSERT INTO nights
         (id, room_code, group_id, started_at, updated_at, ended_at, hands, settings_json, settlement_json, league_id, season_id)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET updated_at=excluded.updated_at, ended_at=excluded.ended_at,
-          hands=excluded.hands, settings_json=excluded.settings_json, settlement_json=excluded.settlement_json`)
+        ON CONFLICT(id) DO UPDATE SET updated_at=excluded.updated_at,
+          ended_at=COALESCE(excluded.ended_at,nights.ended_at),
+          hands=excluded.hands, settings_json=excluded.settings_json, settlement_json=excluded.settlement_json,
+          league_id=COALESCE(excluded.league_id,nights.league_id), season_id=COALESCE(excluded.season_id,nights.season_id)`)
         .run(snapshot.nightId, snapshot.roomCode, snapshot.groupId ?? null, snapshot.startedAt,
           snapshot.updatedAt, snapshot.endedAt ?? null, snapshot.hands, JSON.stringify(snapshot.settings), JSON.stringify(snapshot.settlement),
           snapshot.leagueId ?? null, snapshot.seasonId ?? null));
@@ -161,8 +163,9 @@ export class SqliteStore {
         (night_id,seat_id,name,account_id,claim_hash,buy_in,cash_out,net,hands_played,hands_won,
           vpip_hands,pfr_hands,raises,calls,checks,folds,all_ins,showdowns,showdown_wins)
         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-        ON CONFLICT(night_id,seat_id) DO UPDATE SET name=excluded.name,account_id=excluded.account_id,
-          claim_hash=excluded.claim_hash,buy_in=excluded.buy_in,cash_out=excluded.cash_out,net=excluded.net,
+        ON CONFLICT(night_id,seat_id) DO UPDATE SET name=excluded.name,
+          account_id=COALESCE(night_players.account_id,excluded.account_id),
+          claim_hash=COALESCE(night_players.claim_hash,excluded.claim_hash),buy_in=excluded.buy_in,cash_out=excluded.cash_out,net=excluded.net,
           hands_played=excluded.hands_played,hands_won=excluded.hands_won,vpip_hands=excluded.vpip_hands,
           pfr_hands=excluded.pfr_hands,raises=excluded.raises,calls=excluded.calls,checks=excluded.checks,
           folds=excluded.folds,all_ins=excluded.all_ins,showdowns=excluded.showdowns,showdown_wins=excluded.showdown_wins`);
@@ -300,7 +303,9 @@ export class SqliteStore {
   async deleteSession(tokenHash) { await this.ready; (await this.db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(tokenHash)); }
   async claimNight(nightId, tokenHash, accountId) { await this.ready;
     const result = (await this.db.prepare(`UPDATE night_players SET account_id = ?
-      WHERE night_id = ? AND claim_hash = ? AND account_id IS NULL`).run(accountId, nightId, tokenHash));
+      WHERE night_id = ? AND claim_hash = ? AND account_id IS NULL
+        AND NOT EXISTS (SELECT 1 FROM night_players owned
+          WHERE owned.night_id = night_players.night_id AND owned.account_id = ?)`).run(accountId, nightId, tokenHash, accountId));
     return result.changes;
   }
   async listAccountNights(accountId, includeOpen = false) { await this.ready;
@@ -309,7 +314,20 @@ export class SqliteStore {
       p.raises,p.calls,p.checks,p.folds,p.all_ins,p.showdowns,p.showdown_wins
       FROM night_players p JOIN nights n ON n.id = p.night_id
       WHERE p.account_id = ? ${includeOpen ? '' : 'AND n.ended_at IS NOT NULL'}
+        AND COALESCE(n.counts,1) = 1
       ORDER BY COALESCE(n.ended_at,n.updated_at) DESC,n.id DESC`).all(accountId));
+  }
+  async listCurrentAccountNights(accountId) { await this.ready;
+    return (await this.db.prepare(`SELECT n.id AS night_id,n.room_code,n.started_at,n.updated_at,n.ended_at,
+      p.buy_in,p.cash_out,p.net,p.hands_played,p.hands_won,p.vpip_hands,p.pfr_hands,
+      p.raises,p.calls,p.checks,p.folds,p.all_ins,p.showdowns,p.showdown_wins
+      FROM night_players p JOIN nights n ON n.id = p.night_id
+      WHERE p.account_id = ? AND n.ended_at IS NULL AND n.hands > 0 AND COALESCE(n.counts,1) = 1
+        AND n.id = (SELECT active.id FROM nights active JOIN night_players active_player
+          ON active_player.night_id = active.id
+          WHERE active_player.account_id = ? AND active.ended_at IS NULL AND active.hands > 0 AND COALESCE(active.counts,1) = 1
+          ORDER BY active.updated_at DESC,active.id DESC LIMIT 1)
+      ORDER BY p.seat_id`).all(accountId, accountId));
   }
   async exportAccount(accountId) { await this.ready;
     const photo = (await this.db.prepare('SELECT image_webp FROM avatar_photos WHERE account_id = ?').get(accountId));

@@ -6,6 +6,12 @@ const signed = value => `${value > 0 ? '+' : ''}${number(value)}`;
 const pct = value => `${Number(value).toFixed(1)}%`;
 let page = 1;
 let profileAccount;
+function setStatsStatus(message, { error = false } = {}) {
+  const status = $('#stats-status');
+  status.textContent = message;
+  status.classList.toggle('error', error);
+  $('#retry-stats').hidden = !error;
+}
 function renderAvatarPreview() {
   if (!profileAccount) return;
   $('#profile-avatar-preview').replaceChildren(window.TablemateAvatar.renderAvatar(profileAccount.avatar, 72, profileAccount.displayName));
@@ -24,9 +30,11 @@ function renderProfileForm() {
     : '3–20 letters, numbers or underscores. Start with a letter. Changes are limited to once every 30 days.';
 }
 async function load() {
+  setStatsStatus('Loading your stats…');
   const [accountResponse, statsResponse, configResponse] = await Promise.all([fetch('/api/me'), fetch(`/api/me/stats?page=${page}`), fetch('/api/config')]);
   if (accountResponse.status === 401) { window.location.assign('/login.html'); return; }
-  if (!accountResponse.ok || !statsResponse.ok) { $('#nights-list').textContent = 'Could not load stats. Try again later.'; return; }
+  if (!accountResponse.ok) throw new Error('Your account could not be loaded.');
+  if (!statsResponse.ok) throw new Error('Stats are unavailable right now. Try again.');
   const account = await accountResponse.json();
   const config = configResponse.ok ? await configResponse.json() : {};
   if (config.avatarCreator) {
@@ -40,10 +48,12 @@ async function load() {
   const data = await statsResponse.json();
   $('#profile-name').textContent = account.displayName;
   renderStats(data.lifetime);
+  renderCurrentNight(data.currentNight);
   renderChart(data.trend);
   renderNights(data);
   showClaims();
-  loadLeagues();
+  setStatsStatus(`Updated ${new Date(data.refreshedAt || Date.now()).toLocaleTimeString()}.`);
+  loadLeagues().catch(() => { $('#leagues-list').textContent = 'Leagues are unavailable.'; });
 }
 $('#edit-avatar').addEventListener('click', () => {
   if (!profileAccount) return;
@@ -147,6 +157,28 @@ function renderStats(stats) {
     tile.append(key, figure); grid.append(tile);
   }
 }
+function renderCurrentNight(currentNight) {
+  const panel = $('#current-night-panel');
+  if (!currentNight?.stats) { panel.hidden = true; return; }
+  const stats = currentNight.stats;
+  panel.hidden = false;
+  $('#current-night-meta').textContent = `Table ${currentNight.roomCode} · completed hands only. These provisional figures move to Lifetime when the night ends.`;
+  const items = [
+    ['Provisional net', `${signed(stats.net)} chips`],
+    ['Hands completed', number(stats.handsPlayed)],
+    ['Hands won', number(stats.handsWon)],
+    ['ROI so far', pct(stats.roi * 100)],
+    ['VPIP', pct(stats.vpipPct)],
+    ['PFR', pct(stats.pfrPct)],
+  ];
+  const grid = $('#current-stat-grid'); grid.replaceChildren();
+  for (const [label, value] of items) {
+    const tile = document.createElement('div'); tile.className = 'stat-tile';
+    const key = document.createElement('span'); key.textContent = label;
+    const figure = document.createElement('strong'); figure.textContent = value;
+    tile.append(key, figure); grid.append(tile);
+  }
+}
 function renderChart(trend) {
   const svg = $('#net-chart'); svg.replaceChildren();
   if (!trend.length) { svg.setAttribute('aria-label', 'No nights yet'); return; }
@@ -201,6 +233,7 @@ $('#claim-button').addEventListener('click', async () => {
 });
 $('#previous-page').addEventListener('click', () => { page--; load(); });
 $('#next-page').addEventListener('click', () => { page++; load(); });
+$('#retry-stats').addEventListener('click', () => { load().catch(error => setStatsStatus(error.message, { error: true })); });
 $('#export-data').addEventListener('click', async () => {
   const response = await fetch('/api/me/export');
   if (!response.ok) { $('#privacy-status').textContent = 'Export failed. Try again.'; return; }
@@ -216,5 +249,5 @@ $('#delete-data').addEventListener('click', async () => {
   if (response.ok) window.location.assign('/');
   else $('#privacy-status').textContent = 'Deletion failed. Try again.';
 });
-load();
+load().catch(error => setStatsStatus(error.message, { error: true }));
 })();

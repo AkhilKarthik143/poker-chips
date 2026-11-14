@@ -550,11 +550,20 @@ export function createServer({ now = Date.now, idleMs = SIX_HOURS, cleanupInterv
   });
   app.get('/api/me/stats', requireAccount, async (req, res) => {
     const rows = await store.listAccountNights(req.account.id);
+    const currentRows = await store.listCurrentAccountNights(req.account.id);
     const page = Number(req.query.page || 1);
     if (!Number.isSafeInteger(page) || page < 1) { res.status(400).json({ error: 'Invalid page.' }); return; }
     let running = 0;
     const trend = [...rows].reverse().map(row => ({ endedAt: row.ended_at, net: (running += row.net) }));
-    res.json({ lifetime: aggregateStats(rows), trend, ...paginateNights(rows, page) });
+    const currentNight = currentRows.length ? {
+      nightId: currentRows[0].night_id,
+      roomCode: currentRows[0].room_code,
+      startedAt: currentRows[0].started_at,
+      updatedAt: currentRows[0].updated_at,
+      provisional: true,
+      stats: aggregateStats(currentRows),
+    } : null;
+    res.json({ lifetime: aggregateStats(rows), currentNight, refreshedAt: now(), trend, ...paginateNights(rows, page) });
   });
   app.get('/api/me/export', requireAccount, async (req, res) => {
     res.json(await store.exportAccount(req.account.id));

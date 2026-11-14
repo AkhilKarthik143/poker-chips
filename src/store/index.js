@@ -16,7 +16,8 @@ export function createStore(path = process.env.TABLEMATE_DB_PATH, tursoUrl = pro
   }
   if (!path) return {
     enabled: false,
-    async init() {}, async saveNight() {}, async getNight() { return null; }, async close() {}
+    async init() {}, async saveNight() {}, async getNight() { return null; }, async listAccountNights() { return []; },
+    async listCurrentAccountNights() { return []; }, async close() {}
   };
   return new SqliteStore(path);
 }

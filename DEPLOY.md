@@ -43,7 +43,7 @@ A successful response is `{"ok":true}`. Create a room and join it from a second 
 - Free instances sleep. Rooms disappear on restart/spin-down, and cold starts can be slow. **Wake it up before game night**, then create your room.
 - For updates, commit and `git push`; the Blueprint uses the repository’s default branch.
 - Core gameplay needs no secrets or environment file. The optional Web Push feature requires the three VAPID values below.
-- Optional accounts use the remote Turso configuration below. The database also stores nights, sessions, friendships, league records, settings and uploaded avatar photos. Schema migrations 1–9 run before the server accepts traffic. Friends need no separate service or push keys. Direct account-to-account table invitation delivery is not configured; members can share the existing room link. Uploaded photos are cropped to 256×256 WebP before storage and deleted when replaced or when an account is deleted.
+- Optional accounts use the remote Turso configuration below. The database also stores nights, sessions, friendships, league records, settings and uploaded avatar photos. Schema migrations 1–10 run before the server accepts traffic. Friends need no separate service or push keys. Direct account-to-account table invitation delivery is not configured; members can share the existing room link. Uploaded photos are cropped to 256×256 WebP before storage and deleted when replaced or when an account is deleted.
 
 ## Free persistent accounts on Render
 
@@ -80,7 +80,13 @@ sqlite3 data/tablemate.db 'PRAGMA wal_checkpoint(TRUNCATE); PRAGMA journal_mode=
 turso db import data/tablemate.db
 ```
 
-Use the imported database's URL and a new write token in Render. Do not commit the database file, token or a `.env` file. Verify the imported `schema_version` is 9 and sign in with the same Google identity; the stable Google subject and sessions remain linked to the existing account. Existing local data is **not** copied automatically when you set Turso variables.
+Use the imported database's URL and a new write token in Render. Do not commit the database file, token or a `.env` file. Verify the imported `schema_version` is 10 (the current schema) and sign in with the same Google identity; the stable Google subject and sessions remain linked to the existing account. Existing local data is **not** copied automatically when you set Turso variables.
+
+### Stats audit and recovery
+
+Run `npm run stats:audit` against a configured local SQLite database or the configured Turso database. The command is read-only and prints counts only. It checks finalized and open nights, empty night records, duplicate account-to-seat mappings, orphaned account references, and finalized nights whose player nets do not sum to zero.
+
+If any integrity count is non-zero, back up the database before investigating. Do not repair ownership by matching display names: account associations are keyed by stable account IDs, and a legitimate guest claim can only be recovered with its authorized seat token. A finalized night is included in lifetime stats only when it has an end timestamp and `counts = 1`; an open night is shown separately as provisional progress.
 
 ## Optional character creator build
 
